@@ -1,0 +1,112 @@
+ÍNDICE DE CUADROS
+1.1	El crecimiento global superó las previsiones en 2025 24
+1.2	Respuestas de política de oferta ante shocks geopolíticos históricos 34
+1.3	La UE es vulnerable a disrupciones de oferta en productos no energéticos con producción relevante en Oriente Medio 38
+1.4	El aumento de la tasa de ahorro fue generalizado por grupos de población entre 2017 y 2024 61
+1.5	Descomposición de la evolución del deflactor del VAB de la industria manufacturera y de los servicios de mercado (períodos 2022-2023 y 2024-2025) 83
+1.6	En 2025, la capacidad de financiación de la economía española volvió a ser positiva (4 % del PIB), aunque ligeramente inferior a la de 2024. La PII se elevó ligeramente, hasta el 44,8 % del PIB 94
+2.1	Un número reducido de áreas urbanas, encabezadas por Madrid y Barcelona, concentran el crecimiento de los precios y las compraventas de vivienda 138
+2.2	El porcentaje de hogares que residen en viviendas de su propiedad descendió tras la crisis económica iniciada en 2008 142
+2.3	La economía española destaca entre las economías avanzadas por el incremento acumulado durante las últimas cuatro décadas del esfuerzo en términos de renta que deben realizar los hogares para adquirir una vivienda en propiedad 144
+2.4	El esfuerzo en términos de renta de los hogares para adquirir una vivienda es elevado, especialmente en las grandes ciudades y sus áreas urbanas 146
+2.5	Los hogares que residen en viviendas de alquiler destinan una proporción elevada de su renta neta al arrendamiento, especialmente en las grandes ciudades 150
+2.6	Una proporción relevante de los hogares que residen en viviendas de alquiler destinan más de un 30 % de su renta neta al pago del alquiler 151
+2.7	Las provincias con mayor actividad económica disponen de menos viviendas construidas para incrementar la oferta de vivienda residencial 154
+2.8	Las compras de no residentes ganan peso en el mercado de la vivienda español, especialmente en las islas y en la costa mediterránea 160
+2.9	Las viviendas turísticas y las propiedades de no residentes se concentran en la costa mediterránea y las islas 162
+2.10	El sector de la promoción y la construcción residencial presenta una recuperación de sus márgenes y de la rentabilidad, si bien en conjunto estos indicadores se mantienen en niveles contenidos en relación con otros sectores 167
+2.11	La propiedad de las viviendas alquiladas para residencia habitual se encuentra distribuida de manera mayoritaria entre arrendadores que no concentran a escala agregada cuotas de mercado significativas 170
+3.1	Entre 2013 y 2023, la PTF creció más en todos los sectores que en 2000-2013, especialmente en los digitales y servicios profesionales 215
+3.2	Las empresas solicitantes de ICO Crecimiento están más apalancadas, pero son más solventes y más productivas 234
+3.3	Las empresas españolas que reciben financiación de CR son más innovadoras y productivas (a) 241
+3.4	Características de las empresas que adoptan tecnologías de IA (a) 254
+
+ÍNDICE DE GRÁFICOS
+1.1	Las tensiones comerciales y los aranceles aplicados por EEUU se han reducido desde abril de 2025, pero permanecen muy elevados respecto a 2024 22
+1.2	Las nuevas decisiones arancelarias de EEUU han tenido efectos heterogéneos entre países 23
+1.3	La inflación prosiguió su proceso de moderación gradual en 2025, de forma más paulatina en su componente subyacente, en un contexto de relativa contención de los precios de las materias primas energéticas hasta el conflicto en Oriente Medio 26
+1.4	En 2025 continuó la relajación de las políticas monetarias en la mayoría de las principales áreas económicas globales, con las excepciones de Japón y de Brasil 27
+1.5	Exportaciones a EEUU: caen las procedentes de China y de la UE tras un fuerte incremento impulsado por la anticipación de nuevos aranceles 28
+1.6	Las importaciones de la UE desde China crecen mucho más que las del resto del mundo desde 2024 29
+1.7	Primer episodio de la guerra comercial (2017-2019): desviación de exportaciones chinas a la UE y efectos limitados sobre los precios, aunque heterogéneos por sector (a) 30
+1.8	Fuerte incremento de los precios de las materias primas energéticas tras el inicio de la guerra en Irán 32
+1.9	La dependencia de los combustibles fósiles en el conjunto de la UE sigue siendo muy elevada (a) 35
+1.10	La composición de los proveedores de productos energéticos de la UE y España se ha visto alterada de forma significativa en los últimos años 36
+1.11	El cierre del estrecho de Ormuz afecta al comercio de petróleo y gas natural, pero también de fertilizantes y químicos 37
+1.12	Evolución dispar de los tipos de interés a largo plazo en el área del euro y EEUU, si bien la prima a plazo aumentó en ambas áreas 40
+1.13	La escalada de las tensiones comerciales en abril de 2025 y, más recientemente, el conflicto bélico en Oriente Medio han condicionado la evolución de los mercados financieros a escala global 41
+1.14	Los indicadores de mercado que aproximan las expectativas de inflación aumentaron tras el inicio de la guerra en Irán ante el repunte de los precios de la energía 42
+1.15	Los efectos de la guerra en Irán en los mercados financieros han sido limitados en comparación con episodios pasados de inestabilidad geopolítica y crisis de oferta 43
+1.16	Persisten valoraciones elevadas en algunos segmentos de los mercados de renta fija y variable, especialmente en grandes empresas del sector tecnológico 44
+1.17	La evolución del PIB en 2025 mostró disparidades entre los países de la UEM, con España en cabeza 47
+1.18	El crecimiento del PIB real se moderó hasta el 2,8 % en 2025, se mantuvo por encima del registrado en la UEM (1,4 %) y amplió la brecha positiva de producción 57
+1.19	El coste del crédito dejó de reducirse en los primeros meses de 2026 y el acceso a la financiación de los hogares y las empresas mostró signos de empeoramiento 59
+1.20	El aumento del consumo privado se apoyó en el dinamismo de los bienes duraderos 60
+1.21	La vulnerabilidad financiera agregada de los hogares se sitúa en un nivel históricamente reducido 62
+1.22	En 2025, las exportaciones de bienes mostraron un avance débil y se vieron lastradas por los automóviles y los combustibles 64
+1.23	En 2025, las importaciones de bienes mostraron un avance vigoroso, mientras que se mantuvo el proceso de desestacionalización y diversificación de las llegadas de turistas 66
+1.24	El dinamismo del empleo permitió seguir reduciendo la tasa de paro 68
+1.25	La tasa de ocupación ha aumentado gracias a la inmigración y a los colectivos nacionales de mayor edad 69
+1.26	Los desempleados de mayor edad presentan un salario de reserva más elevado 71
+1.27	Se esperan cambios en los flujos de entrada de inmigrantes en España en caso de que se apliquen políticas migratorias más expansivas o restrictivas 73
+1.28	Ha aumentado la proporción de inmigrantes con educación universitaria, mientras que no se observa un impacto negativo de los flujos recientes de inmigración sobre el empleo de los nativos 74
+1.29	Las autorizaciones por arraigo aumentan el empleo formal de extranjeros no pertenecientes a la UE (a) 75
+1.30	El diferencial de precios entre España y la UEM se ha mantenido positivo en los últimos dos años. Los precios de los servicios muestran una intensa resistencia a la baja en ambas áreas 77
+1.31	El episodio actual de incremento de los precios de los servicios muestra similitudes con el observado a principios de siglo. En el actual, los factores de oferta habrían sido relevantes para explicar la persistencia de la inflación de los servicios 79
+1.32	La resistencia a la baja de los servicios contrasta con la evolución de los precios de los bienes industriales no energéticos 80
+1.33	Los márgenes de las empresas absorbieron, inicialmente, parte del shock inflacionario de 2022. Su recuperación posterior fue más intensa en algunas ramas de servicios 82
+1.34	La remuneración por asalariado sigue creciendo en torno al 4 %, en un mercado laboral tensionado 84
+1.35	En 2025, el saldo de las AAPP mejoró por el fuerte avance de los ingresos públicos y los menores gastos transitorios 87
+1.36	El impacto del gasto en defensa sobre la actividad económica se materializaría a medio plazo y con un efecto transitorio 90
+1.37	Errores de previsión de deuda sobre PIB a 5 años 91
+2.1	Los riesgos para la estabilidad financiera asociados al mercado inmobiliario están contenidos 131
+2.2	El peso de la inversión residencial en España se recupera desde 2014, aunque se mantiene en niveles reducidos con una perspectiva de cuatro décadas 133
+2.3	El precio real de la vivienda muestra una senda de recuperación desde 2014, cuya intensidad se aceleró a partir de 2024 134
+2.4	El precio real de la vivienda presenta una elevada heterogeneidad entre áreas urbanas, y su actual dispersión territorial es mayor que al inicio de la recuperación del mercado de la vivienda en 2014 136
+2.5	La evolución del precio real de la vivienda entre 2014 y 2025 muestra una elevada heterogeneidad entre áreas urbanas, donde destaca un reducido número con aumentos muy superiores al agregado nacional, que contrasta con el estancamiento y las caídas en las áreas menos dinámicas 137
+2.6	La compra de vivienda por parte de los jóvenes se ha reducido significativamente en las dos últimas décadas y en una proporción mayor que la caída de su peso demográfico 143
+2.7	Los jóvenes no emancipados presentan serias dificultades para acceder a la vivienda en propiedad sin el apoyo familiar 147
+2.8	Los jóvenes no emancipados que deseen alquilar deben destinar una elevada proporción de su renta al alquiler, especialmente en las grandes ciudades 148
+2.9	La proporción de hipotecas para la adquisición de vivienda habitual concedidas asumiendo un mayor riesgo es limitada 149
+2.10	La creación neta de hogares crece más rápido que el parque de viviendas desde 2011 155
+2.11	El desequilibrio entre el crecimiento de los hogares y la producción de viviendas se observa en las principales economías de la zona del euro, con la excepción de Alemania 157
+2.12	Las viviendas turísticas tienen especial relevancia en el mercado del alquiler en los centros de las zonas turísticas 161
+2.13	Las empresas de la construcción muestran cada vez mayores dificultades para encontrar mano de obra especializada 166
+2.14	España cuenta con uno de los parques de vivienda pública más reducidos entre las economías avanzadas Proporción del parque de vivienda pública sobre el total de viviendas principales (%) 178
+3.1	La brecha de crecimiento de la productividad con la UEM se redujo a partir de 2013 213
+3.2	La reasignación de recursos entre empresas dentro de los sectores explica la mayor parte del crecimiento de la PTF a partir de 2013 216
+3.3	Los indicadores de eficiencia asignativa de los factores productivos, capital y trabajo, apuntan a una mejoría significativa 218
+3.4	Las empresas españolas tienen menos capacidad de crecimiento que las europeas en sus primeros años de vida, aunque esta situación ha mejorado en la última década 221
+3.5	Las microempresas pierden peso en España desde 2013, si bien siguen teniendo una mayor prevalencia que en el resto de la UEM 222
+3.6	Las empresas españolas son menos productivas que las europeas, especialmente las microempresas y las grandes empresas, si bien la brecha se está cerrando ligeramente desde 2013 223
+3.7	El descenso de los recursos ajenos muestra una importante heterogeneidad por fuente de financiación desde 2013 226
+3.8	Las empresas han reducido su recurso a la financiación ajena, sobre todo las de menor tamaño 227
+3.9	Las empresas españolas más productivas se financian en mayor medida con recursos propios 229
+3.10	Dentro de la financiación ajena, la bancaria tiene un mayor peso en las pymes más productivas 230
+3.11	El vínculo positivo entre el crecimiento del crédito y la productividad en el período 2004-2013 se intensificó a partir de 2014 231
+3.12	Pese a su avance reciente, el capital riesgo mantiene en España un grado de desarrollo limitado y una brecha persistente respecto a otras economías más avanzadas 238
+3.13	El acceso a financiación mediante CR se asocia con trayectorias de crecimiento más dinámicas a lo largo del ciclo de vida empresarial 240
+3.14	Los factores regionales son clave para explicar la heterogeneidad en la eficiencia asignativa y la productividad 248
+3.15	Las barreras administrativas limitan el crecimiento de las empresas 250
+3.16	El porcentaje de empresas que usan tecnologías de IA se ha duplicado en el período 2021-2025, tanto en España como en otros países de la UEM. Más de la mitad de las empresas que usan IA son empresas muy grandes, con 250 o más empleados 252
+3.17	El uso de IA tiene efectos significativos sobre el empleo y la productividad 256
+3.18	La exposición de los jóvenes españoles a la IA se ha mantenido estable en los últimos años, aunque presenta una elevada heterogeneidad según el nivel educativo 258
+
+ÍNDICE DE RECUADROS
+1.1	BENEFICIOS DE LOS ACUERDOS COMERCIALES ALCANZADOS RECIENTEMENTE POR LA UNIÓN EUROPEA 98
+1.2	LA AGENDA DE SIMPLIFICACIÓN REGULATORIA Y SUPERVISORA: AVANCES DESDE EL BANCO DE ESPAÑA 101
+1.3	EL IMPACTO DEL PRECIO DEL GAS NATURAL SOBRE EL PRECIO DE LA ELECTRICIDAD EN LAS ECONOMÍAS EUROPEAS 103
+1.4	LAS RESPUESTAS FISCALES A SHOCKS ENERGÉTICOS INFLACIONARIOS: EXPERIENCIA PASADA Y DESARROLLOS RECIENTES 105
+1.5	LA INVERSIÓN EN INTANGIBLES Y EL AVANCE DE LAS EXPORTACIONES DE SERVICIOS NO TURÍSTICOS EN ESPAÑA 112
+1.6	EL SUBSIDIO DE DESEMPLEO PARA MAYORES DE 52/55 AÑOS EN ESPAÑA 116
+1.7	LA EVOLUCIÓN DE LOS INGRESOS Y GASTOS PÚBLICOS DESDE LA PANDEMIA 120
+2.1	HETEROGENEIDAD EN EL CRECIMIENTO DEL PRECIO DE LA VIVIENDA EN LAS GRANDES ÁREAS URBANAS DE ESPAÑA: UNA PRIMERA APROXIMACIÓN BASADA EN UN ÍNDICE DE VENTAS REPETIDAS 190
+2.2	LA EVOLUCIÓN DE LOS PRECIOS DEL ALQUILER RESIDENCIAL (2019-2024): UNA MEDICIÓN DE LOS PRECIOS DEL STOCK Y DE LOS FLUJOS A PARTIR DE LAS FUENTES TRIBUTARIAS 194
+2.3	HETEROGENEIDAD EN EL ACCESO Y EN LA TENENCIA DE VIVIENDA EN ESPAÑA: EVIDENCIA DE LA ENCUESTA FINANCIERA DE LAS FAMILIAS (2002-2024) 198
+2.4	EFECTOS DEL AUMENTO DE LOS PRECIOS DE LA VIVIENDA EN LA MOVILIDAD INTERNA Y LA LOCALIZACIÓN DE INMIGRANTES EN ESPAÑA 203
+3.1	CARACTERIZACIÓN DE LA RENTABILIDAD DEL CAPITAL PRODUCTIVO DE LAS EMPRESAS ESPAÑOLAS 276
+3.2	EL ICAS DEL BANCO DE ESPAÑA 281
+3.3	LAS COOPERATIVAS DE CRÉDITO Y SU PAPEL EN LA PROVISIÓN DE FINANCIACIÓN A LAS PYMES 285
+3.4	EL IMPACTO DEL KIT DIGITAL SOBRE LA PRODUCTIVIDAD EMPRESARIAL 291
+3.5	LOS EFECTOS DE LA REFORMA LABORAL DE 2021 SOBRE LA PRODUCTIVIDAD DE LAS EMPRESAS ESPAÑOLAS 296
+3.6	LICITACIONES PÚBLICAS Y CRECIMIENTO DE LAS PYMES 300

@@ -1,0 +1,17 @@
+{
+  "source": "Extraer textos/InformeAnual_2025.pdf",
+  "txt_output": "Extraer textos/InformeAnual_2025_indices_para_InDesign.txt",
+  "tsv_output": "Extraer textos/InformeAnual_2025_indices_para_InDesign.tsv",
+  "format": "numero<TAB>titulo<U+2003>pagina; form-feed between sections",
+  "total_entries": 107,
+  "counts": {
+    "CUADROS": 21,
+    "GRÁFICOS": 69,
+    "ESQUEMAS": 0,
+    "RECUADROS": 17
+  },
+  "missing_categories": [
+    "ESQUEMAS"
+  ],
+  "missing_pages": []
+}
