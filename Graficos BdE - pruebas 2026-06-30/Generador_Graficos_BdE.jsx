@@ -37,6 +37,18 @@
     var SOURCE_HEIGHT_PADDING_MM = 1.5;
     var CHART_PATTERN_MIN_AREA_MM2 = 3;
     var CHART_PATTERN_VIEW_MARGIN_MM = 18;
+    var PANEL_GRAPH_LEFT_MM = 3;
+    var PANEL_GRAPH_UNIT_OFFSET_MM = 3.5;
+    var PANEL_GRAPH_GAP_MM = 8.5;
+    var SOURCE_PANEL_GAP_MM = 5;
+    var PANEL_TITLE_TO_GRAPH_GAP_MM = [7.377, 7.415, 7.323];
+    var PANEL_GRAPH_START_WITH_TITLE = [-67.53, -81.81, -91.47];
+    var PANEL_GRAPH_START_WITHOUT_TITLE = [-50.57, -64.85, -74.51];
+    var OVERSIZED_ARTWORK_WIDTH_MM = 190;
+    var OVERSIZED_ARTWORK_HEIGHT_MM = 260;
+    var PANEL_VIEW_MARGIN_MM = 8;
+    var DOWNLOAD_ICON_PNG_BASE64 =
+        "iVBORw0KGgoAAAANSUhEUgAAABMAAAATCAYAAAByUDbMAAACrUlEQVR4nIVUMUsjQRT+3uzOBglYiXAuBBTEFFeJhXCdtY0o6C84lIOziSDoLzgL4QqRgysklTa2YhCDYGNxCVgY0MbGSiwUi+wm+45v2I2bnHIPhp2dmfe977355gFvZnLzzyKyIyJNEXkVkYRfAE0AO9z/wK9voSAiPwDQUQeHMSabc5/nCoOA2eQTgKvM0VrbsdYm1lrO1fM8rici0hGRDPQq9XM4AsADYI0xl0mSTE9MTETVatWKCPfAT5IkKBQKOD8/x8bGBshQVWNVDQD8AfAFQJyx20kjR8vLy3p6eqpjY2NaKpXc4LxSqejT05Nub2/2UhaRKGXIOsIHUAbwnSnwP45jPD4+4uHhoa+o7XYbrVYL6+vrCMMQa2trZOirapL6/2a9vgII0gguO9/3XXrWWjo4sJOTE9Trdezv72N+fh4jIyNMn+c19ScOrsnK87wuARcXF/Xo6MilwtR939e5ubm+W724uNAwDN1cROhHdtcMO0lG7+ml2+0iCAJsbW2hWCw6lkNDQ46xqubVQP9Jk9PKPzY8PIxOp4Pn52eXNoHjuHdpg1YgWHtw1fOoFmBpaQm7u7toNBo4PDxEuVx2bLM6Dlibq7dpLZJ8erRqteqYraysoFarodlsOr1RdzlLUv9bSqOWvrXeCabE6EyJUlhYWMDx8bHb07daZcYFkqoR7BeAb6nmnDyiKHLRNzc3MTU15XRHwLOzMxwcHOSZufMUO3EI0ALwE0CFT8IYY8fHxzEzM4Obmxvc3d05lmT08vKC2dlZjI6OZmAdPsXUv9V7myJyqarTYRhGe3t7tlgsCtPM14egQRDg/v5eV1dX4ziOA1Xte5vvdo00albcbPCf6+92jV7QTCvsZ8aYVz7kj4bneR/2s0FAGm+XnYCdlY5k9N9O+xfWfzA4xKDmxgAAAABJRU5ErkJggg==";
     var CHART_PATTERN_SWATCHES = {
         "Trama - Negro": "Trama franjas horizontales",
         "Trama - Verde": "Trama puntos",
@@ -102,6 +114,58 @@
         $.sleep(150);
     }
 
+    function decodeBase64ToBinary(base64Text) {
+        var alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        var output = "";
+        var buffer = 0;
+        var bits = 0;
+        var index;
+        var character;
+        var value;
+
+        for (index = 0; index < base64Text.length; index += 1) {
+            character = base64Text.charAt(index);
+            if (character === "=") {
+                break;
+            }
+            value = alphabet.indexOf(character);
+            if (value < 0) {
+                continue;
+            }
+            buffer = (buffer << 6) | value;
+            bits += 6;
+            if (bits >= 8) {
+                bits -= 8;
+                output += String.fromCharCode((buffer >> bits) & 255);
+            }
+        }
+        return output;
+    }
+
+    function getDownloadIconFile() {
+        var iconFile = File(Folder.temp.fsName + "/bde_download_icon_v2.png");
+
+        if (!iconFile.exists) {
+            iconFile.encoding = "BINARY";
+            iconFile.open("w");
+            iconFile.write(decodeBase64ToBinary(DOWNLOAD_ICON_PNG_BASE64));
+            iconFile.close();
+        }
+        return iconFile;
+    }
+
+    function addDownloadIcon(parent) {
+        var image;
+
+        try {
+            image = parent.add("image", undefined, getDownloadIconFile());
+            image.preferredSize = [38, 38];
+            image.helpTip = "Botón Descargar";
+        } catch (error) {
+            parent.add("statictext", undefined, "↓");
+        }
+    }
+
     function getByName(collection, name, description) {
         try {
             return collection.getByName(name);
@@ -130,8 +194,20 @@
         );
     }
 
+    function isPanelPlacementHelperName(name) {
+        name = name || "";
+        return name === "Texto+flecha Grafico" ||
+            name.indexOf("Texto+flecha Titulo") === 0 ||
+            /^Guia (inicio grafico|titulo) panel [1-3]$/.test(name);
+    }
+
+    function isPanelPlacementHelperItem(item) {
+        return Boolean(item.guides) || isPanelPlacementHelperName(item.name || "");
+    }
+
     function getPanelTitleFrame(documentRef, panelNumber) {
         var panelLayer = getPanelLayer(documentRef, panelNumber);
+        var artworkGroupName = "Grafico panel " + panelNumber;
 
         function findTitleFrame(items) {
             var index;
@@ -140,7 +216,17 @@
 
             for (index = 0; index < items.length; index += 1) {
                 item = items[index];
-                if (item.typename === "TextFrame" && item.geometricBounds[0] < 100) {
+                if (
+                    item.typename === "GroupItem" &&
+                    (item.name === artworkGroupName || isPanelPlacementHelperItem(item))
+                ) {
+                    continue;
+                }
+                if (
+                    item.typename === "TextFrame" &&
+                    item.geometricBounds[0] < 100 &&
+                    !/^Texto leyenda [1-6]$/.test(item.name || "")
+                ) {
                     return item;
                 }
                 if (item.typename === "GroupItem") {
@@ -179,6 +265,98 @@
         return millimeters * 72 / 25.4;
     }
 
+    function rememberAndUnlock(item, lockStates) {
+        try {
+            lockStates.push({
+                item: item,
+                locked: item.locked
+            });
+            item.locked = false;
+        } catch (error) {
+            // Algunos objetos especiales no exponen bloqueo editable.
+        }
+    }
+
+    function rememberAndDisableGuide(item, guideStates) {
+        try {
+            if (item.guides) {
+                guideStates.push({
+                    item: item,
+                    guides: item.guides
+                });
+                item.guides = false;
+            }
+        } catch (error) {
+            // No todos los PageItems exponen la propiedad guides.
+        }
+    }
+
+    function unlockPageItemTree(item, lockStates, guideStates) {
+        var index;
+
+        rememberAndUnlock(item, lockStates);
+        rememberAndDisableGuide(item, guideStates);
+
+        if (item.typename === "GroupItem") {
+            for (index = 0; index < item.pageItems.length; index += 1) {
+                unlockPageItemTree(item.pageItems[index], lockStates, guideStates);
+            }
+        }
+    }
+
+    function unlockLayerTree(layer) {
+        var states = {
+            locks: [],
+            guides: []
+        };
+
+        function unlockLayer(layerToUnlock) {
+            var layerIndex;
+            var itemIndex;
+
+            rememberAndUnlock(layerToUnlock, states.locks);
+
+            for (layerIndex = 0; layerIndex < layerToUnlock.layers.length; layerIndex += 1) {
+                unlockLayer(layerToUnlock.layers[layerIndex]);
+            }
+
+            for (itemIndex = 0; itemIndex < layerToUnlock.pageItems.length; itemIndex += 1) {
+                unlockPageItemTree(
+                    layerToUnlock.pageItems[itemIndex],
+                    states.locks,
+                    states.guides
+                );
+            }
+        }
+
+        unlockLayer(layer);
+        return states;
+    }
+
+    function restoreGuideStates(guideStates) {
+        var index;
+
+        for (index = guideStates.length - 1; index >= 0; index -= 1) {
+            try {
+                guideStates[index].item.guides = guideStates[index].guides;
+            } catch (error) {
+                // Si Illustrator no permite restaurar una guía concreta, seguimos.
+            }
+        }
+    }
+
+    function restoreLockStates(lockStates) {
+        var index;
+
+        for (index = lockStates.length - 1; index >= 0; index -= 1) {
+            try {
+                lockStates[index].item.locked = lockStates[index].locked;
+            } catch (error) {
+                // Si Illustrator ya no permite restaurar un objeto, seguimos con el resto.
+            }
+        }
+    }
+
     function translateLayerContents(layer, verticalOffset) {
         var index;
 
@@ -191,6 +369,17 @@
         }
     }
 
+    function translateLayerContentsTemporarilyUnlocked(layer, verticalOffset) {
+        var states = unlockLayerTree(layer);
+
+        try {
+            translateLayerContents(layer, verticalOffset);
+        } finally {
+            restoreGuideStates(states.guides);
+            restoreLockStates(states.locks);
+        }
+    }
+
     function movePanelsForTitle(documentRef, lineCount, panelCount) {
         var offset = -millimetersToPoints(PANEL_OFFSETS_MM[lineCount - 1]);
         var panelNumber;
@@ -200,8 +389,792 @@
         }
 
         for (panelNumber = 1; panelNumber <= panelCount; panelNumber += 1) {
-            translateLayerContents(getPanelLayer(documentRef, panelNumber), offset);
+            translateLayerContentsTemporarilyUnlocked(
+                getPanelLayer(documentRef, panelNumber),
+                offset
+            );
         }
+    }
+
+    function itemContainsItem(container, target) {
+        var index;
+
+        if (container === target) {
+            return true;
+        }
+        if (container.typename !== "GroupItem") {
+            return false;
+        }
+
+        for (index = 0; index < container.pageItems.length; index += 1) {
+            if (itemContainsItem(container.pageItems[index], target)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function isPanelTitleItem(item, titleFrame) {
+        if (!titleFrame) {
+            return false;
+        }
+        return itemContainsItem(item, titleFrame);
+    }
+
+    function isExpectedLegendItem(item) {
+        return /^Leyenda [1-6]$/.test(item.name || "") ||
+            /^Texto leyenda [1-6]$/.test(item.name || "");
+    }
+
+    function getUnexpectedLegendArtworkItems(legendLayer) {
+        var result = [];
+        var index;
+        var item;
+
+        for (index = 0; index < legendLayer.pageItems.length; index += 1) {
+            item = legendLayer.pageItems[index];
+            if (!item.hidden && !isExpectedLegendItem(item)) {
+                result.push(item);
+            }
+        }
+        return result;
+    }
+
+    function getPanelArtworkItems(documentRef, panelNumber) {
+        var panelLayer = getPanelLayer(documentRef, panelNumber);
+        var titleFrame = getPanelTitleFrame(documentRef, panelNumber);
+        var result = [];
+        var index;
+        var item;
+
+        for (index = 0; index < panelLayer.pageItems.length; index += 1) {
+            item = panelLayer.pageItems[index];
+            if (
+                !item.hidden &&
+                !isPanelPlacementHelperItem(item) &&
+                !isPanelTitleItem(item, titleFrame)
+            ) {
+                result.push(item);
+            }
+        }
+        return result;
+    }
+
+    function getLooseGraphArtworkItems(documentRef) {
+        var mainLayer = getMainLayer(documentRef);
+        var result = [];
+        var index;
+        var item;
+
+        for (index = 0; index < mainLayer.pageItems.length; index += 1) {
+            item = mainLayer.pageItems[index];
+            if (
+                !item.hidden &&
+                item.name !== "Filete superior" &&
+                item.name !== "Título"
+            ) {
+                result.push(item);
+            }
+        }
+
+        result.sort(function (a, b) {
+            return b.geometricBounds[1] - a.geometricBounds[1];
+        });
+        return result;
+    }
+
+    function moveItemsToLayer(items, layer) {
+        var index;
+
+        for (index = 0; index < items.length; index += 1) {
+            items[index].move(layer, ElementPlacement.PLACEATEND);
+        }
+    }
+
+    function getPanelArtworkGroupName(panelNumber) {
+        return "Grafico panel " + panelNumber;
+    }
+
+    function getPanelArtworkGroup(documentRef, panelNumber) {
+        var panelLayer = getPanelLayer(documentRef, panelNumber);
+        var groupName = getPanelArtworkGroupName(panelNumber);
+
+        try {
+            return panelLayer.groupItems.getByName(groupName);
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function groupPanelArtwork(documentRef, panelNumber) {
+        var panelLayer = getPanelLayer(documentRef, panelNumber);
+        var artworkItems = getPanelArtworkItems(documentRef, panelNumber);
+        var groupName = getPanelArtworkGroupName(panelNumber);
+        var group;
+        var index;
+
+        if (artworkItems.length === 0) {
+            return null;
+        }
+
+        if (
+            artworkItems.length === 1 &&
+            artworkItems[0].typename === "GroupItem" &&
+            artworkItems[0].name === groupName
+        ) {
+            return artworkItems[0];
+        }
+
+        group = panelLayer.groupItems.add();
+        group.name = groupName;
+        for (index = 0; index < artworkItems.length; index += 1) {
+            artworkItems[index].move(group, ElementPlacement.PLACEATEND);
+        }
+        return group;
+    }
+
+    function mergeBounds(bounds, candidate) {
+        if (!candidate || candidate.length !== 4) {
+            return bounds;
+        }
+        if (!bounds) {
+            return [candidate[0], candidate[1], candidate[2], candidate[3]];
+        }
+
+        bounds[0] = Math.min(bounds[0], candidate[0]);
+        bounds[1] = Math.max(bounds[1], candidate[1]);
+        bounds[2] = Math.max(bounds[2], candidate[2]);
+        bounds[3] = Math.min(bounds[3], candidate[3]);
+        return bounds;
+    }
+
+    function isOversizedArtworkBounds(bounds) {
+        var width;
+        var height;
+
+        if (!bounds || bounds.length !== 4) {
+            return false;
+        }
+
+        width = Math.abs(bounds[2] - bounds[0]);
+        height = Math.abs(bounds[1] - bounds[3]);
+        return width > millimetersToPoints(OVERSIZED_ARTWORK_WIDTH_MM) &&
+            height > millimetersToPoints(OVERSIZED_ARTWORK_HEIGHT_MM);
+    }
+
+    function getArtworkItemBounds(item) {
+        var bounds = null;
+        var index;
+        var childBounds;
+
+        if (item.hidden || isPanelPlacementHelperItem(item)) {
+            return null;
+        }
+
+        if (item.typename === "GroupItem") {
+            for (index = 0; index < item.pageItems.length; index += 1) {
+                childBounds = getArtworkItemBounds(item.pageItems[index]);
+                bounds = mergeBounds(bounds, childBounds);
+            }
+            return bounds;
+        }
+
+        bounds = item.visibleBounds;
+        if (isOversizedArtworkBounds(bounds)) {
+            return null;
+        }
+        return bounds;
+    }
+
+    function getItemsBounds(items) {
+        var bounds = null;
+        var index;
+        var itemBounds;
+
+        for (index = 0; index < items.length; index += 1) {
+            itemBounds = getArtworkItemBounds(items[index]);
+            bounds = mergeBounds(bounds, itemBounds);
+        }
+        return bounds;
+    }
+
+    function getLayerContentBounds(layer) {
+        var bounds = null;
+        var index;
+
+        if (isPanelPlacementHelperName(layer.name || "")) {
+            return null;
+        }
+
+        for (index = 0; index < layer.pageItems.length; index += 1) {
+            bounds = mergeBounds(bounds, getArtworkItemBounds(layer.pageItems[index]));
+        }
+        for (index = 0; index < layer.layers.length; index += 1) {
+            bounds = mergeBounds(bounds, getLayerContentBounds(layer.layers[index]));
+        }
+        return bounds;
+    }
+
+    function getFirstLegendTextFrame(documentRef, panelNumber) {
+        try {
+            return getLegendLayer(documentRef, panelNumber).textFrames.getByName(
+                NAMES.legendTextPrefix + "1"
+            );
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function findGuideYInItems(items, guideName) {
+        var index;
+        var item;
+        var found;
+
+        for (index = 0; index < items.length; index += 1) {
+            item = items[index];
+            if (item.name === guideName && item.geometricBounds) {
+                return item.geometricBounds[1];
+            }
+            if (item.typename === "GroupItem") {
+                found = findGuideYInItems(item.pageItems, guideName);
+                if (found !== null) {
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
+
+    function findGuideYInLayer(layer, guideName) {
+        var found = findGuideYInItems(layer.pageItems, guideName);
+        var index;
+
+        if (found !== null) {
+            return found;
+        }
+
+        for (index = 0; index < layer.layers.length; index += 1) {
+            found = findGuideYInLayer(layer.layers[index], guideName);
+            if (found !== null) {
+                return found;
+            }
+        }
+        return null;
+    }
+
+    function getPanelGraphStartGuideY(documentRef, panelNumber) {
+        return findGuideYInLayer(
+            getPanelLayer(documentRef, panelNumber),
+            "Guia inicio grafico panel " + panelNumber
+        );
+    }
+
+    function getSplitSourceGroup(blockItem) {
+        var current = blockItem;
+
+        while (
+            current &&
+            current.typename === "GroupItem" &&
+            current.pageItems.length === 1 &&
+            current.pageItems[0].typename === "GroupItem"
+        ) {
+            current = current.pageItems[0];
+        }
+        return current && current.typename === "GroupItem" ? current : null;
+    }
+
+    function getVerticalArtworkCandidates(group) {
+        var result = [];
+        var index;
+        var item;
+        var bounds;
+
+        for (index = 0; index < group.pageItems.length; index += 1) {
+            item = group.pageItems[index];
+            if (item.hidden) {
+                continue;
+            }
+
+            bounds = getArtworkItemBounds(item);
+            if (bounds) {
+                result.push({
+                    item: item,
+                    bounds: bounds,
+                    centerY: (bounds[1] + bounds[3]) / 2
+                });
+            }
+        }
+
+        result.sort(function (a, b) {
+            return b.centerY - a.centerY;
+        });
+        return result;
+    }
+
+    function getClusterSplitIndexes(candidates, clusterCount) {
+        var gaps = [];
+        var index;
+        var splitIndexes = [];
+
+        for (index = 1; index < candidates.length; index += 1) {
+            gaps.push({
+                index: index,
+                gap: candidates[index - 1].centerY - candidates[index].centerY
+            });
+        }
+
+        gaps.sort(function (a, b) {
+            return b.gap - a.gap;
+        });
+
+        for (index = 0; index < clusterCount - 1 && index < gaps.length; index += 1) {
+            splitIndexes.push(gaps[index].index);
+        }
+
+        splitIndexes.sort(function (a, b) {
+            return a - b;
+        });
+        return splitIndexes;
+    }
+
+    function splitArtworkCandidates(candidates, clusterCount) {
+        var splitIndexes = getClusterSplitIndexes(candidates, clusterCount);
+        var clusters = [];
+        var startIndex = 0;
+        var splitNumber;
+        var endIndex;
+
+        for (splitNumber = 0; splitNumber <= splitIndexes.length; splitNumber += 1) {
+            endIndex = splitNumber < splitIndexes.length ?
+                splitIndexes[splitNumber] :
+                candidates.length;
+            clusters.push(candidates.slice(startIndex, endIndex));
+            startIndex = endIndex;
+        }
+
+        return clusters;
+    }
+
+    function moveArtworkClusterToLayer(cluster, layer) {
+        var items = [];
+        var index;
+
+        for (index = 0; index < cluster.length; index += 1) {
+            items.push(cluster[index].item);
+        }
+        moveItemsToLayer(items, layer);
+    }
+
+    function removeItemIfEmpty(item) {
+        try {
+            if (item.typename === "GroupItem" && item.pageItems.length === 0) {
+                item.remove();
+            }
+        } catch (error) {
+            // Si Illustrator no permite retirar el contenedor, no afecta a la colocación.
+        }
+    }
+
+    function distributeLooseArtworkBlock(documentRef, panelCount, looseArtworkItems) {
+        var sourceGroup;
+        var candidates;
+        var clusters;
+        var panelNumber;
+
+        if (panelCount <= 1 || looseArtworkItems.length !== 1) {
+            return false;
+        }
+
+        sourceGroup = getSplitSourceGroup(looseArtworkItems[0]);
+        if (!sourceGroup) {
+            return false;
+        }
+
+        candidates = getVerticalArtworkCandidates(sourceGroup);
+        if (candidates.length < panelCount) {
+            return false;
+        }
+
+        clusters = splitArtworkCandidates(candidates, panelCount);
+        if (clusters.length !== panelCount) {
+            return false;
+        }
+
+        for (panelNumber = 1; panelNumber <= panelCount; panelNumber += 1) {
+            moveArtworkClusterToLayer(
+                clusters[panelNumber - 1],
+                getPanelLayer(documentRef, panelNumber)
+            );
+        }
+
+        removeItemIfEmpty(sourceGroup);
+        removeItemIfEmpty(looseArtworkItems[0]);
+        return true;
+    }
+
+    function translateItems(items, horizontalOffset, verticalOffset) {
+        var index;
+
+        for (index = 0; index < items.length; index += 1) {
+            items[index].translate(horizontalOffset, verticalOffset);
+        }
+    }
+
+    function getPanelOneGraphStartY(titleLineCount, hasPanelTitle, hasUnits) {
+        var starts = hasPanelTitle ?
+            PANEL_GRAPH_START_WITH_TITLE :
+            PANEL_GRAPH_START_WITHOUT_TITLE;
+        var startY = starts[titleLineCount - 1];
+
+        if (hasUnits) {
+            startY += millimetersToPoints(PANEL_GRAPH_UNIT_OFFSET_MM);
+        }
+        return startY;
+    }
+
+    function positionPanelArtworkX(documentRef, panelNumber) {
+        var artworkGroup = getPanelArtworkGroup(documentRef, panelNumber);
+        var bounds;
+        var horizontalOffset;
+
+        if (!artworkGroup) {
+            return false;
+        }
+
+        bounds = getItemsBounds([artworkGroup]);
+        if (!bounds) {
+            return false;
+        }
+
+        horizontalOffset = millimetersToPoints(PANEL_GRAPH_LEFT_MM) - bounds[0];
+        artworkGroup.translate(horizontalOffset, 0);
+        return true;
+    }
+
+    function positionPanelOneArtwork(documentRef, titleLineCount, panelConfiguration) {
+        var artworkGroup = getPanelArtworkGroup(documentRef, 1);
+        var bounds;
+        var desiredTop;
+        var verticalOffset;
+
+        if (!artworkGroup) {
+            return false;
+        }
+
+        bounds = getItemsBounds([artworkGroup]);
+        if (!bounds) {
+            return false;
+        }
+
+        desiredTop = getPanelOneGraphStartY(
+            titleLineCount,
+            panelConfiguration.title !== "",
+            panelConfiguration.hasUnits
+        );
+        verticalOffset = desiredTop - bounds[1];
+        artworkGroup.translate(0, verticalOffset);
+        return true;
+    }
+
+    function alignPanelOneLegendsWithoutTitle(documentRef, titleLineCount, panelConfiguration) {
+        var firstLegendTextFrame;
+        var legendBounds;
+        var desiredLegendTop;
+        var verticalOffset;
+
+        if (panelConfiguration.title !== "") {
+            return false;
+        }
+
+        firstLegendTextFrame = getFirstLegendTextFrame(documentRef, 1);
+        if (!firstLegendTextFrame || firstLegendTextFrame.hidden) {
+            return false;
+        }
+
+        legendBounds = getItemsBounds([firstLegendTextFrame]);
+        if (!legendBounds) {
+            return false;
+        }
+
+        desiredLegendTop = getPanelOneGraphStartY(titleLineCount, false, false);
+        verticalOffset = desiredLegendTop - legendBounds[1];
+        translateLayerContents(getLegendLayer(documentRef, 1), verticalOffset);
+        return true;
+    }
+
+    function alignPanelArtworkToFirstLegend(documentRef, panelNumber, panelConfiguration) {
+        var artworkGroup = getPanelArtworkGroup(documentRef, panelNumber);
+        var firstLegendTextFrame = getFirstLegendTextFrame(documentRef, panelNumber);
+        var artworkBounds;
+        var legendBounds;
+        var verticalOffset;
+
+        if (!artworkGroup || !firstLegendTextFrame || firstLegendTextFrame.hidden) {
+            return false;
+        }
+
+        artworkBounds = getItemsBounds([artworkGroup]);
+        legendBounds = getItemsBounds([firstLegendTextFrame]);
+        if (!artworkBounds || !legendBounds) {
+            return false;
+        }
+
+        verticalOffset = legendBounds[1] - artworkBounds[1];
+        if (panelConfiguration.hasUnits) {
+            verticalOffset += millimetersToPoints(PANEL_GRAPH_UNIT_OFFSET_MM);
+        }
+
+        artworkGroup.translate(0, verticalOffset);
+        return true;
+    }
+
+    function alignFollowingPanelArtworkStart(documentRef, panelNumber, titleLineCount, panelConfiguration) {
+        var artworkGroup = getPanelArtworkGroup(documentRef, panelNumber);
+        var titleFrame;
+        var artworkBounds;
+        var titleToGraphGap;
+        var desiredGraphTop;
+        var verticalOffset;
+        var graphStartGuideY = getPanelGraphStartGuideY(documentRef, panelNumber);
+
+        if (!artworkGroup) {
+            return false;
+        }
+
+        artworkBounds = getItemsBounds([artworkGroup]);
+        if (!artworkBounds) {
+            return false;
+        }
+
+        if (graphStartGuideY !== null) {
+            desiredGraphTop = graphStartGuideY;
+            if (panelConfiguration.hasUnits) {
+                desiredGraphTop += millimetersToPoints(PANEL_GRAPH_UNIT_OFFSET_MM);
+            }
+            artworkGroup.translate(0, desiredGraphTop - artworkBounds[1]);
+            return true;
+        }
+
+        if (panelConfiguration.title === "") {
+            return alignPanelArtworkToFirstLegend(documentRef, panelNumber, panelConfiguration);
+        }
+
+        titleFrame = getPanelTitleFrame(documentRef, panelNumber);
+        if (!titleFrame || titleFrame.hidden) {
+            return false;
+        }
+
+        titleToGraphGap = PANEL_TITLE_TO_GRAPH_GAP_MM[titleLineCount - 1];
+        if (panelConfiguration.hasUnits) {
+            titleToGraphGap -= PANEL_GRAPH_UNIT_OFFSET_MM;
+        }
+
+        desiredGraphTop =
+            titleFrame.geometricBounds[3] - millimetersToPoints(titleToGraphGap);
+        verticalOffset = desiredGraphTop - artworkBounds[1];
+        artworkGroup.translate(0, verticalOffset);
+        return true;
+    }
+
+    function positionFollowingPanelArtwork(documentRef, panelNumber, titleLineCount, panelConfiguration) {
+        var previousPanelLayer = getPanelLayer(documentRef, panelNumber - 1);
+        var currentPanelLayer = getPanelLayer(documentRef, panelNumber);
+        var previousBounds;
+        var currentBounds;
+        var desiredPanelTop;
+        var verticalOffset;
+
+        alignFollowingPanelArtworkStart(
+            documentRef,
+            panelNumber,
+            titleLineCount,
+            panelConfiguration
+        );
+
+        previousBounds = getLayerContentBounds(previousPanelLayer);
+        currentBounds = getLayerContentBounds(currentPanelLayer);
+        if (!previousBounds || !currentBounds) {
+            return false;
+        }
+
+        desiredPanelTop = previousBounds[3] - millimetersToPoints(PANEL_GRAPH_GAP_MM);
+        verticalOffset = desiredPanelTop - currentBounds[1];
+        translateLayerContentsTemporarilyUnlocked(currentPanelLayer, verticalOffset);
+        return true;
+    }
+
+    function positionPanelArtworkForInput(documentRef, panelNumber, titleLineCount, panelConfigurations) {
+        positionPanelArtworkX(documentRef, panelNumber);
+        if (panelNumber === 1) {
+            positionPanelOneArtwork(
+                documentRef,
+                titleLineCount,
+                panelConfigurations[0]
+            );
+            alignPanelOneLegendsWithoutTitle(
+                documentRef,
+                titleLineCount,
+                panelConfigurations[0]
+            );
+            return true;
+        }
+        return positionFollowingPanelArtwork(
+            documentRef,
+            panelNumber,
+            titleLineCount,
+            panelConfigurations[panelNumber - 1]
+        );
+    }
+
+    function placePanelArtwork(documentRef, panelCount, panelConfigurations, titleLineCount) {
+        var looseArtworkItems = getLooseGraphArtworkItems(documentRef);
+        var panelNumber;
+        var panelLayer;
+        var legendLayer;
+        var misplacedArtworkItems;
+        var panelArtworkItems;
+        var missingPanels = [];
+
+        if (distributeLooseArtworkBlock(documentRef, panelCount, looseArtworkItems)) {
+            looseArtworkItems = getLooseGraphArtworkItems(documentRef);
+        }
+
+        for (panelNumber = 1; panelNumber <= panelCount; panelNumber += 1) {
+            panelLayer = getPanelLayer(documentRef, panelNumber);
+            legendLayer = getLegendLayer(documentRef, panelNumber);
+            misplacedArtworkItems = getUnexpectedLegendArtworkItems(legendLayer);
+
+            if (misplacedArtworkItems.length > 0) {
+                moveItemsToLayer(misplacedArtworkItems, panelLayer);
+            }
+
+            panelArtworkItems = getPanelArtworkItems(documentRef, panelNumber);
+            if (panelArtworkItems.length === 0 && looseArtworkItems.length > 0) {
+                moveItemsToLayer([looseArtworkItems.shift()], panelLayer);
+                panelArtworkItems = getPanelArtworkItems(documentRef, panelNumber);
+            }
+
+            if (panelArtworkItems.length === 0) {
+                missingPanels.push(panelNumber);
+            } else {
+                groupPanelArtwork(documentRef, panelNumber);
+            }
+        }
+
+        if (missingPanels.length > 0) {
+            alert(
+                "No se ha detectado arte de grafico para el Panel " +
+                missingPanels.join(", ") +
+                ". Pega o coloca cada grafico en su panel antes de recalcular posiciones."
+            );
+            return false;
+        }
+        return true;
+    }
+
+    function getPanelLegendFocusItems(documentRef, panelNumber, legendCount) {
+        var legendLayer = getLegendLayer(documentRef, panelNumber);
+        var result = [];
+        var legendNumber;
+        var textFrame;
+        var graphic;
+
+        for (legendNumber = 1; legendNumber <= legendCount; legendNumber += 1) {
+            textFrame = getByName(
+                legendLayer.textFrames,
+                NAMES.legendTextPrefix + legendNumber,
+                "el texto de leyenda"
+            );
+            graphic = getByName(
+                legendLayer.pathItems,
+                NAMES.legendGraphicPrefix + legendNumber,
+                "el gráfico de leyenda"
+            );
+            if (!textFrame.hidden) {
+                result.push(textFrame);
+            }
+            if (!graphic.hidden) {
+                result.push(graphic);
+            }
+        }
+        return result;
+    }
+
+    function getPanelFocusBounds(documentRef, panelNumber, legendCount) {
+        var items = [];
+        var artworkGroup = getPanelArtworkGroup(documentRef, panelNumber);
+        var titleFrame = getPanelTitleFrame(documentRef, panelNumber);
+        var legendItems = getPanelLegendFocusItems(documentRef, panelNumber, legendCount);
+        var index;
+
+        if (artworkGroup) {
+            items.push(artworkGroup);
+        }
+        if (titleFrame && !titleFrame.hidden) {
+            items.push(titleFrame);
+        }
+        for (index = 0; index < legendItems.length; index += 1) {
+            items.push(legendItems[index]);
+        }
+        return getItemsBounds(items);
+    }
+
+    function focusViewOnBounds(documentRef, bounds, marginMillimeters) {
+        var margin;
+        var width;
+        var height;
+        var view;
+        var viewBounds;
+        var viewWidth;
+        var viewHeight;
+        var zoom;
+
+        if (!bounds) {
+            return;
+        }
+
+        margin = millimetersToPoints(marginMillimeters);
+        bounds = [
+            bounds[0] - margin,
+            bounds[1] + margin,
+            bounds[2] + margin,
+            bounds[3] - margin
+        ];
+        width = bounds[2] - bounds[0];
+        height = bounds[1] - bounds[3];
+        if (width <= 0 || height <= 0) {
+            return;
+        }
+
+        view = documentRef.activeView;
+        view.centerPoint = [
+            (bounds[0] + bounds[2]) / 2,
+            (bounds[1] + bounds[3]) / 2
+        ];
+        viewBounds = view.bounds;
+        viewWidth = viewBounds[2] - viewBounds[0];
+        viewHeight = viewBounds[1] - viewBounds[3];
+        zoom = Math.min(viewWidth / width, viewHeight / height) * 0.9;
+        if (zoom > 0) {
+            view.zoom = zoom;
+        }
+    }
+
+    function preparePanelForLegendInput(documentRef, panelNumber, titleLineCount, panelConfigurations) {
+        var panelConfiguration = panelConfigurations[panelNumber - 1];
+
+        positionPanelArtworkForInput(
+            documentRef,
+            panelNumber,
+            titleLineCount,
+            panelConfigurations
+        );
+        focusViewOnBounds(
+            documentRef,
+            getPanelFocusBounds(documentRef, panelNumber, panelConfiguration.legendCount),
+            PANEL_VIEW_MARGIN_MM
+        );
+        refreshDocument();
     }
 
     function measureLegendLines(textFrame) {
@@ -996,10 +1969,10 @@
                 mediumRanges.push({start: content.length, length: labelParts.label.length});
                 content += labelParts.label + " " + labelParts.body;
             } else {
-                letterMatch = paragraphs[paragraphIndex].match(/^([a-zA-Z])(\.|[\t ]+)[\t ]*(.*)$/);
+                letterMatch = paragraphs[paragraphIndex].match(/^([a-zA-Z])(?:\.|[\t ]+)(?:[\t ]*)(.*)$/);
                 if (letterMatch) {
                     mediumRanges.push({start: content.length, length: 1});
-                    content += letterMatch[1] + "\t" + letterMatch[3];
+                    content += letterMatch[1] + "\t" + letterMatch[2];
                 } else {
                     content += paragraphs[paragraphIndex];
                 }
@@ -1116,20 +2089,19 @@
             NAMES.sourceLayer,
             "la capa de fuentes"
         );
-        var lastPanelTitle = getPanelTitleFrame(documentRef, panelCount);
-        var sourceFrame = getVisibleSourceFrame(documentRef);
-        var desiredSourceTop =
-            lastPanelTitle.geometricBounds[3] - millimetersToPoints(66);
-        var verticalOffset = desiredSourceTop - sourceFrame.geometricBounds[1];
-        var sourceItems = [];
-        var index;
+        var lastPanelBounds = getLayerContentBounds(getPanelLayer(documentRef, panelCount));
+        var sourceBounds = getLayerContentBounds(sourceLayer);
+        var desiredSourceTop;
+        var verticalOffset;
 
-        for (index = 0; index < sourceLayer.pageItems.length; index += 1) {
-            sourceItems.push(sourceLayer.pageItems[index]);
+        if (!lastPanelBounds || !sourceBounds) {
+            return false;
         }
-        for (index = 0; index < sourceItems.length; index += 1) {
-            sourceItems[index].translate(0, verticalOffset);
-        }
+
+        desiredSourceTop = lastPanelBounds[3] - millimetersToPoints(SOURCE_PANEL_GAP_MM);
+        verticalOffset = desiredSourceTop - sourceBounds[1];
+        translateLayerContents(sourceLayer, verticalOffset);
+        return true;
     }
 
     function setSourceText(documentRef, sourceText, paragraphText, addDownload) {
@@ -1222,9 +2194,12 @@
         }
         selectTheme(0);
 
-        panelGroup.orientation = "row";
+        panelGroup.orientation = "column";
         panelGroup.alignChildren = ["left", "center"];
         panelGroup.margins = 14;
+        var panelChecksGroup = panelGroup.add("group");
+        panelChecksGroup.orientation = "row";
+        panelChecksGroup.alignChildren = ["left", "center"];
 
         function selectPanel(selectedIndex) {
             var index;
@@ -1234,7 +2209,7 @@
         }
 
         for (panelNumber = 1; panelNumber <= 3; panelNumber += 1) {
-            panelChecks.push(panelGroup.add("checkbox", undefined, String(panelNumber)));
+            panelChecks.push(panelChecksGroup.add("checkbox", undefined, String(panelNumber)));
             panelChecks[panelChecks.length - 1].onClick = (function (selectedIndex) {
                 return function () {
                     selectPanel(selectedIndex);
@@ -1312,9 +2287,11 @@
     function showPanelConfigurationDialog(panelNumber) {
         var dialog = new Window("dialog", "Configuración del Panel " + panelNumber);
         var titleGroup = dialog.add("group");
+        var optionsGroup = dialog.add("group");
         var legendPanel = dialog.add("panel", undefined, "Número de leyendas");
         var buttons = dialog.add("group");
         var titleField;
+        var unitsCheck;
         var legendChecks = [];
         var legendNumber;
 
@@ -1326,6 +2303,11 @@
         titleGroup.add("statictext", undefined, "Título del panel:");
         titleField = titleGroup.add("edittext", undefined, "");
         titleField.characters = 38;
+
+        optionsGroup.orientation = "row";
+        optionsGroup.alignChildren = ["left", "center"];
+        unitsCheck = optionsGroup.add("checkbox", undefined, "El gráfico tiene unidades");
+        unitsCheck.value = false;
 
         legendPanel.orientation = "row";
         legendPanel.alignChildren = ["left", "center"];
@@ -1362,6 +2344,7 @@
             if (legendChecks[legendNumber].value) {
                 return {
                     title: titleField.text,
+                    hasUnits: unitsCheck.value,
                     legendCount: legendNumber
                 };
             }
@@ -1508,6 +2491,7 @@
         var paragraphsField;
         var defaultSourceCheck;
         var downloadCheck;
+        var downloadGroup;
         var validationPassed = false;
 
         dialog.orientation = "column";
@@ -1553,8 +2537,12 @@
         });
         paragraphsField.preferredSize = [480, 150];
 
-        downloadCheck = dialog.add("checkbox", undefined, "Añadir botón Descargar");
+        downloadGroup = dialog.add("group");
+        downloadGroup.orientation = "row";
+        downloadGroup.alignChildren = ["left", "center"];
+        downloadCheck = downloadGroup.add("checkbox", undefined, "Añadir botón Descargar");
         downloadCheck.value = false;
+        addDownloadIcon(downloadGroup);
 
         buttons.alignment = "right";
         buttons.add("button", undefined, "Cancelar", {name: "cancel"});
@@ -1673,11 +2661,28 @@
                 refreshDocument();
             }
 
+            if (!placePanelArtwork(
+                documentRef,
+                values.panelCount,
+                panelConfigurations,
+                titleLineCount
+            )) {
+                return;
+            }
+            refreshDocument();
+
             for (panelNumber = 1; panelNumber <= values.panelCount; panelNumber += 1) {
                 panelValues = panelConfigurations[panelNumber - 1];
                 if (panelValues.legendCount === 0) {
                     continue;
                 }
+
+                preparePanelForLegendInput(
+                    documentRef,
+                    panelNumber,
+                    titleLineCount,
+                    panelConfigurations
+                );
 
                 legendValues = showLegendDialog(
                     titleValues.graphNumber,
