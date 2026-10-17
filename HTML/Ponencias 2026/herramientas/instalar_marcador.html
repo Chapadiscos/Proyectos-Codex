@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Marcador Enlaces Hélice</title>
+<style>
+  body { font: 16px/1.5 -apple-system, sans-serif; max-width: 640px; margin: 40px auto; padding: 0 16px; color: #222; background: #fff; }
+  a.marcador { display: inline-block; padding: 10px 16px; background: #c55b17; color: #fff; border-radius: 6px; text-decoration: none; font-weight: 600; }
+  code { background: #f2f2f2; padding: 1px 4px; border-radius: 3px; }
+</style>
+</head>
+<body>
+<h1>Marcador «Enlaces Hélice»</h1>
+<p>Arrastra este botón a la barra de marcadores del navegador:</p>
+<p><a class="marcador" href="javascript:(()=>{const re=/(?:https?:\/\/[^\s&quot;'<>)]+)?\/uploads\/app\/\d+\/files\/[\w.-]+?\.(?:jpe?g|png|gif|webp)/gi;const u=new Set();for(const m of document.documentElement.innerHTML.matchAll(re)){u.add(m[0].startsWith('/')?location.origin+m[0]:m[0]);}const t=[...u].join('\n');if(!u.size)return alert('No he encontrado enlaces de imágenes en esta página.');navigator.clipboard.writeText(t).then(()=>alert(u.size+' enlaces copiados. Ahora ejecuta ./capitulo NN'),()=>prompt('Copia estos enlaces (⌘C):',t));})();">Enlaces Hélice</a></p>
+<h2>Uso</h2>
+<ol>
+  <li>En Hélice, abre la carpeta de imágenes del capítulo (con todas las imágenes visibles).</li>
+  <li>Pulsa el marcador: copia al portapapeles las URL de las imágenes.</li>
+  <li>En el Terminal, ejecuta <code>./capitulo NN</code>: guarda las URL en el <code>.txt</code> del capítulo y genera el HTML.</li>
+</ol>
+<p>No importa el orden ni que haya alguna URL de más: cada imagen se empareja por su contenido.</p>
+</body>
+</html>

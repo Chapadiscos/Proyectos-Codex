@@ -1,0 +1,7 @@
+beautifulsoup4
+lxml
+pyyaml
+requests
+zxing-cpp
+pillow
+pytest

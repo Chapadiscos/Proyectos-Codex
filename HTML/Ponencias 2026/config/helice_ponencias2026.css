@@ -1,0 +1,382 @@
+/*
+   -----------------AQUÍ EMPIEZAN LAS CSS DE PONENCIAS 2026 -------------------
+*/
+li.Bibliografia-PO26 {
+	color:#000000;
+	font-family: avenir-lt-pro, sans-serif;
+	font-size:8px;
+	font-style:normal;
+	font-variant:normal;
+	font-weight:200;
+	line-height:1.125;
+	list-style-position:outside;
+	list-style-type:decimal;
+	margin-bottom:0;
+	margin-left:-16px;
+	margin-right:0;
+	margin-top:0;
+	orphans:1;
+	page-break-after:auto;
+	page-break-before:auto;
+	text-align:justify;
+	text-align-last:left;
+	text-decoration:none;
+	text-indent:0;
+	text-transform:none;
+	widows:1;
+}
+p.Ladillos_Ladillo-1-PO26 {
+	-epub-hyphens: none;
+	color: #c55b17;
+	font-family: bc-civitas, sans-serif;
+	font-size: 11px;
+	font-style: normal;
+	font-variant: normal;
+	font-weight: 700;
+	line-height: 1.091;
+
+	margin-bottom: 12px;
+	margin-left: 0;
+	margin-right: 0;
+	margin-top: 24px;
+
+	/* Líneas superior e inferior del color del texto */
+	border-top: 1px solid currentColor;
+	border-bottom: 1px solid currentColor;
+
+	/* Espacio entre el texto y las líneas */
+	padding-top: 2px;
+	padding-bottom: 2px;
+
+	orphans: 1;
+	page-break-after: auto;
+	page-break-before: auto;
+	text-align: left;
+	text-decoration: none;
+	text-indent: 0;
+	text-transform: uppercase;
+	widows: 1;
+}
+
+p.Ladillos_Ladillo-2-PO26 {
+	-epub-hyphens:none;
+	color:#c55b17;
+	font-family: bc-civitas, sans-serif;
+	font-size:11px;
+	font-style:normal;
+	font-variant:normal;
+	font-weight:700;
+	line-height:1.091;
+	margin-bottom:12px;
+	margin-left:0;
+	margin-right:0;
+	margin-top:24px;
+	orphans:1;
+	page-break-after:auto;
+	page-break-before:auto;
+	text-align:left;
+	text-decoration:none;
+	text-indent:0;
+	text-transform:uppercase;
+	widows:1;
+}
+p.Ladillos_Ladillo-3-PO26 {
+	-epub-hyphens:none;
+	color:#c55b17;
+	font-family: bc-civitas, sans-serif;
+	font-size:11px;
+	font-style:normal;
+	font-variant:normal;
+	font-weight:700;
+	line-height:1.091;
+	margin-bottom:12px;
+	margin-left:0;
+	margin-right:0;
+	margin-top:24px;
+	orphans:1;
+	page-break-after:auto;
+	page-break-before:auto;
+	text-align:left;
+	text-decoration:none;
+	text-indent:0;
+	text-transform:none;
+	widows:1;
+}
+li.Ladillos_Viñetas_Viñeta-1--•--PO26 {
+	color:#000000;
+	font-family: neue-haas-grotesk-display, sans-serif;
+	font-size:10px;
+	font-style:normal;
+	font-variant:normal;
+	font-weight:400;
+	line-height:1.2;
+	list-style-position:outside;
+	list-style-type:disc;
+	margin-bottom:0px;
+	margin-left:-14px;
+	margin-right:0;
+	margin-top:0;
+	orphans:1;
+	page-break-after:auto;
+	page-break-before:auto;
+	text-align:justify;
+	text-align-last:left;
+	text-decoration:none;
+	text-indent:0;
+	text-transform:none;
+	widows:1;
+}
+li.Ladillos_Viñetas_Viñeta-2-----PO26 {
+	color: #000000;
+	font-family: neue-haas-grotesk-display, sans-serif;
+	font-size: 10px;
+	font-style: normal;
+	font-variant: normal;
+	font-weight: 400;
+	line-height: 1.2;
+	list-style: none; /* elimina la viñeta nativa */
+	list-style-position: outside;
+	margin-bottom: 0;
+	margin-left: -28px;
+	margin-right: 0;
+	margin-top: 0;
+	orphans: 1;
+	page-break-after: auto;
+	page-break-before: auto;
+	text-align: justify;
+	text-align-last: left;
+	text-decoration: none;
+	text-indent: 0;
+	text-transform: none;
+	widows: 1;
+}
+
+li.Ladillos_Viñetas_Viñeta-2-----PO26::before {
+	content: "-";
+	display: inline-block;
+	width: 8px;
+	margin-left: -12px;
+}
+li.Ladillos_Viñetas_Viñeta-3-----PO26 {
+	color: #000000;
+	font-family: neue-haas-grotesk-display, sans-serif;
+	font-size: 10px;
+	font-style: normal;
+	font-variant: normal;
+	font-weight: 400;
+	line-height: 1.2;
+	list-style: none;
+	margin: 0 0 0 -26px;
+	orphans: 1;
+	page-break-after: auto;
+	page-break-before: auto;
+	text-align: justify;
+	text-align-last: left;
+	text-decoration: none;
+	text-indent: 0;
+	text-transform: none;
+	widows: 1;
+}
+
+li.Ladillos_Viñetas_Viñeta-3-----PO26::before {
+	content: "›";
+	display: inline-block;
+	width: 8px;
+	margin-left: -12px;
+}
+li.Ladillos_Viñetas_Viñeta-4-----PO26 {
+	color: #000000;
+	font-family: neue-haas-grotesk-display, sans-serif;
+	font-size: 10px;
+	font-style: normal;
+	font-variant: normal;
+	font-weight: 400;
+	line-height: 1.2;
+	list-style: none;
+	margin-bottom: 0px;
+	margin-left: -32px;
+	margin-right: 0;
+	margin-top: 0;
+	orphans: 1;
+	page-break-after: auto;
+	page-break-before: auto;
+	text-align: justify;
+	text-align-last: left;
+	text-decoration: none;
+	text-indent: 0;
+	text-transform: none;
+	widows: 1;
+}
+
+li.Ladillos_Viñetas_Viñeta-4-----PO26::before {
+	content: "»";
+	display: inline-block;
+	width: 6px;
+	margin-left: -12px;
+}
+p.P-rrafo-b-sico {
+	color:#000000;
+	font-family:"Minion Pro", serif;
+	font-size:12px;
+	font-style:normal;
+	font-variant:normal;
+	font-weight:normal;
+	line-height:1.2;
+	margin-bottom:0;
+	margin-left:0;
+	margin-right:0;
+	margin-top:0;
+	orphans:1;
+	page-break-after:auto;
+	page-break-before:auto;
+	text-align:left;
+	text-decoration:none;
+	text-indent:0;
+	text-transform:none;
+	widows:1;
+}
+p.Nota-pie-pagina {
+	color:#000000;
+	font-family: neue-haas-grotesk-display, sans-serif;
+	font-size:9px;
+	font-style:italic;
+	font-variant:normal;
+	font-weight:400;
+	line-height:1.2;
+	margin-bottom:0;
+	margin-left:0;
+	margin-right:0;
+	margin-top:0;
+	orphans:1;
+	page-break-after:auto;
+	page-break-before:auto;
+	text-align:justify;
+	text-align-last:left;
+	text-decoration:none;
+	text-indent:0;
+	text-transform:none;
+	widows:1;
+}
+p.Pie-Figura-PO26 {
+	color:#000000;
+	font-family: bc-civitas, sans-serif;
+	font-size:8px;
+	font-style:normal;
+	font-variant:normal;
+	font-weight: 400;
+	line-height:1.1;
+	margin-bottom:8px;
+	margin-left:0;
+	margin-right:0;
+	margin-top:0;
+	orphans:1;
+	page-break-after:auto;
+	page-break-before:auto;
+	text-align:left;
+	text-decoration:none;
+	text-indent:0;
+	text-transform:none;
+	widows:1;
+}
+p.Texto-base---Viñeta-PO26 {
+	color:#000000;
+	font-family: neue-haas-grotesk-display, sans-serif;
+	font-size:10px;
+	font-style:normal;
+	font-variant:normal;
+	font-weight:400;
+	line-height:1.2;
+	margin-bottom:0;
+	margin-left:26px;
+	margin-right:0;
+	margin-top:0;
+	orphans:1;
+	page-break-after:auto;
+	page-break-before:auto;
+	text-align:justify;
+	text-align-last:left;
+	text-decoration:none;
+	text-indent:0;
+	text-transform:none;
+	widows:1;
+}
+p.Texto-base-PO26 {
+	color:#000000;
+	font-family: neue-haas-grotesk-display, sans-serif;
+	font-weight: 400;
+	font-style: normal;
+	font-size:10px;
+	font-variant:normal;
+	line-height:1.2;
+	margin-bottom:0;
+	margin-left:0;
+	margin-right:0;
+	margin-top:0;
+	orphans:1;
+	page-break-after:auto;
+	page-break-before:auto;
+	text-align:justify;
+	text-align-last:left;
+	text-decoration:none;
+	text-indent:14px;
+	text-transform:none;
+	widows:1;
+}
+
+span._5-Light-Italic-PO26 {
+font-family: neue-haas-grotesk-display, sans-serif;
+font-weight: 400;
+font-style: normal;
+}
+span._5-Light-PO26 {
+	color:#000000;
+	font-family: neue-haas-grotesk-display, sans-serif;
+	font-size:10px;
+	font-style:normal;
+	font-variant:normal;
+	font-weight:400;
+	text-transform:none;
+}
+span._6-Light-Italic-PO26 {
+	font-style:italic;
+	font-weight:normal;
+}
+span._5-Medium-Italic-PO26 {
+	font-style:italic;
+	font-weight:normal;
+}
+span._5-Medium-PO26 {
+	font-style:normal;
+	font-weight:600;
+}
+span._6-Medium-Italic-PO26 {
+font-family: neue-haas-grotesk-display, sans-serif;
+font-weight: 600;
+font-style: italic;
+}
+
+span.Bold-PO26 {
+	font-style:normal;
+	font-weight:bold;
+}
+span.Figura-X-PO26 {
+	color:#c55b17;
+	font-style:normal;
+	font-weight:bold;
+}
+span.Italic-PO26 {
+font-family: avenir-lt-pro, sans-serif;
+font-weight: 200;
+font-style: italic;
+}
+span.Sub-PO26 {
+	vertical-align:sub;
+}
+span.Super-PO26 {
+	vertical-align:super;
+}
+span.Symbol-PO26 {
+	font-family:Symbol, sans-serif;
+	font-style:normal;
+	font-weight:normal;
+}

@@ -1,0 +1,105 @@
+# Configuración del depurador (Ponencias 2026 → Hélice).
+# Las rutas relativas de esta sección son relativas a esta carpeta (config/).
+
+# Libro: ./capitulo NN trabaja en la carpeta "NN …" de aquí
+libro:
+  carpeta: "/Volumes/MACLINE SERVER/LIBROS/PONENCIA SEO 2026/Ponencias 2026 (APP)"
+  nombre_txt: "{n:02d}Ponencias2026.txt"   # si el capítulo aún no tiene .txt
+  sufijo_salida: " - Helice"                # "33 Ponencias 2026 (APP) - Helice.html"
+
+# Activar / desactivar pasos (por defecto todos activos)
+pasos:
+  estilos_capitulo: true
+  limpieza: true
+  correcciones_indesign: true
+  imagenes: true
+  reglas_helice: true
+  inyectar: true
+  salida: true
+
+# En Hélice solo están las clases de estilo del libro (Texto-base-PO26, Ladillos_…).
+# Lo que es propio de cada capítulo se pasa a style="" antes de limpiar.
+estilos_capitulo:
+  clases_anulacion:
+    - "CharOverride-\\d+"
+    - "ParaOverride-\\d+"
+    - "_idGen(Char|Para)Override-\\d+"
+  # Propiedades de las anulaciones que se conservan, por etiqueta. Los márgenes de
+  # párrafos y listas no: la CSS de Hélice ya los tiene ajustados para la web.
+  propiedades:
+    span: [font-size, font-style, font-weight, color, vertical-align, text-decoration, text-transform, font-family]
+    p: [text-indent]                       # p. ej. subtítulos sin sangría
+    li: [list-style-type]                  # listas numeradas (decimal)
+  # Fuente de InDesign -> familia de Typekit (kit rrc2czj)
+  fuentes:
+    "Avenir Light": avenir-lt-pro
+    "Avenir Book": avenir-lt-pro
+    "BC Civitas": bc-civitas
+    "BC Civitas SemiBold": bc-civitas
+    "NeueHaasGroteskDisp Pro Lt": neue-haas-grotesk-display
+  # Fuentes que se quitan sin avisar: el carácter ya está en Unicode (ε, µ, ±…)
+  fuentes_descartar: [Symbol]
+  # Clases sin regla en Hélice que se conservan como estilo
+  clases_a_estilo:
+    noPartir-PO26: {white-space: nowrap}
+  # Imágenes: tamaño natural, sin pasar del ancho del visor y centradas (el % se pone a mano)
+  estilo_imagen: {display: block, max-width: 100%, height: auto, margin: 0 auto}
+
+limpieza:
+  # Expresiones regulares (nombre completo de la clase / id)
+  clases_eliminar:
+    - "_idGen.*"
+    - "CharOverride-\\d+"
+    - "ParaOverride-\\d+"
+    - "noPartir-PO26"
+    - "Marco-.*"          # estilos de objeto de InDesign (marcos); sin regla en Hélice
+  ids_eliminar:
+    - "_idContainer\\d+"
+    - "_idTextAnchor\\d+" # solo se quita si ningún enlace interno apunta a él
+  quitar_style_inline: false
+  fusionar_spans_iguales: true
+  eliminar_parrafos_vacios: false
+  css_eliminar:
+    - "-web-resources/"   # la CSS local de InDesign; en Hélice ya está la del libro
+
+correcciones_indesign:
+  quitar_invisibles: true
+  # Reemplazos con expresión regular sobre el HTML en bruto
+  reemplazos: []
+  #  - nombre: ejemplo
+  #    buscar: "<p class=\"Normal\">\\s*</p>"
+  #    sustituir: ""
+  # activas: [br_al_final_de_parrafo, pie_debajo, jerarquia_vinetas]   # si se omite, todas
+  clase_pie: "Pie-Figura"          # regla 2: el pie va debajo de la imagen
+  nivel_vineta: "Viñeta-(\\d+)"    # regla 3: nivel de cada viñeta según su clase
+
+imagenes:
+  lista_urls: "*.txt"       # junto al HTML: una URL de Hélice por línea
+  cache: .cache/imagenes    # relativa a la raíz del proyecto
+
+reglas_helice:
+  clase_ladillo: "Ladillo-\\d"
+  clase_pie: "Pie-Figura"
+  cabecera: "^C\\d+\\."            # regla 6: se enlaza a la URL de su QR (pestaña nueva)
+  entre_ladillos: '<p style="margin-top: -1.3em; margin-bottom: 0.3em;"></p>'   # regla 7
+  ideas_basicas:                   # regla 8: imágenes estrechas
+    patron: "^IB\\d+\\."
+    estilo: {max-width: 60%, display: block, margin: 0 auto}
+
+inyectar:
+  incrustar_css_local: false
+  head:
+    - html: |
+        <!-- Adobe Fonts -->
+        <link rel="stylesheet" href="https://use.typekit.net/rrc2czj.css">
+  inicio_body: []
+  fin_body: []
+  # Otras formas:  - css_url: "https://..."   - archivo: algo.css (como: style)
+
+salida:
+  modo: pagina            # pagina | fragmento (solo el contenido, para pegar en un editor)
+  # Copia local de la CSS subida a Hélice: genera salida/<nombre>.vista.html para revisar
+  vista_previa_css: helice_ponencias2026.css
+  # Estilos de InDesign que no deben aparecer en el documento (se avisa si se usan)
+  estilos_no_permitidos:
+    - P-rrafo-b-sico
