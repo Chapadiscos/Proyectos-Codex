@@ -6,3 +6,4 @@ salida/
 entrada/
 *.indd
 .DS_Store
+*.app/

@@ -259,3 +259,38 @@ def test_capitulo_dentro_de_un_marco_de_texto(tmp_path):
         '<div class="M"><img alt="" src="F1.jpg"/></div><p class="Pie-Figura-PO26">pie</p><br/>'
         '<p class="Texto">t2</p><br/><div class="M"><img alt="" src="F2.jpg"/></div></div></body>'
     )
+
+
+def test_urls_del_marcador_solo_acepta_listas_de_urls():
+    from depurar.capitulo import urls_del_marcador
+
+    lista = "https://h/uploads/app/1/files/a.jpg\nhttps://h/uploads/app/1/files/b.jpg\nhttps://h/uploads/app/1/files/a.jpg\n"
+    assert urls_del_marcador(lista) == ["https://h/uploads/app/1/files/a.jpg", "https://h/uploads/app/1/files/b.jpg"]
+    # El HTML de un capítulo anterior también contiene URL de Hélice: no vale
+    assert urls_del_marcador('<img src="https://h/uploads/app/1/files/a.jpg"/>') == []
+    assert urls_del_marcador("") == []
+
+
+def test_informacion_no_cuenta_como_aviso():
+    inf = Informe()
+    inf.informar("enlace de C1.jpg: https://x")
+    assert inf.avisos == [] and "Información:" in inf.texto()
+
+
+def test_imagenes_por_parecido_visual_si_cambia_el_jpeg(tmp_path):
+    from PIL import Image
+
+    (tmp_path / "img").mkdir()
+    cache = tmp_path / ".cache"
+    cache.mkdir()
+    base = Image.new("RGB", (40, 30), (120, 60, 30))
+    base.save(tmp_path / "img" / "F1.jpg", quality=95)
+    base.save(cache / "111.jpg", quality=90)  # misma imagen, otros bytes
+    Image.new("RGB", (40, 30), (0, 200, 0)).save(cache / "222.jpg")  # misma talla, otra imagen
+    (tmp_path / "urls.txt").write_text("https://h/111.jpg\nhttps://h/222.jpg\n", encoding="utf-8")
+
+    s = _soup('<img src="img/F1.jpg">')
+    inf = Informe()
+    p04_imagenes.aplicar(s, {"cache": ".cache"}, _ctx(tmp_path), inf)
+    assert s.img["src"] == "https://h/111.jpg"
+    assert inf.cambios["imágenes con URL de Hélice (por parecido visual)"] == 1

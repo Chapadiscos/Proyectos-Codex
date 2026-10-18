@@ -56,7 +56,7 @@ def _enlace_cabecera(soup, cfg, ctx, informe):
             continue
         img.wrap(soup.new_tag("a", attrs={"href": urls[0], "target": "_blank", "rel": "noopener"}))
         informe.contar("cabecera enlazada a la URL de su QR")
-        informe.avisar(f"enlace de {nombre}: {urls[0]}")
+        informe.informar(f"enlace de {nombre}: {urls[0]}")
 
 
 def _ideas_basicas(soup, cfg, ctx, informe):
