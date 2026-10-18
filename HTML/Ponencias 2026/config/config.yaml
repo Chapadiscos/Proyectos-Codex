@@ -30,6 +30,13 @@ estilos_capitulo:
     span: [font-size, font-style, font-weight, color, vertical-align, text-decoration, text-transform, font-family]
     p: [text-indent]                       # p. ej. subtítulos sin sangría
     li: [list-style-type]                  # listas numeradas (decimal)
+  # Valores de las anulaciones que no se copian. "font-weight: normal" en InDesign es
+  # «la versión normal de la familia» (p. ej. Avenir Light Oblique), pero en la web es
+  # 400 y se impone a la CSS: las cursivas de la bibliografía salían más gruesas.
+  valores_descartar:
+    font-weight: [normal, "400"]
+  equivalencias:
+    font-style: {oblique: italic}          # Typekit trae cursivas reales
   # Fuente de InDesign -> familia de Typekit (kit rrc2czj)
   fuentes:
     "Avenir Light": avenir-lt-pro

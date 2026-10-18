@@ -30,13 +30,19 @@ def _anulaciones(soup, cfg, por_clase, informe):
     propiedades = cfg.get("propiedades", {})
     fuentes = cfg.get("fuentes", {})
     descartar = cfg.get("fuentes_descartar", [])
+    valores_descartar = cfg.get("valores_descartar", {})
+    equivalencias = cfg.get("equivalencias", {})
     for tag in soup.find_all(class_=True):
         permitidas = propiedades.get(tag.name, [])
         for clase in tag["class"]:
             if not any(p.fullmatch(clase) for p in patrones):
                 continue
             decl = {**por_clase.get((None, clase), {}), **por_clase.get((tag.name, clase), {})}
-            nuevas = {k: v for k, v in decl.items() if k in permitidas}
+            nuevas = {
+                k: equivalencias.get(k, {}).get(v, v)
+                for k, v in decl.items()
+                if k in permitidas and v not in valores_descartar.get(k, [])
+            }
             if "font-family" in nuevas:
                 familia = nuevas["font-family"].split(",")[0].strip().strip('"')
                 if familia in fuentes:

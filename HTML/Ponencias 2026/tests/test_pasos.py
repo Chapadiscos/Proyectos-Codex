@@ -294,3 +294,27 @@ def test_imagenes_por_parecido_visual_si_cambia_el_jpeg(tmp_path):
     p04_imagenes.aplicar(s, {"cache": ".cache"}, _ctx(tmp_path), inf)
     assert s.img["src"] == "https://h/111.jpg"
     assert inf.cambios["imágenes con URL de Hélice (por parecido visual)"] == 1
+
+
+def test_cursiva_light_no_engorda_por_font_weight_normal(tmp_path):
+    """Bibliografía: InDesign exporta Avenir Light Oblique como oblique + font-weight normal."""
+    (tmp_path / "css").mkdir()
+    (tmp_path / "css" / "id.css").write_text(
+        "span.CharOverride-1 { font-style:oblique; font-weight:normal; }\n"
+        "span.CharOverride-2 { font-weight:bold; }",
+        encoding="utf-8",
+    )
+    s = _soup(
+        '<html><head><link href="css/id.css" rel="stylesheet"></head><body><ol><li class="Bibliografia-PO26">'
+        '<span class="Italic-PO26 CharOverride-1">Ophthalmology</span> <span class="CharOverride-2">B</span></li></ol></body></html>'
+    )
+    cfg = {
+        "clases_anulacion": ["CharOverride-\\d+"],
+        "propiedades": {"span": ["font-style", "font-weight"]},
+        "valores_descartar": {"font-weight": ["normal", "400"]},
+        "equivalencias": {"font-style": {"oblique": "italic"}},
+    }
+    p01_estilos_capitulo.aplicar(s, cfg, _ctx(tmp_path), Informe())
+    spans = s.find_all("span")
+    assert spans[0]["style"] == "font-style: italic"
+    assert spans[1]["style"] == "font-weight: bold"
