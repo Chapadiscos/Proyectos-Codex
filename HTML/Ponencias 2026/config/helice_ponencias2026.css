@@ -268,7 +268,7 @@ p.Pie-Figura-PO26 {
 	margin-bottom:8px;
 	margin-left:0;
 	margin-right:0;
-	margin-top:0;
+	margin-top:1mm; /* separación entre la imagen y el pie */
 	orphans:1;
 	page-break-after:auto;
 	page-break-before:auto;
