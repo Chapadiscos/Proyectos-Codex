@@ -1,0 +1,28 @@
+.claude/settings.local.json
+
+# Sistema y temporales
+.DS_Store
+~ai-*.tmp
+*.tmp
+__pycache__/
+*.pyc
+tmp/
+.vscode/
+
+# Solo se versiona el código: los documentos de trabajo se quedan fuera
+*.pdf
+*.ai
+*.ait
+*.indd
+*.indb
+*.idml
+*.zip
+*.docx
+
+# Informes y registros que generan los scripts
+*_out.txt
+*report*.txt
+*_log.txt
+*_debug.txt
+*-inspect.txt
+.FsSyncLocks/

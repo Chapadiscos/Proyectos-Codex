@@ -1,4 +1,5 @@
 #target illustrator
+#targetengine "bde_generator"
 
 /*
  * Base modular del generador de gráficos BdE.
@@ -33,17 +34,31 @@
     var LEGEND_TEXT_WIDTH_MM = 40.4;
     var LEGEND_LINE_OFFSET_MM = 2.822;
     var LEGEND_TEXT_BASE_HEIGHT = 7.7;
+    var MAX_LEGEND_COUNT = 7;
+    var PANEL_UNITS_LEFT_MM = 8;
+    var PANEL_UNITS_UP_OFFSET_MM = 0.35;
+    var PANEL_UNITS_PANEL_TITLE_GAP_MM = 2.5;
+    var PANEL_UNITS_MAIN_TITLE_GAP_MM = 4.5;
+    var PANEL_UNITS_GRAPH_START_GAP_MM = 2.5;
     var SOURCE_TAB_POSITION = 8.50393962860107;
     var SOURCE_HEIGHT_PADDING_MM = 1.5;
+    var SOURCE_INFO_ONLY_OFFSET_MM = 12;
     var CHART_PATTERN_MIN_AREA_MM2 = 3;
     var CHART_PATTERN_VIEW_MARGIN_MM = 18;
     var PANEL_GRAPH_LEFT_MM = 3;
-    var PANEL_GRAPH_UNIT_OFFSET_MM = 3.5;
+    var PANEL_GRAPH_UP_OFFSET_MM = 0.5;
+    var PANEL_GRAPH_UNIT_OFFSET_MM = 0.7;
     var PANEL_GRAPH_GAP_MM = 8.5;
     var SOURCE_PANEL_GAP_MM = 5;
     var PANEL_TITLE_TO_GRAPH_GAP_MM = [7.377, 7.415, 7.323];
     var PANEL_GRAPH_START_WITH_TITLE = [-67.53, -81.81, -91.47];
     var PANEL_GRAPH_START_WITHOUT_TITLE = [-50.57, -64.85, -74.51];
+    var PANEL_TITLE_MAX_LINES = 3;
+    var PANEL_TITLE_LEADING_PT = 9.6;
+    var PANEL_TITLE_GUIDE_BACKGROUND_BY_PANEL = {
+        1: "Fondo Título 2 líneas",
+        2: "Fondo Titulo 3 líneas"
+    };
     var OVERSIZED_ARTWORK_WIDTH_MM = 190;
     var OVERSIZED_ARTWORK_HEIGHT_MM = 260;
     var PANEL_VIEW_MARGIN_MM = 8;
@@ -58,12 +73,6 @@
         "Trama - Rosa": "Trama lineas oblicuas abajo"
     };
     var LEGEND_FORMATS = [
-        {label: "Marcador - Cuadrado", type: "brush", name: "Marcador Cuadrado"},
-        {label: "Marcador - Triángulo", type: "brush", name: "Marcados Triángulo"},
-        {label: "Marcador - Redondo", type: "brush", name: "Marcador Redondo"},
-        {label: "Marcador - Línea", type: "brush", name: "Marcador Linea"},
-        {label: "Marcador - Diamante", type: "brush", name: "Marcador Diamante"},
-        {label: "Marcador - Línea 2", type: "brush", name: "Marcador Linea 2"},
         {label: "Línea - Negro", type: "style", name: "Negro línea"},
         {label: "Línea - Verde", type: "style", name: "Verde linea"},
         {label: "Línea - Amarillo", type: "style", name: "Amarillo linea"},
@@ -79,15 +88,25 @@
         {label: "Trama - Naranja", type: "style", name: "Naranja trama"},
         {label: "Trama - Azul", type: "style", name: "Azul trama"},
         {label: "Trama - Rosa", type: "style", name: "Rosa trama"},
-        {label: "Trama - Marrón", type: "style", name: "Marron trama"}
+        {label: "Trama - Marrón", type: "style", name: "Marron trama"},
+        {label: "Marcador - Cuadrado", type: "brush", name: "Marcador Cuadrado"},
+        {label: "Marcador - Triángulo", type: "brush", name: "Marcados Triángulo"},
+        {label: "Marcador - Redondo", type: "brush", name: "Marcador Redondo"},
+        {label: "Marcador - Línea", type: "brush", name: "Marcador Linea"},
+        {label: "Marcador - Diamante", type: "brush", name: "Marcador Diamante"},
+        {label: "Marcador - Línea 2", type: "brush", name: "Marcador Linea 2"}
     ];
 
     var THEME_COLORS = {
-        "Documento DO": {
+        "Naranja (DO)": {
             mode: "CMYK",
             values: [9.18, 71.85, 98.2, 1.36]
         },
-        "Biblioteca": {
+        "Rojo/Cobre": {
+            mode: "CMYK",
+            values: [29, 76, 46, 26]
+        },
+        "Marrón (Biblioteca)": {
             mode: "CMYK",
             values: [21.2, 72.67, 70.61, 10.57]
         },
@@ -114,56 +133,197 @@
         $.sleep(150);
     }
 
-    function decodeBase64ToBinary(base64Text) {
-        var alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-        var output = "";
-        var buffer = 0;
-        var bits = 0;
-        var index;
-        var character;
-        var value;
+    function normalizeWindowBounds(bounds) {
+        var left;
+        var top;
+        var right;
+        var bottom;
 
-        for (index = 0; index < base64Text.length; index += 1) {
-            character = base64Text.charAt(index);
-            if (character === "=") {
-                break;
-            }
-            value = alphabet.indexOf(character);
-            if (value < 0) {
-                continue;
-            }
-            buffer = (buffer << 6) | value;
-            bits += 6;
-            if (bits >= 8) {
-                bits -= 8;
-                output += String.fromCharCode((buffer >> bits) & 255);
-            }
+        if (!bounds) {
+            return null;
         }
-        return output;
+
+        if (bounds.length === 4) {
+            left = bounds[0];
+            top = bounds[1];
+            right = bounds[2];
+            bottom = bounds[3];
+        } else if (
+            typeof bounds.left === "number" &&
+            typeof bounds.top === "number" &&
+            typeof bounds.right === "number" &&
+            typeof bounds.bottom === "number"
+        ) {
+            left = bounds.left;
+            top = bounds.top;
+            right = bounds.right;
+            bottom = bounds.bottom;
+        } else {
+            return null;
+        }
+
+        if (
+            typeof left !== "number" ||
+            typeof top !== "number" ||
+            typeof right !== "number" ||
+            typeof bottom !== "number" ||
+            isNaN(left) ||
+            isNaN(top) ||
+            isNaN(right) ||
+            isNaN(bottom)
+        ) {
+            return null;
+        }
+
+        return [
+            Math.min(left, right),
+            Math.min(top, bottom),
+            Math.max(left, right),
+            Math.max(top, bottom)
+        ];
     }
 
-    function getDownloadIconFile() {
-        var iconFile = File(Folder.temp.fsName + "/bde_download_icon_v2.png");
-
-        if (!iconFile.exists) {
-            iconFile.encoding = "BINARY";
-            iconFile.open("w");
-            iconFile.write(decodeBase64ToBinary(DOWNLOAD_ICON_PNG_BASE64));
-            iconFile.close();
-        }
-        return iconFile;
-    }
-
-    function addDownloadIcon(parent) {
-        var image;
+    function getActiveWindowBounds() {
+        var bounds = null;
 
         try {
-            image = parent.add("image", undefined, getDownloadIconFile());
-            image.preferredSize = [38, 38];
-            image.helpTip = "Botón Descargar";
-        } catch (error) {
-            parent.add("statictext", undefined, "↓");
+            if (app.activeWindow && app.activeWindow.bounds) {
+                bounds = normalizeWindowBounds(app.activeWindow.bounds);
+                if (bounds) {
+                    return bounds;
+                }
+            }
+        } catch (error1) {}
+
+        try {
+            if (app.windows && app.windows.length > 0 && app.windows[0].bounds) {
+                bounds = normalizeWindowBounds(app.windows[0].bounds);
+                if (bounds) {
+                    return bounds;
+                }
+            }
+        } catch (error2) {}
+
+        try {
+            if (
+                app.activeDocument &&
+                app.activeDocument.windows &&
+                app.activeDocument.windows.length > 0 &&
+                app.activeDocument.windows[0].bounds
+            ) {
+                bounds = normalizeWindowBounds(app.activeDocument.windows[0].bounds);
+                if (bounds) {
+                    return bounds;
+                }
+            }
+        } catch (error3) {}
+
+        try {
+            if (app.layoutWindows && app.layoutWindows.length > 0) {
+                bounds = normalizeWindowBounds(app.layoutWindows[0].bounds);
+                if (bounds) {
+                    return bounds;
+                }
+            }
+        } catch (error4) {}
+
+        return null;
+    }
+
+    function getBoundsIntersectionArea(firstBounds, secondBounds) {
+        var left = Math.max(firstBounds[0], secondBounds[0]);
+        var top = Math.max(firstBounds[1], secondBounds[1]);
+        var right = Math.min(firstBounds[2], secondBounds[2]);
+        var bottom = Math.min(firstBounds[3], secondBounds[3]);
+
+        if (right <= left || bottom <= top) {
+            return 0;
         }
+        return (right - left) * (bottom - top);
+    }
+
+    function getScreenBoundsForHostBounds(hostBounds) {
+        var screens;
+        var screenBounds;
+        var bestBounds = null;
+        var bestArea = 0;
+        var area;
+        var index;
+
+        try {
+            screens = $.screens;
+        } catch (screensError) {
+            screens = null;
+        }
+
+        if (!screens || screens.length === 0 || !hostBounds) {
+            return hostBounds;
+        }
+
+        for (index = 0; index < screens.length; index += 1) {
+            screenBounds = normalizeWindowBounds(
+                screens[index].visibleBounds || screens[index].bounds
+            );
+            if (!screenBounds) {
+                continue;
+            }
+            area = getBoundsIntersectionArea(hostBounds, screenBounds);
+            if (area > bestArea) {
+                bestArea = area;
+                bestBounds = screenBounds;
+            }
+        }
+
+        return bestBounds || hostBounds;
+    }
+
+    function applyWindowLocation(windowRef, left, top) {
+        try {
+            windowRef.frameLocation = [left, top];
+        } catch (frameError) {}
+        try {
+            windowRef.location = [left, top];
+        } catch (locationError) {}
+    }
+
+    function positionDialogOnActiveWindow(dialog) {
+        var hostBounds = getActiveWindowBounds();
+        var targetBounds;
+        var dialogSize;
+        var width;
+        var height;
+        var left;
+        var top;
+        var previousOnShow = dialog.onShow;
+
+        try {
+            dialog.layout.layout(true);
+        } catch (layoutError) {}
+
+        if (!hostBounds) {
+            dialog.center();
+            return;
+        }
+
+        dialogSize = dialog.preferredSize || dialog.size || [0, 0];
+        width = dialogSize[0] || 0;
+        height = dialogSize[1] || 0;
+
+        if (width <= 0 || height <= 0) {
+            dialog.center();
+            return;
+        }
+
+        targetBounds = getScreenBoundsForHostBounds(hostBounds);
+        left = targetBounds[0] + Math.round((targetBounds[2] - targetBounds[0] - width) / 2);
+        top = targetBounds[1] + Math.round((targetBounds[3] - targetBounds[1] - height) / 2);
+        applyWindowLocation(dialog, left, top);
+        dialog.onShow = function () {
+            if (previousOnShow) {
+                previousOnShow.call(dialog);
+            }
+            applyWindowLocation(dialog, left, top);
+        };
     }
 
     function getByName(collection, name, description) {
@@ -205,6 +365,10 @@
         return Boolean(item.guides) || isPanelPlacementHelperName(item.name || "");
     }
 
+    function isPanelUnitsFrameName(name) {
+        return /^Unidades panel [1-3]$/.test(name || "");
+    }
+
     function getPanelTitleFrame(documentRef, panelNumber) {
         var panelLayer = getPanelLayer(documentRef, panelNumber);
         var artworkGroupName = "Grafico panel " + panelNumber;
@@ -225,7 +389,8 @@
                 if (
                     item.typename === "TextFrame" &&
                     item.geometricBounds[0] < 100 &&
-                    !/^Texto leyenda [1-6]$/.test(item.name || "")
+                    !isExpectedLegendItem(item) &&
+                    !isPanelUnitsFrameName(item.name)
                 ) {
                     return item;
                 }
@@ -291,6 +456,18 @@
         }
     }
 
+    function rememberAndShowLayer(layer, visibilityStates) {
+        try {
+            visibilityStates.push({
+                layer: layer,
+                visible: layer.visible
+            });
+            layer.visible = true;
+        } catch (error) {
+            // Algunas capas especiales no permiten cambiar la visibilidad por script.
+        }
+    }
+
     function unlockPageItemTree(item, lockStates, guideStates) {
         var index;
 
@@ -307,13 +484,15 @@
     function unlockLayerTree(layer) {
         var states = {
             locks: [],
-            guides: []
+            guides: [],
+            visibility: []
         };
 
         function unlockLayer(layerToUnlock) {
             var layerIndex;
             var itemIndex;
 
+            rememberAndShowLayer(layerToUnlock, states.visibility);
             rememberAndUnlock(layerToUnlock, states.locks);
 
             for (layerIndex = 0; layerIndex < layerToUnlock.layers.length; layerIndex += 1) {
@@ -331,6 +510,18 @@
 
         unlockLayer(layer);
         return states;
+    }
+
+    function restoreVisibilityStates(visibilityStates) {
+        var index;
+
+        for (index = visibilityStates.length - 1; index >= 0; index -= 1) {
+            try {
+                visibilityStates[index].layer.visible = visibilityStates[index].visible;
+            } catch (error) {
+                // Si Illustrator no permite restaurar una capa concreta, seguimos.
+            }
+        }
     }
 
     function restoreGuideStates(guideStates) {
@@ -374,6 +565,22 @@
 
         try {
             translateLayerContents(layer, verticalOffset);
+        } finally {
+            restoreGuideStates(states.guides);
+            restoreVisibilityStates(states.visibility);
+            restoreLockStates(states.locks);
+        }
+    }
+
+    function translateItemTemporarilyUnlocked(item, horizontalOffset, verticalOffset) {
+        var states = {
+            locks: [],
+            guides: []
+        };
+
+        unlockPageItemTree(item, states.locks, states.guides);
+        try {
+            item.translate(horizontalOffset || 0, verticalOffset || 0);
         } finally {
             restoreGuideStates(states.guides);
             restoreLockStates(states.locks);
@@ -422,8 +629,14 @@
     }
 
     function isExpectedLegendItem(item) {
-        return /^Leyenda [1-6]$/.test(item.name || "") ||
-            /^Texto leyenda [1-6]$/.test(item.name || "");
+        var match = /^(Leyenda|Texto leyenda) ([0-9]+)$/.exec(item.name || "");
+        var legendNumber;
+
+        if (!match) {
+            return false;
+        }
+        legendNumber = parseInt(match[2], 10);
+        return legendNumber >= 1 && legendNumber <= MAX_LEGEND_COUNT;
     }
 
     function getUnexpectedLegendArtworkItems(legendLayer) {
@@ -452,7 +665,8 @@
             if (
                 !item.hidden &&
                 !isPanelPlacementHelperItem(item) &&
-                !isPanelTitleItem(item, titleFrame)
+                !isPanelTitleItem(item, titleFrame) &&
+                !isPanelUnitsFrameName(item.name)
             ) {
                 result.push(item);
             }
@@ -546,6 +760,48 @@
         bounds[2] = Math.max(bounds[2], candidate[2]);
         bounds[3] = Math.min(bounds[3], candidate[3]);
         return bounds;
+    }
+
+    function getTextFrameLineCount(textFrame, contents) {
+        var documentRef = app.activeDocument;
+        var bounds = textFrame.geometricBounds;
+        var width = Math.abs(bounds[2] - bounds[0]);
+        var tempLayer;
+        var tempBox;
+        var testFrame;
+        var lineCount;
+
+        function copyTextStyle(sourceFrame, targetFrame) {
+            var sourceCharacters = sourceFrame.textRange.characterAttributes;
+            var targetCharacters = targetFrame.textRange.characterAttributes;
+            var sourceParagraph = sourceFrame.paragraphs[0].paragraphAttributes;
+            var targetParagraph = targetFrame.paragraphs[0].paragraphAttributes;
+
+            try { targetCharacters.textFont = sourceCharacters.textFont; } catch (error1) {}
+            try { targetCharacters.size = sourceCharacters.size; } catch (error2) {}
+            try { targetCharacters.leading = sourceCharacters.leading; } catch (error3) {}
+            try { targetCharacters.tracking = sourceCharacters.tracking; } catch (error4) {}
+            try { targetCharacters.horizontalScale = sourceCharacters.horizontalScale; } catch (error5) {}
+            try { targetCharacters.verticalScale = sourceCharacters.verticalScale; } catch (error6) {}
+            try { targetParagraph.justification = sourceParagraph.justification; } catch (error7) {}
+        }
+
+        tempLayer = documentRef.layers.add();
+        tempLayer.name = "__bde_medicion_titulo_panel__";
+        try {
+            tempBox = tempLayer.pathItems.rectangle(0, 0, width, 200);
+            tempBox.stroked = false;
+            tempBox.filled = false;
+            testFrame = tempLayer.textFrames.areaText(tempBox);
+            testFrame.contents = contents;
+            copyTextStyle(textFrame, testFrame);
+            app.redraw();
+            lineCount = testFrame.lines.length;
+        } finally {
+            tempLayer.remove();
+        }
+
+        return Math.max(1, lineCount);
     }
 
     function isOversizedArtworkBounds(bounds) {
@@ -871,6 +1127,8 @@
             panelConfiguration.title !== "",
             panelConfiguration.hasUnits
         );
+        desiredTop += millimetersToPoints(PANEL_GRAPH_UP_OFFSET_MM);
+        desiredTop -= panelConfiguration.titleExtraOffset || 0;
         verticalOffset = desiredTop - bounds[1];
         artworkGroup.translate(0, verticalOffset);
         return true;
@@ -920,6 +1178,7 @@
         }
 
         verticalOffset = legendBounds[1] - artworkBounds[1];
+        verticalOffset += millimetersToPoints(PANEL_GRAPH_UP_OFFSET_MM);
         if (panelConfiguration.hasUnits) {
             verticalOffset += millimetersToPoints(PANEL_GRAPH_UNIT_OFFSET_MM);
         }
@@ -948,6 +1207,7 @@
 
         if (graphStartGuideY !== null) {
             desiredGraphTop = graphStartGuideY;
+            desiredGraphTop += millimetersToPoints(PANEL_GRAPH_UP_OFFSET_MM);
             if (panelConfiguration.hasUnits) {
                 desiredGraphTop += millimetersToPoints(PANEL_GRAPH_UNIT_OFFSET_MM);
             }
@@ -971,6 +1231,7 @@
 
         desiredGraphTop =
             titleFrame.geometricBounds[3] - millimetersToPoints(titleToGraphGap);
+        desiredGraphTop += millimetersToPoints(PANEL_GRAPH_UP_OFFSET_MM);
         verticalOffset = desiredGraphTop - artworkBounds[1];
         artworkGroup.translate(0, verticalOffset);
         return true;
@@ -1072,6 +1333,373 @@
         return true;
     }
 
+    function getPanelUnitsFrameName(panelNumber) {
+        return "Unidades panel " + panelNumber;
+    }
+
+    function getVerticalAxisCandidateX(item) {
+        var bounds;
+        var width;
+        var height;
+
+        if (!item || item.hidden || item.typename !== "PathItem" || item.guides) {
+            return null;
+        }
+        try {
+            if (!item.stroked || item.filled) {
+                return null;
+            }
+        } catch (styleError) {}
+
+        try {
+            bounds = item.geometricBounds;
+        } catch (boundsError) {
+            return null;
+        }
+
+        width = Math.abs(bounds[2] - bounds[0]);
+        height = Math.abs(bounds[1] - bounds[3]);
+        if (
+            width <= millimetersToPoints(0.35) &&
+            height >= millimetersToPoints(5)
+        ) {
+            return (bounds[0] + bounds[2]) / 2;
+        }
+        return null;
+    }
+
+    function findLeftmostVerticalAxisX(item, currentX) {
+        var index;
+        var candidateX = getVerticalAxisCandidateX(item);
+
+        if (candidateX !== null && (currentX === null || candidateX < currentX)) {
+            currentX = candidateX;
+        }
+
+        if (item && item.pageItems) {
+            for (index = 0; index < item.pageItems.length; index += 1) {
+                currentX = findLeftmostVerticalAxisX(item.pageItems[index], currentX);
+            }
+        }
+        return currentX;
+    }
+
+    function getPanelUnitsLeftX(documentRef, panelNumber) {
+        var artworkGroup = getPanelArtworkGroup(documentRef, panelNumber);
+        var axisX;
+
+        if (artworkGroup) {
+            axisX = findLeftmostVerticalAxisX(artworkGroup, null);
+            if (axisX !== null) {
+                return axisX;
+            }
+        }
+        return millimetersToPoints(PANEL_UNITS_LEFT_MM);
+    }
+
+    function removeExistingPanelUnitsFrame(documentRef, panelNumber) {
+        var panelLayer = getPanelLayer(documentRef, panelNumber);
+        var frameName = getPanelUnitsFrameName(panelNumber);
+        var existingFrame = findDescendantByName(panelLayer, function (name) {
+            return name === frameName;
+        });
+        var states;
+
+        if (!existingFrame) {
+            return;
+        }
+
+        states = unlockLayerTree(panelLayer);
+        try {
+            existingFrame.remove();
+        } finally {
+            restoreGuideStates(states.guides);
+            restoreVisibilityStates(states.visibility);
+            restoreLockStates(states.locks);
+        }
+    }
+
+    function copyCharacterStyle(sourceFrame, targetFrame) {
+        var sourceAttributes;
+        var targetAttributes;
+
+        if (!sourceFrame) {
+            return;
+        }
+
+        sourceAttributes = sourceFrame.textRange.characterAttributes;
+        targetAttributes = targetFrame.textRange.characterAttributes;
+        try { targetAttributes.textFont = sourceAttributes.textFont; } catch (error1) {}
+        try { targetAttributes.size = sourceAttributes.size; } catch (error2) {}
+        try { targetAttributes.leading = sourceAttributes.leading; } catch (error3) {}
+        try { targetAttributes.tracking = sourceAttributes.tracking; } catch (error4) {}
+        try { targetAttributes.horizontalScale = sourceAttributes.horizontalScale; } catch (error5) {}
+        try { targetAttributes.verticalScale = sourceAttributes.verticalScale; } catch (error6) {}
+        try {
+            targetFrame.textRange.paragraphAttributes.justification =
+                sourceFrame.textRange.paragraphAttributes.justification;
+        } catch (error7) {}
+    }
+
+    function applyDefaultUnitsTextStyle(textFrame) {
+        try {
+            textFrame.textRange.characterAttributes.textFont =
+                app.textFonts.getByName("Roboto-Regular");
+        } catch (error1) {}
+        try { textFrame.textRange.characterAttributes.size = 7; } catch (error2) {}
+        try { textFrame.textRange.characterAttributes.leading = 7; } catch (error3) {}
+    }
+
+    function getMainTitleLastLineY(documentRef) {
+        return getMainTitleFrames(documentRef).title.geometricBounds[3];
+    }
+
+    function getPanelTitleLastLineY(documentRef, panelNumber) {
+        return getPanelTitleFrame(documentRef, panelNumber).geometricBounds[3];
+    }
+
+    function getPanelUnitsBaselineY(documentRef, panelNumber, panelConfigurations) {
+        var panelConfiguration = panelConfigurations[panelNumber - 1];
+        var artworkGroup;
+        var artworkBounds;
+
+        if (panelConfiguration.title !== "") {
+            return getPanelTitleLastLineY(documentRef, panelNumber) -
+                millimetersToPoints(PANEL_UNITS_PANEL_TITLE_GAP_MM);
+        }
+
+        if (panelNumber === 1) {
+            return getMainTitleLastLineY(documentRef) -
+                millimetersToPoints(PANEL_UNITS_MAIN_TITLE_GAP_MM);
+        }
+
+        try {
+            return getPanelTitleLastLineY(documentRef, panelNumber) -
+                millimetersToPoints(PANEL_UNITS_PANEL_TITLE_GAP_MM);
+        } catch (titleError) {}
+
+        artworkGroup = getPanelArtworkGroup(documentRef, panelNumber);
+        if (!artworkGroup) {
+            return null;
+        }
+        artworkBounds = getItemsBounds([artworkGroup]);
+        if (!artworkBounds) {
+            return null;
+        }
+        return artworkBounds[1] +
+            millimetersToPoints(PANEL_UNITS_GRAPH_START_GAP_MM);
+    }
+
+    function setPanelUnits(documentRef, panelNumber, panelConfigurations) {
+        var panelLayer = getPanelLayer(documentRef, panelNumber);
+        var artworkGroup = getPanelArtworkGroup(documentRef, panelNumber);
+        var panelConfiguration = panelConfigurations[panelNumber - 1];
+        var unitsText = panelConfiguration.units || "";
+        var unitsFrame;
+        var baselineY;
+        var states;
+
+        removeExistingPanelUnitsFrame(documentRef, panelNumber);
+        if (unitsText === "" || !artworkGroup) {
+            return false;
+        }
+
+        baselineY = getPanelUnitsBaselineY(documentRef, panelNumber, panelConfigurations);
+        if (baselineY === null) {
+            return false;
+        }
+
+        states = unlockLayerTree(panelLayer);
+        try {
+            unitsFrame = panelLayer.textFrames.add();
+            unitsFrame.name = getPanelUnitsFrameName(panelNumber);
+            unitsFrame.contents = unitsText;
+            unitsFrame.position = [
+                getPanelUnitsLeftX(documentRef, panelNumber) +
+                    millimetersToPoints(panelConfiguration.unitsManualOffsetX || 0),
+                baselineY + millimetersToPoints(PANEL_UNITS_UP_OFFSET_MM)
+            ];
+            applyDefaultUnitsTextStyle(unitsFrame);
+        } finally {
+            restoreGuideStates(states.guides);
+            restoreVisibilityStates(states.visibility);
+            restoreLockStates(states.locks);
+        }
+
+        return unitsFrame;
+    }
+
+    function setPanelUnitsForAllPanels(documentRef, panelCount, panelConfigurations) {
+        var panelNumber;
+
+        for (panelNumber = 1; panelNumber <= panelCount; panelNumber += 1) {
+            setPanelUnits(documentRef, panelNumber, panelConfigurations);
+        }
+    }
+
+    function removePanelUnitsForAllPanels(documentRef, panelCount) {
+        var panelNumber;
+
+        for (panelNumber = 1; panelNumber <= panelCount; panelNumber += 1) {
+            removeExistingPanelUnitsFrame(documentRef, panelNumber);
+        }
+    }
+
+    function showPanelUnitsAdjustmentDialog(unitsFrame, panelConfiguration, panelNumber) {
+        var dialog;
+        var controls;
+        var leftButton;
+        var rightButton;
+        var resetButton;
+        var offsetLabel;
+        var closeButton;
+        var stepMillimeters = 0.1;
+        var currentOffset = panelConfiguration.unitsManualOffsetX || 0;
+
+        if (!unitsFrame || (panelConfiguration.units || "") === "") {
+            return;
+        }
+
+        dialog = new Window("dialog", "Ajustar unidades Panel " + panelNumber);
+        dialog.orientation = "column";
+        dialog.alignChildren = ["fill", "top"];
+        dialog.spacing = 12;
+        dialog.margins = 16;
+
+        offsetLabel = dialog.add("statictext", undefined, "");
+        controls = dialog.add("group");
+        controls.orientation = "row";
+        controls.alignChildren = ["center", "center"];
+        leftButton = controls.add("button", undefined, "<");
+        resetButton = controls.add("button", undefined, "0");
+        rightButton = controls.add("button", undefined, ">");
+
+        closeButton = dialog.add("button", undefined, "Continuar", {name: "ok"});
+
+        function updateLabel() {
+            offsetLabel.text =
+                "Ajuste horizontal: " +
+                (Math.round(currentOffset * 10) / 10) +
+                " mm";
+        }
+
+        function moveUnits(deltaMillimeters) {
+            currentOffset = Math.round((currentOffset + deltaMillimeters) * 10) / 10;
+            panelConfiguration.unitsManualOffsetX = currentOffset;
+            unitsFrame.translate(millimetersToPoints(deltaMillimeters), 0);
+            updateLabel();
+            refreshDocument();
+        }
+
+        leftButton.onClick = function () {
+            moveUnits(-stepMillimeters);
+        };
+        rightButton.onClick = function () {
+            moveUnits(stepMillimeters);
+        };
+        resetButton.onClick = function () {
+            if (currentOffset !== 0) {
+                moveUnits(-currentOffset);
+            }
+        };
+
+        updateLabel();
+        positionDialogOnActiveWindow(dialog);
+        dialog.show();
+    }
+
+    function showPreSaveChecklist(documentRef) {
+        var palette = new Window("palette", "Comprobaciones");
+        var checksPanel = palette.add("panel", undefined, "Revisar");
+        var buttons = palette.add("group");
+        var checklistItems = [
+            "Cambiar tramas",
+            "Correspondencia color Leyendas (Ver PDF)",
+            "Eje 0 y/o Línea base",
+            "Textos (espacio fino, %, cursivas, I TR, ...)"
+        ];
+        var checks = [];
+        var index;
+        var saveButton;
+        var closeButton;
+
+        palette.orientation = "column";
+        palette.alignChildren = ["fill", "top"];
+        palette.spacing = 14;
+        palette.margins = 16;
+
+        checksPanel.orientation = "column";
+        checksPanel.alignChildren = ["left", "top"];
+        checksPanel.margins = 14;
+
+        function allChecked() {
+            var checkIndex;
+
+            for (checkIndex = 0; checkIndex < checks.length; checkIndex += 1) {
+                if (!checks[checkIndex].value) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        function updateSaveState() {
+            var ready = allChecked();
+
+            closeButton.enabled = ready;
+            saveButton.enabled = ready;
+        }
+
+        for (index = 0; index < checklistItems.length; index += 1) {
+            checks.push(checksPanel.add("checkbox", undefined, checklistItems[index]));
+            checks[index].value = false;
+            checks[index].onClick = updateSaveState;
+        }
+
+        buttons.orientation = "row";
+        buttons.alignment = "right";
+        closeButton = buttons.add("button", undefined, "Cerrar");
+        saveButton = buttons.add("button", undefined, "Guardar");
+        closeButton.enabled = false;
+        saveButton.enabled = false;
+
+        closeButton.onClick = function () {
+            palette.close();
+        };
+
+        palette.onClose = function () {
+            if (!allChecked()) {
+                alert("Marca todas las comprobaciones antes de cerrar.");
+                return false;
+            }
+            return true;
+        };
+
+        saveButton.onClick = function () {
+            if (!allChecked()) {
+                alert("Marca todas las comprobaciones antes de guardar.");
+                return;
+            }
+            try {
+                documentRef.save();
+                palette.close();
+            } catch (saveError) {
+                try {
+                    app.activeDocument = documentRef;
+                } catch (activeError) {}
+                try {
+                    app.executeMenuCommand("save");
+                    palette.close();
+                } catch (menuSaveError) {
+                    alert("No se ha podido guardar el archivo:\n" + menuSaveError.message);
+                }
+            }
+        };
+
+        positionDialogOnActiveWindow(palette);
+        palette.show();
+    }
+
     function getPanelLegendFocusItems(documentRef, panelNumber, legendCount) {
         var legendLayer = getLegendLayer(documentRef, panelNumber);
         var result = [];
@@ -1162,19 +1790,23 @@
 
     function preparePanelForLegendInput(documentRef, panelNumber, titleLineCount, panelConfigurations) {
         var panelConfiguration = panelConfigurations[panelNumber - 1];
+        var unitsFrame;
 
+        removeExistingPanelUnitsFrame(documentRef, panelNumber);
         positionPanelArtworkForInput(
             documentRef,
             panelNumber,
             titleLineCount,
             panelConfigurations
         );
+        unitsFrame = setPanelUnits(documentRef, panelNumber, panelConfigurations);
         focusViewOnBounds(
             documentRef,
             getPanelFocusBounds(documentRef, panelNumber, panelConfiguration.legendCount),
             PANEL_VIEW_MARGIN_MM
         );
         refreshDocument();
+        showPanelUnitsAdjustmentDialog(unitsFrame, panelConfiguration, panelNumber);
     }
 
     function measureLegendLines(textFrame) {
@@ -1727,6 +2359,7 @@
             applied = false;
         };
 
+        positionDialogOnActiveWindow(dialog);
         if (dialog.show() !== 1 && applied) {
             restoreChartPatternChanges(changes);
         }
@@ -1756,18 +2389,241 @@
         }
     }
 
+    function fitPanelTitleFrameHeight(titleFrame, lineCount, originalTop, baseHeight) {
+        var titleExtraOffset = Math.max(0, lineCount - 1) * PANEL_TITLE_LEADING_PT;
+        var newTop;
+
+        if (originalTop === undefined) {
+            originalTop = titleFrame.geometricBounds[1];
+        }
+        if (baseHeight === undefined) {
+            baseHeight = Math.abs(originalTop - titleFrame.geometricBounds[3]);
+        }
+
+        try {
+            titleFrame.textPath.height = baseHeight + titleExtraOffset;
+            app.redraw();
+            newTop = titleFrame.geometricBounds[1];
+            titleFrame.translate(0, originalTop - newTop);
+        } catch (error) {
+            // Algunas plantillas bloquean la altura del texto; el desplazamiento depende del interlineado.
+        }
+        return titleExtraOffset;
+    }
+
+    function getPanelGraphGuideGroup(documentRef, panelNumber) {
+        try {
+            return getPanelLayer(documentRef, panelNumber).groupItems.getByName(
+                "Texto+flecha Grafico"
+            );
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function normalizeItemName(name) {
+        name = (name || "").toLowerCase();
+        name = name.replace(/[áà]/g, "a");
+        name = name.replace(/[éè]/g, "e");
+        name = name.replace(/[íì]/g, "i");
+        name = name.replace(/[óò]/g, "o");
+        name = name.replace(/[úù]/g, "u");
+        return name;
+    }
+
+    function isPanelTitleGuideName(name) {
+        return normalizeItemName(name).indexOf("texto+flecha titulo") === 0;
+    }
+
+    function isGuidesContainerName(name) {
+        return normalizeItemName(name) === "guias";
+    }
+
+    function translateGroupContents(group, verticalOffset) {
+        var itemIndex;
+
+        for (itemIndex = 0; itemIndex < group.pageItems.length; itemIndex += 1) {
+            group.pageItems[itemIndex].translate(0, verticalOffset);
+        }
+    }
+
+    function translateContainerContents(container, verticalOffset) {
+        if (!container) {
+            return;
+        }
+        if (container.typename === "Layer") {
+            translateLayerContents(container, verticalOffset);
+        } else if (container.typename === "GroupItem") {
+            translateGroupContents(container, verticalOffset);
+        } else {
+            container.translate(0, verticalOffset);
+        }
+    }
+
+    function findDescendantByName(container, nameMatcher) {
+        var index;
+        var item;
+        var found;
+
+        if (!container) {
+            return null;
+        }
+
+        if (nameMatcher(container.name)) {
+            return container;
+        }
+
+        if (container.layers) {
+            for (index = 0; index < container.layers.length; index += 1) {
+                found = findDescendantByName(container.layers[index], nameMatcher);
+                if (found) {
+                    return found;
+                }
+            }
+        }
+
+        if (container.pageItems) {
+            for (index = 0; index < container.pageItems.length; index += 1) {
+                item = container.pageItems[index];
+                found = findDescendantByName(item, nameMatcher);
+                if (found) {
+                    return found;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    function movePanelTitleBackgroundGuides(documentRef, panelNumber, verticalOffset) {
+        var backgroundName = PANEL_TITLE_GUIDE_BACKGROUND_BY_PANEL[panelNumber];
+        var backgroundGroup;
+        var guidesContainer;
+
+        if (!backgroundName) {
+            return;
+        }
+
+        try {
+            backgroundGroup = documentRef.groupItems.getByName(backgroundName);
+        } catch (error) {
+            return;
+        }
+
+        guidesContainer = findDescendantByName(backgroundGroup, isGuidesContainerName);
+        translateContainerContents(guidesContainer, verticalOffset);
+    }
+
+    function movePanelTitleAuxiliaryItemsInLayer(layer, verticalOffset) {
+        var layerIndex;
+        var itemIndex;
+        var item;
+
+        if (isPanelTitleGuideName(layer.name)) {
+            translateLayerContents(layer, verticalOffset);
+            return;
+        }
+
+        for (itemIndex = 0; itemIndex < layer.pageItems.length; itemIndex += 1) {
+            item = layer.pageItems[itemIndex];
+            if (isPanelTitleGuideName(item.name)) {
+                item.translate(0, verticalOffset);
+            } else if (item.typename === "GroupItem") {
+                movePanelTitleAuxiliaryItemsInGroup(item, verticalOffset);
+            }
+        }
+
+        for (layerIndex = 0; layerIndex < layer.layers.length; layerIndex += 1) {
+            movePanelTitleAuxiliaryItemsInLayer(layer.layers[layerIndex], verticalOffset);
+        }
+    }
+
+    function movePanelTitleAuxiliaryItemsInGroup(group, verticalOffset) {
+        var itemIndex;
+        var item;
+
+        for (itemIndex = 0; itemIndex < group.pageItems.length; itemIndex += 1) {
+            item = group.pageItems[itemIndex];
+            if (isPanelTitleGuideName(item.name)) {
+                item.translate(0, verticalOffset);
+            } else if (item.typename === "GroupItem") {
+                movePanelTitleAuxiliaryItemsInGroup(item, verticalOffset);
+            }
+        }
+    }
+
+    function movePanelTitleDependentItems(documentRef, panelNumber, verticalOffset) {
+        var panelLayer = getPanelLayer(documentRef, panelNumber);
+        var graphGuideGroup = getPanelGraphGuideGroup(documentRef, panelNumber);
+        var states;
+
+        if (verticalOffset === 0) {
+            return;
+        }
+
+        states = unlockLayerTree(getMainLayer(documentRef));
+        try {
+            if (graphGuideGroup) {
+                graphGuideGroup.translate(0, verticalOffset);
+            }
+            translateLayerContents(getLegendLayer(documentRef, panelNumber), verticalOffset);
+            movePanelTitleAuxiliaryItemsInLayer(panelLayer, verticalOffset);
+            movePanelTitleBackgroundGuides(documentRef, panelNumber, verticalOffset);
+        } finally {
+            restoreGuideStates(states.guides);
+            restoreVisibilityStates(states.visibility);
+            restoreLockStates(states.locks);
+        }
+    }
+
     function setPanelTitle(documentRef, panelNumber, graphNumber, titleText) {
         var panelLetters = ["a", "b", "c"];
-        var titleFrame = getPanelTitleFrame(documentRef, panelNumber);
+        var titleFrame;
+        var contents;
+        var lineCount;
+        var titleExtraOffset = 0;
+        var titleOriginalTop;
+        var titleBaseHeight;
+        var states = unlockLayerTree(getMainLayer(documentRef));
 
-        if (titleText === "") {
-            titleFrame.contents = "";
-            titleFrame.hidden = true;
-        } else {
-            titleFrame.hidden = false;
-            titleFrame.contents =
-                graphNumber + "." + panelLetters[panelNumber - 1] + "  " + titleText;
+        try {
+            titleFrame = getPanelTitleFrame(documentRef, panelNumber);
+            titleOriginalTop = titleFrame.geometricBounds[1];
+            titleBaseHeight = Math.abs(titleOriginalTop - titleFrame.geometricBounds[3]);
+            if (titleText === "") {
+                titleFrame.contents = "";
+                if (!titleFrame.hidden) {
+                    titleFrame.hidden = true;
+                }
+            } else {
+                if (titleFrame.hidden) {
+                    titleFrame.hidden = false;
+                }
+                contents = graphNumber + "." + panelLetters[panelNumber - 1] + "  " + titleText;
+                lineCount = getTextFrameLineCount(titleFrame, contents);
+                if (lineCount > PANEL_TITLE_MAX_LINES) {
+                    fail(
+                        "El título del Panel " + panelNumber + " ocupa " + lineCount +
+                        " líneas. El máximo permitido es " + PANEL_TITLE_MAX_LINES + "."
+                    );
+                }
+                if (titleFrame.contents !== contents) {
+                    titleFrame.contents = contents;
+                }
+                titleExtraOffset = fitPanelTitleFrameHeight(
+                    titleFrame,
+                    lineCount,
+                    titleOriginalTop,
+                    titleBaseHeight
+                );
+                movePanelTitleDependentItems(documentRef, panelNumber, -titleExtraOffset);
+            }
+        } finally {
+            restoreGuideStates(states.guides);
+            restoreVisibilityStates(states.visibility);
+            restoreLockStates(states.locks);
         }
+        return titleExtraOffset;
     }
 
     function setPanelLegendCount(documentRef, panelNumber, legendCount) {
@@ -1775,7 +2631,7 @@
         var legendNumber;
         var visible;
 
-        for (legendNumber = 1; legendNumber <= 6; legendNumber += 1) {
+        for (legendNumber = 1; legendNumber <= MAX_LEGEND_COUNT; legendNumber += 1) {
             visible = legendNumber <= legendCount;
             getByName(
                 legendLayer.textFrames,
@@ -1852,15 +2708,52 @@
         return frames;
     }
 
+    function parseSingleSourceInput(text, forceSourcesPlural) {
+        var lines = text.split(/\r\n|\r|\n/);
+        var sourceText = "";
+        var paragraphs = [];
+        var index;
+        var lineText;
+
+        for (index = 0; index < lines.length; index += 1) {
+            if (/^\s*$/.test(lines[index])) {
+                continue;
+            }
+            if (sourceText === "") {
+                sourceText = lines[index];
+                continue;
+            }
+
+            lineText = normalizeSourceLabelText(lines[index], forceSourcesPlural);
+            if (!isNewSourceParagraphStart(lineText) &&
+                appendSourceContinuation(paragraphs, lineText)) {
+                continue;
+            }
+            paragraphs.push(lineText);
+        }
+
+        return {
+            sourceText: sourceText,
+            paragraphs: paragraphs
+        };
+    }
+
     function parseSourceParagraphs(text) {
         var lines = text.split(/\r\n|\r|\n/);
         var result = [];
         var index;
+        var lineText;
 
         for (index = 0; index < lines.length; index += 1) {
-            if (lines[index] !== "") {
-                result.push(normalizeSourceLabelText(lines[index]));
+            if (/^\s*$/.test(lines[index])) {
+                continue;
             }
+            lineText = normalizeSourceLabelText(lines[index]);
+            if (!isNewSourceParagraphStart(lineText) &&
+                appendSourceContinuation(result, lineText)) {
+                continue;
+            }
+            result.push(lineText);
         }
         return result;
     }
@@ -1902,12 +2795,19 @@
         textFrame.translate(0, originalBottom - newBottom);
     }
 
-    function getSourceLabelParts(text) {
+    function getSourceLabelParts(text, forcedSourceLabel) {
         var labelMatch = text.match(/^\s*(FUENTES|FUENTE|NOTAS|NOTA)\s*(:|\.|\s|$)/i);
-        var label = labelMatch ? labelMatch[1].toUpperCase() + ":" : "FUENTE:";
+        var rawLabel = labelMatch ? labelMatch[1].toUpperCase() : "";
+        var label = labelMatch ? rawLabel + ":" : "FUENTE:";
         var body = labelMatch ?
             text.substring(labelMatch[0].length).replace(/^\s+/, "") :
             text;
+
+        if (forcedSourceLabel === "FUENTE") {
+            label = "FUENTE:";
+        } else if (forcedSourceLabel === "FUENTES") {
+            label = "FUENTES:";
+        }
 
         return {
             label: label,
@@ -1915,12 +2815,17 @@
         };
     }
 
-    function getSourceParagraphLabelParts(text) {
+    function getSourceParagraphLabelParts(text, forceSourcesPlural) {
         var labelMatch = text.match(/^\s*(FUENTES|FUENTE|NOTAS|NOTA)\s*(:|\.|\s|$)/i);
-        var label = labelMatch ? labelMatch[1].toUpperCase() + ":" : "";
+        var rawLabel = labelMatch ? labelMatch[1].toUpperCase() : "";
+        var label = labelMatch ? rawLabel + ":" : "";
         var body = labelMatch ?
             text.substring(labelMatch[0].length).replace(/^\s+/, "") :
             text;
+
+        if (forceSourcesPlural && rawLabel === "FUENTE") {
+            label = "FUENTES:";
+        }
 
         return {
             label: label,
@@ -1932,45 +2837,90 @@
         return /^\s*(FUENTES|FUENTE|NOTAS|NOTA)\s*(:|\.|\s|$)/i.test(text);
     }
 
-    function normalizeSourceLabelText(text) {
+    function isSourceNoteParagraph(text) {
+        return /^\s*(NOTAS|NOTA)\s*(:|\.|\s|$)/i.test(text);
+    }
+
+    function isSourceLetterParagraph(text) {
+        return /^\s*[a-z](?:\.|\t)(?:[\t ]*)(.*)$/.test(text);
+    }
+
+    function isNewSourceParagraphStart(text) {
+        return isSourceLabelParagraph(text) || isSourceLetterParagraph(text);
+    }
+
+    function appendSourceContinuation(paragraphs, text) {
+        var lastIndex = paragraphs.length - 1;
+
+        if (lastIndex >= 0 && isSourceLetterParagraph(paragraphs[lastIndex])) {
+            paragraphs[lastIndex] += " " + text.replace(/^\s+/, "");
+            return true;
+        }
+        return false;
+    }
+
+    function normalizeSourceLabelText(text, forceSourcesPlural) {
         var labelParts;
 
         if (!isSourceLabelParagraph(text)) {
             return text;
         }
 
-        labelParts = getSourceParagraphLabelParts(text);
+        labelParts = getSourceParagraphLabelParts(text, forceSourcesPlural);
         return labelParts.label + " " + labelParts.body;
     }
 
-    function setSourceFrameText(textFrame, sourceText, paragraphs) {
+    function getSourceParagraphSeparator(currentParagraph, nextParagraph) {
+        if (!nextParagraph) {
+            return "";
+        }
+        if (isSourceNoteParagraph(currentParagraph)) {
+            return "\r\r";
+        }
+        return "\r";
+    }
+
+    function setSourceFrameText(textFrame, sourceText, paragraphs, forceSourcesPlural, forcedSourceLabel) {
         var mediumFont = app.textFonts.getByName("Roboto-Medium");
         var lightFont = app.textFonts.getByName("Roboto-Light");
-        var sourceParts = getSourceLabelParts(sourceText);
+        var sourceParts = getSourceLabelParts(sourceText, forcedSourceLabel);
         var content = sourceParts.label + " " + sourceParts.body;
-        var mediumRanges = [{start: 0, length: sourceParts.label.length}];
+        var mediumRanges = /^NOTAS?:$/i.test(sourceParts.label) ? [] : [
+            {start: 0, length: sourceParts.label.length}
+        ];
         var labelParts;
         var paragraphIndex;
         var isLabelParagraph;
         var letterMatch;
         var tabStop;
         var paragraph;
-        var additionalParagraphStart;
-        var sourceParagraphIndex;
+        var paragraphFrameIndexes = [];
+        var frameParagraphIndex = 0;
+        var firstParagraphIsNote;
+        var separator;
 
+        firstParagraphIsNote = paragraphs.length > 0 && isSourceNoteParagraph(paragraphs[0]);
         if (paragraphs.length > 0) {
-            content += "\r\r";
+            separator = firstParagraphIsNote ? "\r" : "\r\r";
+            content += separator;
+            frameParagraphIndex += separator.length;
         }
 
         for (paragraphIndex = 0; paragraphIndex < paragraphs.length; paragraphIndex += 1) {
+            paragraphFrameIndexes[paragraphIndex] = frameParagraphIndex;
             isLabelParagraph = isSourceLabelParagraph(paragraphs[paragraphIndex]);
             if (isLabelParagraph) {
-                labelParts = getSourceParagraphLabelParts(paragraphs[paragraphIndex]);
-                mediumRanges.push({start: content.length, length: labelParts.label.length});
+                labelParts = getSourceParagraphLabelParts(
+                    paragraphs[paragraphIndex],
+                    forceSourcesPlural
+                );
+                if (!isSourceNoteParagraph(paragraphs[paragraphIndex])) {
+                    mediumRanges.push({start: content.length, length: labelParts.label.length});
+                }
                 content += labelParts.label + " " + labelParts.body;
             } else {
-                letterMatch = paragraphs[paragraphIndex].match(/^([a-zA-Z])(?:\.|[\t ]+)(?:[\t ]*)(.*)$/);
-                if (letterMatch) {
+                letterMatch = paragraphs[paragraphIndex].match(/^([a-z])(?:\.|\t)(?:[\t ]*)(.*)$/);
+                if (letterMatch && isSourceLetterParagraph(paragraphs[paragraphIndex])) {
                     mediumRanges.push({start: content.length, length: 1});
                     content += letterMatch[1] + "\t" + letterMatch[2];
                 } else {
@@ -1978,7 +2928,12 @@
                 }
             }
             if (paragraphIndex < paragraphs.length - 1) {
-                content += "\r";
+                separator = getSourceParagraphSeparator(
+                    paragraphs[paragraphIndex],
+                    paragraphs[paragraphIndex + 1]
+                );
+                content += separator;
+                frameParagraphIndex += separator.length;
             }
         }
 
@@ -1997,18 +2952,15 @@
         paragraph.paragraphAttributes.leftIndent = 0;
         paragraph.paragraphAttributes.tabStops = [];
 
-        additionalParagraphStart = textFrame.paragraphs.length - paragraphs.length;
-        for (sourceParagraphIndex = 0;
-            sourceParagraphIndex < additionalParagraphStart - 1;
-            sourceParagraphIndex += 1) {
-            paragraph = textFrame.paragraphs[sourceParagraphIndex];
+        for (paragraphIndex = 0; paragraphIndex < textFrame.paragraphs.length; paragraphIndex += 1) {
+            paragraph = textFrame.paragraphs[paragraphIndex];
             paragraph.paragraphAttributes.firstLineIndent = 0;
             paragraph.paragraphAttributes.leftIndent = 0;
             paragraph.paragraphAttributes.tabStops = [];
         }
 
         for (paragraphIndex = 0; paragraphIndex < paragraphs.length; paragraphIndex += 1) {
-            paragraph = textFrame.paragraphs[additionalParagraphStart + paragraphIndex];
+            paragraph = textFrame.paragraphs[paragraphFrameIndexes[paragraphIndex]];
             isLabelParagraph = isSourceLabelParagraph(paragraphs[paragraphIndex]);
 
             if (isLabelParagraph) {
@@ -2035,12 +2987,45 @@
         fitSourceFrameHeightFromBottom(textFrame);
     }
 
-    function configureDownloadButton(documentRef, addDownload) {
+    function getStoredInfoOffset(infoGroup) {
+        var match;
+
+        try {
+            match = String(infoGroup.note || "").match(/BDE_INFO_OFFSET_MM=([-0-9.]+)/);
+            if (match) {
+                return parseFloat(match[1]);
+            }
+        } catch (error) {}
+        return 0;
+    }
+
+    function setStoredInfoOffset(infoGroup, offsetMillimeters) {
+        try {
+            infoGroup.note = "BDE_INFO_OFFSET_MM=" + offsetMillimeters;
+        } catch (error) {}
+    }
+
+    function setInfoGroupOffset(infoGroup, desiredOffsetMillimeters) {
+        var currentOffset = getStoredInfoOffset(infoGroup);
+        var delta = desiredOffsetMillimeters - currentOffset;
+
+        if (Math.abs(delta) > 0.001) {
+            translateItemTemporarilyUnlocked(
+                infoGroup,
+                millimetersToPoints(delta),
+                0
+            );
+        }
+        setStoredInfoOffset(infoGroup, desiredOffsetMillimeters);
+    }
+
+    function configureDownloadButton(documentRef, sourceButtonMode) {
         var sourceLayer = getByName(
             getMainLayer(documentRef).layers,
             NAMES.sourceLayer,
             "la capa de fuentes"
         );
+        var mode = sourceButtonMode || "none";
         var noButtonFrame = getByName(
             sourceLayer.textFrames,
             "FUENTE: SIN BOTÓN",
@@ -2056,17 +3041,32 @@
             "FUENTE: + INFO",
             "el marco de fuente con información"
         );
+        var downloadGroup = getByName(
+            sourceLayer.groupItems,
+            "DESCARGAR",
+            "el botón Descargar"
+        );
+        var infoGroup = getByName(
+            sourceLayer.groupItems,
+            "+INFO",
+            "el botón Más información"
+        );
+        var showInfoGroup = mode === "info" || mode === "downloadInfo";
 
-        noButtonFrame.hidden = addDownload;
-        downloadFrame.hidden = !addDownload;
-        infoFrame.hidden = true;
+        noButtonFrame.hidden = mode !== "none";
+        downloadFrame.hidden = !(mode === "download" || mode === "info");
+        infoFrame.hidden = mode !== "downloadInfo";
 
-        getByName(sourceLayer.groupItems, "DESCARGAR", "el botón Descargar").hidden =
-            !addDownload;
+        downloadGroup.hidden = !(mode === "download" || mode === "downloadInfo");
         getByName(sourceLayer.groupItems, "DOWNLOAD", "el botón Download").hidden = true;
-        getByName(sourceLayer.groupItems, "+INFO", "el botón Más información").hidden = true;
+        infoGroup.hidden = false;
+        setInfoGroupOffset(
+            infoGroup,
+            mode === "info" ? SOURCE_INFO_ONLY_OFFSET_MM : 0
+        );
+        infoGroup.hidden = !showInfoGroup;
 
-        if (addDownload) {
+        if (mode === "download" || mode === "info") {
             downloadFrame.textPath.width = millimetersToPoints(160);
         }
     }
@@ -2083,6 +3083,31 @@
         fail("No se encuentra un marco visible en la capa FUENTES.");
     }
 
+    function addVisibleSourceButtonIfPresent(sourceLayer, items, buttonName) {
+        var buttonGroup;
+
+        try {
+            buttonGroup = sourceLayer.groupItems.getByName(buttonName);
+            if (!buttonGroup.hidden) {
+                items.push(buttonGroup);
+            }
+        } catch (error) {}
+    }
+
+    function getVisibleSourcePositionItems(documentRef) {
+        var sourceLayer = getByName(
+            getMainLayer(documentRef).layers,
+            NAMES.sourceLayer,
+            "la capa de fuentes"
+        );
+        var items = [getVisibleSourceFrame(documentRef)];
+
+        addVisibleSourceButtonIfPresent(sourceLayer, items, "DESCARGAR");
+        addVisibleSourceButtonIfPresent(sourceLayer, items, "+INFO");
+        addVisibleSourceButtonIfPresent(sourceLayer, items, "DOWNLOAD");
+        return items;
+    }
+
     function positionSourcesAfterLastPanel(documentRef, panelCount) {
         var sourceLayer = getByName(
             getMainLayer(documentRef).layers,
@@ -2090,7 +3115,7 @@
             "la capa de fuentes"
         );
         var lastPanelBounds = getLayerContentBounds(getPanelLayer(documentRef, panelCount));
-        var sourceBounds = getLayerContentBounds(sourceLayer);
+        var sourceBounds = getItemsBounds(getVisibleSourcePositionItems(documentRef));
         var desiredSourceTop;
         var verticalOffset;
 
@@ -2104,14 +3129,21 @@
         return true;
     }
 
-    function setSourceText(documentRef, sourceText, paragraphText, addDownload) {
+    function setSourceText(documentRef, allText, sourceButtonMode, forceSourcesPlural) {
         var sourceFrames = getSourceFrames(documentRef);
-        var paragraphs = parseSourceParagraphs(paragraphText);
+        var parsedText = parseSingleSourceInput(allText, forceSourcesPlural);
+        var forcedSourceLabel = forceSourcesPlural ? "FUENTES" : "FUENTE";
         var index;
 
-        configureDownloadButton(documentRef, addDownload);
+        configureDownloadButton(documentRef, sourceButtonMode);
         for (index = 0; index < sourceFrames.length; index += 1) {
-            setSourceFrameText(sourceFrames[index], sourceText, paragraphs);
+            setSourceFrameText(
+                sourceFrames[index],
+                parsedText.sourceText,
+                parsedText.paragraphs,
+                forceSourcesPlural,
+                forcedSourceLabel
+            );
         }
     }
 
@@ -2136,7 +3168,14 @@
         var tableCheck;
         var boxCheck;
         var illustrationChecks = [];
-        var themeNames = ["Documento DO", "Biblioteca", "Gris", "Celeste", "Azul"];
+        var themeNames = [
+            "Azul",
+            "Rojo/Cobre",
+            "Naranja (DO)",
+            "Celeste",
+            "Gris",
+            "Marrón (Biblioteca)"
+        ];
         var themeChecks = [];
         var themeIndex;
         var panelChecks = [];
@@ -2223,17 +3262,21 @@
         buttons.add("button", undefined, "Continuar", {name: "ok"});
         selectIllustration(0);
 
+        positionDialogOnActiveWindow(dialog);
         if (dialog.show() !== 1) {
             return null;
+        }
+
+        for (themeIndex = 0; themeIndex < themeChecks.length; themeIndex += 1) {
+            if (themeChecks[themeIndex].value) {
+                break;
+            }
         }
 
         return {
             illustrationType: graphCheck.value ? "Gráfico" :
                 (tableCheck.value ? "Cuadro" : "Recuadro"),
-            themeType: themeChecks[0].value ? themeNames[0] :
-                (themeChecks[1].value ? themeNames[1] :
-                    (themeChecks[2].value ? themeNames[2] :
-                        (themeChecks[3].value ? themeNames[3] : themeNames[4]))),
+            themeType: themeNames[themeIndex],
             panelCount: panelChecks[0].value ? 1 : (panelChecks[1].value ? 2 : 3)
         };
     }
@@ -2269,6 +3312,7 @@
         buttons.add("button", undefined, "Cancelar", {name: "cancel"});
         buttons.add("button", undefined, "Continuar", {name: "ok"});
 
+        positionDialogOnActiveWindow(dialog);
         if (dialog.show() !== 1) {
             return null;
         }
@@ -2291,7 +3335,8 @@
         var legendPanel = dialog.add("panel", undefined, "Número de leyendas");
         var buttons = dialog.add("group");
         var titleField;
-        var unitsCheck;
+        var unitsField;
+        var unitsText;
         var legendChecks = [];
         var legendNumber;
 
@@ -2306,8 +3351,9 @@
 
         optionsGroup.orientation = "row";
         optionsGroup.alignChildren = ["left", "center"];
-        unitsCheck = optionsGroup.add("checkbox", undefined, "El gráfico tiene unidades");
-        unitsCheck.value = false;
+        optionsGroup.add("statictext", undefined, "Unidades:");
+        unitsField = optionsGroup.add("edittext", undefined, "");
+        unitsField.characters = 24;
 
         legendPanel.orientation = "row";
         legendPanel.alignChildren = ["left", "center"];
@@ -2320,7 +3366,7 @@
             }
         }
 
-        for (legendNumber = 0; legendNumber <= 6; legendNumber += 1) {
+        for (legendNumber = 0; legendNumber <= MAX_LEGEND_COUNT; legendNumber += 1) {
             legendChecks.push(
                 legendPanel.add("checkbox", undefined, String(legendNumber))
             );
@@ -2330,21 +3376,24 @@
                 };
             }(legendNumber));
         }
-        selectLegendCount(6);
+        selectLegendCount(MAX_LEGEND_COUNT);
 
         buttons.alignment = "right";
         buttons.add("button", undefined, "Cancelar", {name: "cancel"});
         buttons.add("button", undefined, "Continuar", {name: "ok"});
 
+        positionDialogOnActiveWindow(dialog);
         if (dialog.show() !== 1) {
             return null;
         }
 
-        for (legendNumber = 0; legendNumber <= 6; legendNumber += 1) {
+        for (legendNumber = 0; legendNumber <= MAX_LEGEND_COUNT; legendNumber += 1) {
             if (legendChecks[legendNumber].value) {
+                unitsText = unitsField.text.replace(/^\s+|\s+$/g, "");
                 return {
                     title: titleField.text,
-                    hasUnits: unitsCheck.value,
+                    units: unitsText,
+                    hasUnits: unitsText !== "",
                     legendCount: legendNumber
                 };
             }
@@ -2468,6 +3517,7 @@
             dialog.close(1);
         };
 
+        positionDialogOnActiveWindow(dialog);
         if (dialog.show() !== 1 || !validationPassed) {
             return null;
         }
@@ -2484,13 +3534,17 @@
 
     function showSourceDialog() {
         var dialog = new Window("dialog", "Fuente y notas");
-        var sourceGroup = dialog.add("group");
-        var paragraphsGroup = dialog.add("group");
+        var textGroup = dialog.add("group");
+        var optionsGroup = dialog.add("group");
         var buttons = dialog.add("group");
-        var sourceField;
-        var paragraphsField;
+        var textField;
         var defaultSourceCheck;
+        var sourceSingularCheck;
+        var sourcePluralCheck;
         var downloadCheck;
+        var infoCheck;
+        var downloadInfoCheck;
+        var buttonModeChecks = [];
         var downloadGroup;
         var validationPassed = false;
 
@@ -2499,72 +3553,149 @@
         dialog.spacing = 18;
         dialog.margins = 18;
 
-        sourceGroup.orientation = "column";
-        sourceGroup.alignChildren = ["fill", "top"];
-        sourceGroup.add(
+        textGroup.orientation = "column";
+        textGroup.alignChildren = ["fill", "top"];
+        textGroup.add(
             "statictext",
             undefined,
-            "Fuente, con uno o más párrafos:"
+            "Escribe la fuente y las notas, una línea por párrafo."
         );
-        defaultSourceCheck = sourceGroup.add(
+        textField = textGroup.add("edittext", undefined, "", {
+            multiline: true,
+            scrolling: true
+        });
+        textField.preferredSize = [480, 210];
+
+        optionsGroup.orientation = "row";
+        optionsGroup.alignChildren = ["left", "center"];
+        defaultSourceCheck = optionsGroup.add(
             "checkbox",
             undefined,
             "FUENTE: Banco de España."
         );
         defaultSourceCheck.value = false;
-        sourceField = sourceGroup.add("edittext", undefined, "", {
-            multiline: true,
-            scrolling: true
-        });
-        sourceField.preferredSize = [480, 100];
+        sourceSingularCheck = optionsGroup.add("checkbox", undefined, "FUENTE");
+        sourceSingularCheck.value = false;
+        sourcePluralCheck = optionsGroup.add("checkbox", undefined, "FUENTES");
+        sourcePluralCheck.value = false;
+
+        function updateSourceHeadingVisibility() {
+            var showHeadingChecks = !defaultSourceCheck.value;
+
+            sourceSingularCheck.visible = showHeadingChecks;
+            sourcePluralCheck.visible = showHeadingChecks;
+            if (defaultSourceCheck.value) {
+                sourceSingularCheck.value = false;
+                sourcePluralCheck.value = false;
+            }
+            dialog.layout.layout(true);
+        }
+
+        function selectSourceHeading(usePlural) {
+            sourceSingularCheck.value = !usePlural;
+            sourcePluralCheck.value = usePlural;
+        }
 
         defaultSourceCheck.onClick = function () {
             if (defaultSourceCheck.value) {
-                sourceField.text = "FUENTE: Banco de España.";
+                textField.text = "FUENTE: Banco de España.";
             }
+            updateSourceHeadingVisibility();
         };
-
-        paragraphsGroup.orientation = "column";
-        paragraphsGroup.alignChildren = ["fill", "top"];
-        paragraphsGroup.add(
-            "statictext",
-            undefined,
-            "Párrafos adicionales, uno por línea. Incluye las letras a, b, c..."
-        );
-        paragraphsField = paragraphsGroup.add("edittext", undefined, "", {
-            multiline: true,
-            scrolling: true
-        });
-        paragraphsField.preferredSize = [480, 150];
+        sourceSingularCheck.onClick = function () {
+            defaultSourceCheck.value = false;
+            selectSourceHeading(false);
+            updateSourceHeadingVisibility();
+        };
+        sourcePluralCheck.onClick = function () {
+            defaultSourceCheck.value = false;
+            selectSourceHeading(true);
+            updateSourceHeadingVisibility();
+        };
+        updateSourceHeadingVisibility();
 
         downloadGroup = dialog.add("group");
         downloadGroup.orientation = "row";
         downloadGroup.alignChildren = ["left", "center"];
         downloadCheck = downloadGroup.add("checkbox", undefined, "Añadir botón Descargar");
         downloadCheck.value = false;
-        addDownloadIcon(downloadGroup);
+        infoCheck = downloadGroup.add("checkbox", undefined, "+Info");
+        infoCheck.value = false;
+        downloadInfoCheck = downloadGroup.add(
+            "checkbox",
+            undefined,
+            "Añadir Descargar + +Info"
+        );
+        downloadInfoCheck.value = false;
+        buttonModeChecks = [downloadCheck, infoCheck, downloadInfoCheck];
+
+        function selectSourceButtonMode(selectedCheck) {
+            var index;
+
+            for (index = 0; index < buttonModeChecks.length; index += 1) {
+                if (buttonModeChecks[index] !== selectedCheck) {
+                    buttonModeChecks[index].value = false;
+                }
+            }
+        }
+
+        function getSourceButtonMode() {
+            if (downloadInfoCheck.value) {
+                return "downloadInfo";
+            }
+            if (infoCheck.value) {
+                return "info";
+            }
+            if (downloadCheck.value) {
+                return "download";
+            }
+            return "none";
+        }
+
+        downloadCheck.onClick = function () {
+            if (downloadCheck.value) {
+                selectSourceButtonMode(downloadCheck);
+            }
+        };
+        infoCheck.onClick = function () {
+            if (infoCheck.value) {
+                selectSourceButtonMode(infoCheck);
+            }
+        };
+        downloadInfoCheck.onClick = function () {
+            if (downloadInfoCheck.value) {
+                selectSourceButtonMode(downloadInfoCheck);
+            }
+        };
 
         buttons.alignment = "right";
         buttons.add("button", undefined, "Cancelar", {name: "cancel"});
         var continueButton = buttons.add("button", undefined, "Aplicar");
 
         continueButton.onClick = function () {
-            if (sourceField.text === "") {
+            if (textField.text === "") {
                 alert("Introduce el texto de la fuente.");
+                return;
+            }
+            if (!defaultSourceCheck.value &&
+                !sourceSingularCheck.value &&
+                !sourcePluralCheck.value) {
+                alert('Selecciona si el encabezado debe ser "FUENTE" o "FUENTES".');
                 return;
             }
             validationPassed = true;
             dialog.close(1);
         };
 
+        positionDialogOnActiveWindow(dialog);
         if (dialog.show() !== 1 || !validationPassed) {
             return null;
         }
 
         return {
-            source: sourceField.text,
-            paragraphs: paragraphsField.text,
-            addDownload: downloadCheck.value
+            text: textField.text,
+            forceSourcesPlural: defaultSourceCheck.value ? false : sourcePluralCheck.value,
+            buttonMode: getSourceButtonMode()
         };
     }
 
@@ -2580,6 +3711,7 @@
         var legendValues;
         var legendNumber;
         var sourceValues;
+        var unitsFrame;
 
         if (app.documents.length === 0) {
             alert("Abre primero Plantilla Pruebas.ait y ejecuta de nuevo el script.");
@@ -2629,11 +3761,12 @@
                 }
                 setSourceText(
                     documentRef,
-                    sourceValues.source,
-                    sourceValues.paragraphs,
-                    sourceValues.addDownload
+                    sourceValues.text,
+                    sourceValues.buttonMode,
+                    sourceValues.forceSourcesPlural
                 );
                 refreshDocument();
+                showPreSaveChecklist(documentRef);
                 return;
             }
 
@@ -2646,7 +3779,7 @@
                     return;
                 }
 
-                setPanelTitle(
+                panelValues.titleExtraOffset = setPanelTitle(
                     documentRef,
                     panelNumber,
                     titleValues.graphNumber,
@@ -2661,6 +3794,7 @@
                 refreshDocument();
             }
 
+            removePanelUnitsForAllPanels(documentRef, values.panelCount);
             if (!placePanelArtwork(
                 documentRef,
                 values.panelCount,
@@ -2674,6 +3808,21 @@
             for (panelNumber = 1; panelNumber <= values.panelCount; panelNumber += 1) {
                 panelValues = panelConfigurations[panelNumber - 1];
                 if (panelValues.legendCount === 0) {
+                    removeExistingPanelUnitsFrame(documentRef, panelNumber);
+                    positionPanelArtworkForInput(
+                        documentRef,
+                        panelNumber,
+                        titleLineCount,
+                        panelConfigurations
+                    );
+                    unitsFrame = setPanelUnits(documentRef, panelNumber, panelConfigurations);
+                    focusViewOnBounds(
+                        documentRef,
+                        getPanelFocusBounds(documentRef, panelNumber, panelValues.legendCount),
+                        PANEL_VIEW_MARGIN_MM
+                    );
+                    refreshDocument();
+                    showPanelUnitsAdjustmentDialog(unitsFrame, panelValues, panelNumber);
                     continue;
                 }
 
@@ -2712,15 +3861,22 @@
                 refreshDocument();
             }
 
+            setPanelUnitsForAllPanels(
+                documentRef,
+                values.panelCount,
+                panelConfigurations
+            );
+            refreshDocument();
+
             sourceValues = showSourceDialog();
             if (!sourceValues) {
                 return;
             }
             setSourceText(
                 documentRef,
-                sourceValues.source,
-                sourceValues.paragraphs,
-                sourceValues.addDownload
+                sourceValues.text,
+                sourceValues.buttonMode,
+                sourceValues.forceSourcesPlural
             );
             positionSourcesAfterLastPanel(documentRef, values.panelCount);
             refreshDocument();
@@ -2728,6 +3884,7 @@
                 return;
             }
             refreshDocument();
+            showPreSaveChecklist(documentRef);
         } catch (error) {
             alert("No se pudo aplicar la configuración:\n" + error.message);
         }
