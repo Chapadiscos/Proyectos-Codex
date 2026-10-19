@@ -20,6 +20,7 @@ def procesar(ruta_html, config, dir_config, dir_salida, sufijo="", dir_auxiliar=
     informe = Informe()
     ctx = {
         "dir_entrada": os.path.dirname(os.path.abspath(ruta_html)),
+        "ruta_html": os.path.abspath(ruta_html),
         "resolver": lambda r: r if os.path.isabs(r) else os.path.join(dir_config, r),
         "resolver_raiz": lambda r: r if os.path.isabs(r) else os.path.join(RAIZ, r),
     }

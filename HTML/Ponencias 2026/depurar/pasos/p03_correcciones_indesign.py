@@ -9,6 +9,7 @@ import re
 from bs4 import Tag
 
 from ..bloques import es_bloque_imagen, es_figura, hermano, tiene_clase
+from ..css import anadir_style
 
 # Caracteres invisibles que InDesign deja en el texto exportado.
 INVISIBLES = {
@@ -64,13 +65,16 @@ def _pie_debajo(soup, cfg, informe):
 
 
 def _jerarquia_vinetas(soup, cfg, informe):
-    """Reúne listas que InDesign parte al meter imágenes entre viñetas.
+    """Reúne listas que InDesign parte al meter imágenes o párrafos entre viñetas.
 
     <ul>V1 a</ul> <img> <ul>V2 b</ul>  ->  <ul><li>a <img> <ul><li>b</li></ul></li></ul>
-    El nivel de cada viñeta sale de su clase (Viñeta-N).
+    Igual con un párrafo de texto de viñeta (Texto-base---Viñeta) entre la viñeta
+    madre y sus subviñetas (capítulo 46). El nivel de cada viñeta sale de su clase.
     """
     patron = re.compile(cfg.get("nivel_vineta", r"Viñeta-(\d+)"))
     clase_pie = cfg.get("clase_pie", "Pie-Figura")
+    clase_texto = cfg.get("clase_texto_vineta", "Texto-base---Viñeta")
+    estilo_texto = cfg.get("estilo_texto_vineta_en_lista", {"margin-left": "0"})
 
     def nivel(li, defecto):
         for c in li.get("class", []):
@@ -88,7 +92,7 @@ def _jerarquia_vinetas(soup, cfg, informe):
             if primero is not None and nivel(primero, 1) > 1:
                 tramos.append((pendientes, sig))
                 pendientes = []
-            elif es_bloque_imagen(sig) or tiene_clase(sig, clase_pie):
+            elif es_bloque_imagen(sig) or tiene_clase(sig, clase_pie) or tiene_clase(sig, clase_texto):
                 pendientes.append(sig)
             else:
                 break
@@ -98,7 +102,11 @@ def _jerarquia_vinetas(soup, cfg, informe):
 
         fichas = _aplanar(ul, 1, nivel)
         for bloques, continuacion in tramos:
-            fichas += [("bloque", b.extract()) for b in bloques]
+            for b in bloques:
+                if tiene_clase(b, clase_texto):
+                    # Dentro de la viñeta ya queda alineado con su texto: sin el margen propio
+                    anadir_style(b, estilo_texto)
+                fichas.append(("bloque", b.extract()))
             fichas += _aplanar(continuacion.extract(), 1, nivel)
         _reconstruir(soup, ul, fichas)
         informe.contar("listas de viñetas reunidas")

@@ -106,7 +106,7 @@ def test_imagenes_por_contenido_no_por_orden(tmp_path):
     p04_imagenes.aplicar(s, {"cache": ".cache"}, _ctx(tmp_path), inf)
     assert [i["src"] for i in s.find_all("img")] == ["https://h/222.jpg", "https://h/111.jpg", "img/C.jpg"]
     assert any("C.jpg" in a for a in inf.avisos)
-    assert any("333.jpg" in a for a in inf.avisos)
+    assert any("1 URL del .txt no corresponden" in i for i in inf.informacion)  # 333.jpg: solo información
 
 
 def test_inyectar_html_en_head(tmp_path):
@@ -318,3 +318,131 @@ def test_cursiva_light_no_engorda_por_font_weight_normal(tmp_path):
     spans = s.find_all("span")
     assert spans[0]["style"] == "font-style: italic"
     assert spans[1]["style"] == "font-weight: bold"
+
+
+def test_enlaces_de_varias_paginas_se_suman(tmp_path, monkeypatch):
+    """Panel de Hélice con varias páginas: cada pulsación del marcador añade enlaces al .txt."""
+    from depurar import capitulo
+
+    u = [f"https://h/uploads/app/1/files/{i}.jpg" for i in range(4)]
+    txt = tmp_path / "33Ponencias2026.txt"
+    monkeypatch.setattr(capitulo, "pegar", lambda: "\n".join(u[:2]))
+    capitulo._preparar_urls(str(tmp_path), 33, {})
+    monkeypatch.setattr(capitulo, "pegar", lambda: "\n".join(u[1:]))  # repite una de la página anterior
+    capitulo._preparar_urls(str(tmp_path), 33, {})
+    assert sorted(txt.read_text(encoding="utf-8").split()) == u
+
+
+def test_imagen_sin_url_se_apunta_y_las_urls_de_mas_no_avisan(tmp_path):
+    (tmp_path / "img").mkdir()
+    (tmp_path / "img" / "A.jpg").write_bytes(b"imagen A")
+    cache = tmp_path / ".cache"
+    cache.mkdir()
+    (cache / "1.jpg").write_bytes(b"otra imagen")
+    (tmp_path / "urls.txt").write_text("https://h/1.jpg\n", encoding="utf-8")
+    s = _soup('<img src="img/A.jpg">')
+    inf = Informe()
+    p04_imagenes.aplicar(s, {"cache": ".cache"}, _ctx(tmp_path), inf)
+    assert inf.sin_url == ["A.jpg"]
+    assert inf.avisos == ["imagen sin URL en Hélice: A.jpg"]  # la URL sobrante es solo información
+
+
+def test_jerarquia_vinetas_con_parrafo_de_texto_de_vineta(tmp_path):
+    """Capítulo 46: V1, párrafo Texto-base---Viñeta y V2 sueltas -> V2 dentro de su V1."""
+    s = _soup(
+        '<ul><li class="V-Viñeta-1">Dermatitis</li></ul>'
+        '<p class="Texto-base---Viñeta-PO26">Explicación</p>'
+        '<ul><li class="V-Viñeta-2">Alérgica</li><li class="V-Viñeta-2">Irritativa</li></ul>'
+        '<p class="Texto-base-PO26">Sigue</p>'
+    )
+    p03_correcciones_indesign.aplicar(s, {"activas": ["jerarquia_vinetas"]}, {}, Informe())
+    assert str(s.body) == (
+        '<body><ul><li class="V-Viñeta-1">Dermatitis'
+        '<p class="Texto-base---Viñeta-PO26" style="margin-left: 0">Explicación</p>'
+        '<ul><li class="V-Viñeta-2">Alérgica</li><li class="V-Viñeta-2">Irritativa</li></ul></li></ul>'
+        '<p class="Texto-base-PO26">Sigue</p></body>'
+    )
+
+
+def test_font_weight_normal_es_la_version_light_de_la_familia(tmp_path):
+    """Cap. 52: cita en un ladillo (BC Civitas Light) y cap. 35: cursiva de bibliografía (Avenir Light)."""
+    (tmp_path / "css").mkdir()
+    (tmp_path / "css" / "id.css").write_text(
+        "span.CharOverride-1 { color:#000000; font-weight:normal; }\n"
+        "span.CharOverride-2 { font-style:oblique; font-weight:normal; }",
+        encoding="utf-8",
+    )
+    (tmp_path / "helice.css").write_text(
+        "p.Ladillo-1-PO26 { font-family: bc-civitas, sans-serif; font-weight: 700; }\n"
+        "li.Bibliografia-PO26 { font-family: avenir-lt-pro, sans-serif; font-weight: 200; }",
+        encoding="utf-8",
+    )
+    s = _soup(
+        '<html><head><link href="css/id.css" rel="stylesheet"></head><body>'
+        '<p class="Ladillo-1-PO26">PRUEBAS <span class="CharOverride-1">(2-15)</span></p>'
+        '<ol><li class="Bibliografia-PO26"><span class="CharOverride-2">Ophthalmology</span></li></ol>'
+        '<p class="Otro"><span class="CharOverride-1">x</span></p></body></html>'
+    )
+    cfg = {
+        "clases_anulacion": ["CharOverride-\\d+"],
+        "propiedades": {"span": ["color", "font-style", "font-weight"]},
+        "css_helice": "helice.css",
+        "peso_normal_por_familia": {"bc-civitas": "300", "avenir-lt-pro": "200"},
+        "valores_descartar": {"font-weight": ["normal", "400"]},
+        "equivalencias": {"font-style": {"oblique": "italic"}},
+    }
+    p01_estilos_capitulo.aplicar(s, cfg, _ctx(tmp_path), Informe())
+    spans = s.find_all("span")
+    assert spans[0]["style"] == "color: #000000; font-weight: 300"  # hereda negrita: Light
+    assert spans[1]["style"] == "font-style: italic"  # hereda el 200 de la bibliografía
+    assert spans[2]["style"] == "color: #000000"  # familia desconocida: se descarta como antes
+
+
+def _caso_pesos(tmp_path, cuerpo, tsv=None):
+    (tmp_path / "css").mkdir(exist_ok=True)
+    (tmp_path / "css" / "id.css").write_text("span.CharOverride-1 { font-style:normal; font-weight:normal; }", encoding="utf-8")
+    (tmp_path / "helice.css").write_text(
+        "p.Pie-Figura-PO26 { font-family: bc-civitas, sans-serif; font-weight: 400; }\n"
+        "span._5-Medium-PO26 { font-style:normal; font-weight:600; }",
+        encoding="utf-8",
+    )
+    if tsv:
+        (tmp_path / "salida").mkdir(exist_ok=True)
+        (tmp_path / "salida" / "cap.fuentes.tsv").write_text(tsv, encoding="utf-8")
+    s = _soup(f'<html><head><link href="css/id.css" rel="stylesheet"></head><body>{cuerpo}</body></html>')
+    cfg = {
+        "clases_anulacion": ["CharOverride-\\d+"],
+        "propiedades": {"span": ["font-style", "font-weight"]},
+        "css_helice": "helice.css",
+        "pesos_indesign": {"BC Civitas": {"Light": 300, "Regular": 400, "Medium": 500, "Bold": 700},
+                           "Neue Haas Grotesk Display Pro": {"Light": 400, "Medium": 600}},
+        "peso_normal_por_familia": {"bc-civitas": "300"},
+        "valores_descartar": {"font-weight": ["normal", "400"]},
+    }
+    ctx = {**_ctx(tmp_path), "ruta_html": str(tmp_path / "cap.html")}
+    inf = Informe()
+    p01_estilos_capitulo.aplicar(s, cfg, ctx, inf)
+    return s.find_all("span"), inf
+
+
+def test_pesos_reales_de_indesign(tmp_path):
+    """Cap. 43: pie en BC Civitas Medium; cap. 35: Medium Italic con estilo propio."""
+    spans, inf = _caso_pesos(
+        tmp_path,
+        '<p class="Pie-Figura-PO26"><span class="CharOverride-1">Celulitis preseptal </span>en paciente</p>'
+        '<p><span class="_5-Medium-PO26 CharOverride-1">bypass</span></p>',
+        "Celulitis preseptal \tBC Civitas\tMedium\nbypass\tNeue Haas Grotesk Display Pro\t66 Medium Italic\n",
+    )
+    assert spans[0]["style"] == "font-style: normal; font-weight: 500"
+    assert spans[1]["style"] == "font-style: normal; font-weight: 600"
+    assert any("tomados de InDesign" in i for i in inf.informacion)
+
+
+def test_pesos_sin_indesign_respeta_el_estilo_propio_y_el_parrafo(tmp_path):
+    spans, _ = _caso_pesos(
+        tmp_path,
+        '<p class="Pie-Figura-PO26"><span class="CharOverride-1">Celulitis</span></p>'
+        '<p><span class="_5-Medium-PO26 CharOverride-1">bypass</span></p>',
+    )
+    assert spans[0]["style"] == "font-style: normal"  # el pie es 400: hereda
+    assert spans[1]["style"] == "font-style: normal"  # su estilo _5-Medium manda (600)

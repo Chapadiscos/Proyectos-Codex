@@ -9,14 +9,15 @@ python3 -m venv .venv
 ```
 
 ## Uso: app «InDesign a HTML» (del 33 en adelante)
-La app está en `herramientas/InDesign a HTML.app`; arrástrala al Dock. Si cambias su código (`herramientas/InDesign a HTML.applescript`), vuelve a crearla con `herramientas/compilar_app.sh`.
+La app está en `herramientas/InDesign a HTML.app`; arrástrala al Dock. Si cambias su código (`herramientas/InDesign a HTML.applescript`), vuelve a crearla con `herramientas/compilar_app.sh`. El icono está en `herramientas/icono/` (`icono.svg`; si cambias el diseño, `generar_icono.sh` vuelve a crear `icono.icns`).
 
 1. **Abre la app** y elige el `.indd` del capítulo.
-2. **InDesign lo exporta** a HTML (heredado) en su misma carpeta, con los ajustes HTML del propio documento (`herramientas/exportar_html.jsx`).
-3. **Pausa:** se abre en el Finder la carpeta `…-web-resources/image`.
+2. **InDesign lo exporta** a HTML (heredado) en su misma carpeta, con los ajustes HTML del propio documento (`herramientas/exportar_html.jsx`), sin abrirlo en el navegador. El capítulo se pone en primer plano para exportar, porque InDesign exporta el documento activo.
+3. **Pausa:** la app indica la carpeta `…-web-resources/image` con las imágenes que hay que subir.
    - Sube esas imágenes a la carpeta del capítulo en Hélice (no los .jpg sueltos de la carpeta del capítulo).
-   - Abre esa carpeta en Hélice y pulsa el marcador **«Enlaces Hélice»**, que copia las URL al portapapeles. Para instalarlo, abre `herramientas/instalar_marcador.html` y arrastra el botón a la barra de marcadores.
+   - Abre esa carpeta en Hélice y pulsa el marcador **«Enlaces Hélice»**: copia las URL al portapapeles y las muestra en un recuadro que se cierra solo. Para instalarlo, abre `herramientas/instalar_marcador.html` y arrastra el botón a la barra de marcadores (el código está en `herramientas/enlaces_helice.js`).
    - Vuelve a la app y pulsa **Continuar**.
+   - **Si las imágenes ocupan varias páginas en Hélice**, la app dice cuáles faltan: pasa a la siguiente página, pulsa otra vez el marcador y **Continuar**. Los enlaces se van sumando en el `.txt` del capítulo. «Seguir sin ellas» genera el HTML con las que haya.
 4. **Depuración:** se genera `… - Helice.html` en la carpeta del capítulo. La vista previa y el informe van a `salida/` del proyecto.
    - **Sin avisos:** el HTML queda copiado en el portapapeles. Pégalo en Hélice con ⌘V.
    - **Con avisos:** se muestran y puedes ver la vista previa o copiarlo igualmente.
@@ -29,7 +30,7 @@ La primera vez, macOS pedirá permiso para que la app controle InDesign y el Fin
 ./capitulo 33                      # o la ruta al .indd, al .html o a la carpeta del capítulo
 ./capitulo 33 --copiar             # copia al portapapeles aunque haya avisos
 ```
-Si el portapapeles solo contiene URL (las del marcador), se guardan en el `.txt` del capítulo; si no, se usan las que ya tenga el `.txt`.
+Si el portapapeles solo contiene URL (las del marcador), se añaden a las del `.txt` del capítulo; si no, se usan las que ya tenga. Las URL de más (otras páginas, subidas repetidas o borradas) se informan pero no bloquean.
 
 Para un HTML suelto: `.venv/bin/python -m depurar ruta/al/archivo.html` (sale en `salida/`).
 
@@ -55,6 +56,13 @@ Para un HTML suelto: `.venv/bin/python -m depurar ruta/al/archivo.html` (sale en
 8. Las imágenes `IBXX` (estrechas): `max-width: 60%; display: block; margin: 0 auto;`.
 
 Todo se configura en `config/config.yaml`. `config/helice_ponencias2026.css` es una copia de la CSS subida a Hélice, solo para la vista previa.
+
+### Pesos tipográficos
+La CSS que genera InDesign exporta como `font-weight: normal` todo lo que no es Bold (Light, Regular, Medium…). Por eso la app, al exportar, guarda en `salida/<capítulo>.fuentes.tsv` la fuente real de cada tramo de texto, y el depurador pone el peso a partir de ella (`pesos_indesign` en `config/config.yaml`). Para un capítulo exportado a mano se puede generar sin reexportar:
+```sh
+osascript -e 'tell application "Adobe InDesign 2026" to do script (POSIX file "'"$PWD"'/herramientas/exportar_html.jsx") language javascript with arguments {"/ruta/al/capitulo.indd", "'"$PWD"'/salida", "solo_fuentes"}'
+```
+Sin ese archivo se aplica una regla de respaldo: manda el estilo de carácter propio; si el texto hereda negrita (ladillo), «normal» se toma como Light.
 
 ## Por qué así
 - Hélice solo tiene la CSS de los **estilos del libro**. Las clases `ParaOverride-N`, `CharOverride-N` e `#_idContainerNNN` se numeran por capítulo y no existen allí.

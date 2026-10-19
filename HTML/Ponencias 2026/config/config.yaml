@@ -30,9 +30,22 @@ estilos_capitulo:
     span: [font-size, font-style, font-weight, color, vertical-align, text-decoration, text-transform, font-family]
     p: [text-indent]                       # p. ej. subtítulos sin sangría
     li: [list-style-type]                  # listas numeradas (decimal)
-  # Valores de las anulaciones que no se copian. "font-weight: normal" en InDesign es
-  # «la versión normal de la familia» (p. ej. Avenir Light Oblique), pero en la web es
-  # 400 y se impone a la CSS: las cursivas de la bibliografía salían más gruesas.
+  # Peso de los textos con ajustes de InDesign. InDesign exporta como
+  # "font-weight: normal" todo lo que no es Bold (Light, Regular, Medium…), así que:
+  # 1) si existe salida/<capítulo>.fuentes.tsv (lo escribe la exportación de la app con
+  #    la fuente real de cada tramo), el peso sale de pesos_indesign;
+  # 2) si no: con estilo de carácter propio manda ese estilo; si hereda negrita
+  #    (ladillo), se usa peso_normal_por_familia (Light); si no, hereda del párrafo.
+  css_helice: helice_ponencias2026.css
+  carpetas_fuentes: [salida]          # dónde buscar <capítulo>.fuentes.tsv (y junto al HTML)
+  pesos_indesign:                     # estilo de la fuente en InDesign -> peso en el kit de Typekit
+    BC Civitas: {Light: 300, Regular: 400, Medium: 500, SemiBold: 600, Bold: 700}
+    Avenir: {Light: 200, Book: 400, Roman: 400, Medium: 400, Heavy: 400, Black: 400}
+    Neue Haas Grotesk Display Pro: {Light: 400, Roman: 400, Medium: 600, Bold: 600}   # el kit solo trae 400 y 600
+  peso_normal_por_familia:
+    bc-civitas: "300"
+    avenir-lt-pro: "200"
+    neue-haas-grotesk-display: "400"
   valores_descartar:
     font-weight: [normal, "400"]
   equivalencias:
@@ -45,7 +58,7 @@ estilos_capitulo:
     "BC Civitas SemiBold": bc-civitas
     "NeueHaasGroteskDisp Pro Lt": neue-haas-grotesk-display
   # Fuentes que se quitan sin avisar: el carácter ya está en Unicode (ε, µ, ±…)
-  fuentes_descartar: [Symbol]
+  fuentes_descartar: [Symbol, AnayaSimbolosMat]
   # Clases sin regla en Hélice que se conservan como estilo
   clases_a_estilo:
     noPartir-PO26: {white-space: nowrap}
@@ -79,6 +92,9 @@ correcciones_indesign:
   # activas: [br_al_final_de_parrafo, pie_debajo, jerarquia_vinetas]   # si se omite, todas
   clase_pie: "Pie-Figura"          # regla 2: el pie va debajo de la imagen
   nivel_vineta: "Viñeta-(\\d+)"    # regla 3: nivel de cada viñeta según su clase
+  # Regla 3 también con el párrafo de texto de viñeta entre la viñeta madre y sus subviñetas
+  clase_texto_vineta: "Texto-base---Viñeta"
+  estilo_texto_vineta_en_lista: {margin-left: "0"}
 
 imagenes:
   lista_urls: "*.txt"       # junto al HTML: una URL de Hélice por línea

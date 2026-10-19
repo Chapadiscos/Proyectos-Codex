@@ -25,12 +25,18 @@ def aplicar(soup, cfg, ctx, informe):
     with open(txts[0], encoding="utf-8") as f:
         urls = [l.strip() for l in f if l.strip().startswith("http")]
 
+    # Las URL de más (otras páginas del panel, subidas repetidas o borradas) no
+    # cambian el HTML: se informan, pero no bloquean la copia automática.
     cache = ctx["resolver_raiz"](cfg.get("cache", ".cache/imagenes"))
     remotas = {}
     for url in urls:
-        h = _md5(_descargar(url, cache))
+        try:
+            h = _md5(_descargar(url, cache))
+        except requests.RequestException as e:
+            informe.informar(f"no se puede descargar (¿borrada en Hélice?): {url} ({e.__class__.__name__})")
+            continue
         if h in remotas:
-            informe.avisar(f"URL con la misma imagen que otra: {url}")
+            informe.informar(f"URL con la misma imagen que otra (se usa la primera): {url}")
         remotas.setdefault(h, url)
 
     usadas, pendientes = set(), []
@@ -56,10 +62,11 @@ def aplicar(soup, cfg, ctx, informe):
             informe.contar("imágenes con URL de Hélice (por parecido visual)")
         else:
             informe.avisar(f"imagen sin URL en Hélice: {os.path.basename(ruta)}")
+            informe.sin_url.append(os.path.basename(ruta))
 
-    for url in urls:
-        if url not in usadas:
-            informe.avisar(f"URL del .txt que no corresponde a ninguna imagen: {url}")
+    sobrantes = [u for u in remotas.values() if u not in usadas]
+    if sobrantes:
+        informe.informar(f"{len(sobrantes)} URL del .txt no corresponden a ninguna imagen del capítulo")
 
 
 def _asignar(img, url, ruta, usadas, ctx):
@@ -75,16 +82,22 @@ def _parecida(ruta, candidatas, cfg):
     from PIL import Image, ImageChops, ImageStat
 
     umbral = cfg.get("diferencia_maxima", 3.0)  # media de diferencia por píxel, 0-255
-    with Image.open(ruta) as a:
-        a = a.convert("RGB")
-        mejor = None
-        for url, ruta_remota in candidatas:
+    try:
+        with Image.open(ruta) as a:
+            a = a.convert("RGB")
+    except OSError:  # no es una imagen que Pillow sepa leer
+        return None
+    mejor = None
+    for url, ruta_remota in candidatas:
+        try:
             with Image.open(ruta_remota) as b:
                 if b.size != a.size:
                     continue
                 dif = sum(ImageStat.Stat(ImageChops.difference(a, b.convert("RGB"))).mean) / 3
-            if dif <= umbral and (mejor is None or dif < mejor[1]):
-                mejor = (url, dif)
+        except OSError:
+            continue
+        if dif <= umbral and (mejor is None or dif < mejor[1]):
+            mejor = (url, dif)
     return mejor[0] if mejor else None
 
 

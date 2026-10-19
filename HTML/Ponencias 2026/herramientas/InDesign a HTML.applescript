@@ -23,7 +23,7 @@ on run
 	try
 		with timeout of 900 seconds
 			tell application "Adobe InDesign 2026"
-				set res to do script jsx language javascript with arguments {rutaIndd}
+				set res to do script jsx language javascript with arguments {rutaIndd, proyecto & "/salida"}
 			end tell
 		end timeout
 	on error msg
@@ -37,23 +37,40 @@ on run
 	set rutaHtml to text 4 thru -1 of res
 
 	-- 3. Pausa: subir las imágenes y copiar sus enlaces con el marcador
-	set carpetaImagenes to do shell script "ls -d " & quoted form of (my carpetaDe(rutaHtml)) & "/*-web-resources/image | head -1"
+	set carpetaImagenes to do shell script "ls -d " & quoted form of (my carpetaDe(rutaHtml)) & "/*-web-resources/image 2>/dev/null | head -1"
+	if carpetaImagenes is "" then
+		-- Todos los capítulos llevan al menos la cabecera: sin imágenes, la exportación ha salido mal
+		set tamano to do shell script "stat -f %z " & quoted form of rutaHtml
+		display dialog "El HTML exportado no tiene imágenes (" & tamano & " bytes), así que parece que InDesign no ha exportado el capítulo completo." & return & return & ¬
+			"Revisa el documento en InDesign y vuelve a intentarlo." buttons {"Aceptar"} default button 1 with title titulo with icon stop
+		return
+	end if
 	set numImagenes to do shell script "ls " & quoted form of carpetaImagenes & " | grep -v '^\\.' | wc -l | tr -d ' '"
-	tell application "Finder"
-		open ((POSIX file carpetaImagenes) as alias)
-	end tell
-	activate
 	set aviso to "HTML exportado." & return & return & ¬
-		"1. Sube a Hélice, en la carpeta del capítulo, las " & numImagenes & " imágenes de la carpeta que se acaba de abrir." & return & ¬
+		"1. Sube a Hélice, en la carpeta del capítulo, las " & numImagenes & " imágenes de:" & return & carpetaImagenes & return & ¬
 		"2. Abre esa carpeta en Hélice y pulsa el marcador «Enlaces Hélice»." & return & ¬
 		"3. Vuelve aquí y pulsa Continuar."
+	set botones to {"Cancelar", "Continuar"}
 	repeat
-		display dialog aviso buttons {"Cancelar", "Continuar"} default button "Continuar" cancel button "Cancelar" with title titulo
+		set boton to button returned of (display dialog aviso buttons botones default button "Continuar" cancel button "Cancelar" with title titulo)
+		if boton is "Seguir sin ellas" then
+			-- El HTML ya está generado; se trata como un resultado con avisos
+			set estado to "AVISOS"
+			exit repeat
+		end if
 		set salida to do shell script quoted form of (proyecto & "/capitulo") & " " & quoted form of rutaHtml & " --resumen"
 		set estado to paragraph 1 of salida
-		if estado is not "FALTAN_URLS" then exit repeat
-		set aviso to "No hay enlaces de Hélice en el portapapeles." & return & return & ¬
-			"Abre en Hélice la carpeta con las imágenes del capítulo, pulsa el marcador «Enlaces Hélice» y vuelve a pulsar Continuar."
+		if estado is "FALTAN_URLS" then
+			set aviso to "No hay enlaces de Hélice en el portapapeles." & return & return & ¬
+				"Abre en Hélice la carpeta con las imágenes del capítulo, pulsa el marcador «Enlaces Hélice» y vuelve a pulsar Continuar."
+			set botones to {"Cancelar", "Continuar"}
+		else if estado is "FALTAN_IMAGENES" then
+			-- Imágenes repartidas en varias páginas del panel: se van sumando los enlaces
+			set aviso to my desde(salida, 4)
+			set botones to {"Cancelar", "Seguir sin ellas", "Continuar"}
+		else
+			exit repeat
+		end if
 	end repeat
 
 	-- 4. Resultado

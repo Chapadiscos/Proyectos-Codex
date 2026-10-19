@@ -8,17 +8,23 @@
   a.marcador { display: inline-block; padding: 10px 16px; background: #c55b17; color: #fff; border-radius: 6px; text-decoration: none; font-weight: 600; }
   code { background: #f2f2f2; padding: 1px 4px; border-radius: 3px; }
 </style>
+<script src="enlaces_helice.js"></script>
 </head>
 <body>
 <h1>Marcador «Enlaces Hélice»</h1>
-<p>Arrastra este botón a la barra de marcadores del navegador:</p>
-<p><a class="marcador" href="javascript:(()=>{const re=/(?:https?:\/\/[^\s&quot;'<>)]+)?\/uploads\/app\/\d+\/files\/[\w.-]+?\.(?:jpe?g|png|gif|webp)/gi;const u=new Set();for(const m of document.documentElement.innerHTML.matchAll(re)){u.add(m[0].startsWith('/')?location.origin+m[0]:m[0]);}const t=[...u].join('\n');if(!u.size)return alert('No he encontrado enlaces de imágenes en esta página.');navigator.clipboard.writeText(t).then(()=>alert(u.size+' enlaces copiados. Ahora ejecuta ./capitulo NN'),()=>prompt('Copia estos enlaces (⌘C):',t));})();">Enlaces Hélice</a></p>
+<p>Arrastra este botón a la barra de marcadores del navegador. Si ya tenías una versión anterior, bórrala y arrastra esta:</p>
+<p><a class="marcador" id="marcador" href="#">Enlaces Hélice</a></p>
 <h2>Uso</h2>
 <ol>
-  <li>En Hélice, abre la carpeta de imágenes del capítulo (con todas las imágenes visibles).</li>
-  <li>Pulsa el marcador: copia al portapapeles las URL de las imágenes.</li>
-  <li>En el Terminal, ejecuta <code>./capitulo NN</code>: guarda las URL en el <code>.txt</code> del capítulo y genera el HTML.</li>
+  <li>En Hélice, abre la carpeta de imágenes del capítulo.</li>
+  <li>Pulsa el marcador: copia al portapapeles las URL de las imágenes de esa página y las muestra en un recuadro arriba a la derecha, que se cierra solo.</li>
+  <li>Si las imágenes ocupan varias páginas, la app «InDesign a HTML» te pedirá pasar a la siguiente y volver a pulsarlo: los enlaces se suman.</li>
 </ol>
 <p>No importa el orden ni que haya alguna URL de más: cada imagen se empareja por su contenido.</p>
+<script>
+  // El marcador se construye a partir de enlaces_helice.js (una sola copia del código)
+  document.getElementById("marcador").href =
+    "javascript:" + encodeURIComponent("(" + enlacesHelice.toString() + ")();void 0");
+</script>
 </body>
 </html>

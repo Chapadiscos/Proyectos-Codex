@@ -12,6 +12,7 @@ class Informe:
         self.cambios = Counter()
         self.avisos = []
         self.informacion = []
+        self.sin_url = []  # imágenes del capítulo sin URL de Hélice (faltan enlaces)
 
     def contar(self, que, n=1):
         if n:
