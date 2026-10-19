@@ -1,0 +1,543 @@
+{
+  "Cuadro": [
+    {
+      "numero": "1.1",
+      "titulo": "El crecimiento global superó las previsiones en 2025",
+      "pagina": 24
+    },
+    {
+      "numero": "1.2",
+      "titulo": "Respuestas de política de oferta ante shocks geopolíticos históricos",
+      "pagina": 34
+    },
+    {
+      "numero": "1.3",
+      "titulo": "La UE es vulnerable a disrupciones de oferta en productos no energéticos con producción relevante en Oriente Medio",
+      "pagina": 38
+    },
+    {
+      "numero": "1.4",
+      "titulo": "El aumento de la tasa de ahorro fue generalizado por grupos de población entre 2017 y 2024",
+      "pagina": 61
+    },
+    {
+      "numero": "1.5",
+      "titulo": "Descomposición de la evolución del deflactor del VAB de la industria manufacturera y de los servicios de mercado (períodos 2022-2023 y 2024-2025)",
+      "pagina": 83
+    },
+    {
+      "numero": "1.6",
+      "titulo": "En 2025, la capacidad de financiación de la economía española volvió a ser positiva (4 % del PIB), aunque ligeramente inferior a la de 2024. La PII se elevó ligeramente, hasta el 44,8 % del PIB",
+      "pagina": 94
+    },
+    {
+      "numero": "2.1",
+      "titulo": "Un número reducido de áreas urbanas, encabezadas por Madrid y Barcelona, concentran el crecimiento de los precios y las compraventas de vivienda",
+      "pagina": 138
+    },
+    {
+      "numero": "2.2",
+      "titulo": "El porcentaje de hogares que residen en viviendas de su propiedad descendió tras la crisis económica iniciada en 2008",
+      "pagina": 142
+    },
+    {
+      "numero": "2.3",
+      "titulo": "La economía española destaca entre las economías avanzadas por el incremento acumulado durante las últimas cuatro décadas del esfuerzo en términos de renta que deben realizar los hogares para adquirir una vivienda en propiedad",
+      "pagina": 144
+    },
+    {
+      "numero": "2.4",
+      "titulo": "El esfuerzo en términos de renta de los hogares para adquirir una vivienda es elevado, especialmente en las grandes ciudades y sus áreas urbanas",
+      "pagina": 146
+    },
+    {
+      "numero": "2.5",
+      "titulo": "Los hogares que residen en viviendas de alquiler destinan una proporción elevada de su renta neta al arrendamiento, especialmente en las grandes ciudades",
+      "pagina": 150
+    },
+    {
+      "numero": "2.6",
+      "titulo": "Una proporción relevante de los hogares que residen en viviendas de alquiler destinan más de un 30 % de su renta neta al pago del alquiler",
+      "pagina": 151
+    },
+    {
+      "numero": "2.7",
+      "titulo": "Las provincias con mayor actividad económica disponen de menos viviendas construidas para incrementar la oferta de vivienda residencial",
+      "pagina": 154
+    },
+    {
+      "numero": "2.8",
+      "titulo": "Las compras de no residentes ganan peso en el mercado de la vivienda español, especialmente en las islas y en la costa mediterránea",
+      "pagina": 160
+    },
+    {
+      "numero": "2.9",
+      "titulo": "Las viviendas turísticas y las propiedades de no residentes se concentran en la costa mediterránea y las islas",
+      "pagina": 162
+    },
+    {
+      "numero": "2.10",
+      "titulo": "El sector de la promoción y la construcción residencial presenta una recuperación de sus márgenes y de la rentabilidad, si bien en conjunto estos indicadores se mantienen en niveles contenidos en relación con otros sectores",
+      "pagina": 167
+    },
+    {
+      "numero": "2.11",
+      "titulo": "La propiedad de las viviendas alquiladas para residencia habitual se encuentra distribuida de manera mayoritaria entre arrendadores que no concentran a escala agregada cuotas de mercado significativas",
+      "pagina": 170
+    },
+    {
+      "numero": "3.1",
+      "titulo": "Entre 2013 y 2023, la PTF creció más en todos los sectores que en 2000-2013, especialmente en los digitales y servicios profesionales",
+      "pagina": 215
+    },
+    {
+      "numero": "3.2",
+      "titulo": "Las empresas solicitantes de ICO Crecimiento están más apalancadas, pero son más solventes y más productivas",
+      "pagina": 234
+    },
+    {
+      "numero": "3.3",
+      "titulo": "Las empresas españolas que reciben financiación de CR son más innovadoras y productivas (a)",
+      "pagina": 241
+    },
+    {
+      "numero": "3.4",
+      "titulo": "Características de las empresas que adoptan tecnologías de IA (a)",
+      "pagina": 254
+    }
+  ],
+  "Gráfico": [
+    {
+      "numero": "1.1",
+      "titulo": "Las tensiones comerciales y los aranceles aplicados por EEUU se han reducido desde abril de 2025, pero permanecen muy elevados respecto a 2024",
+      "pagina": 22
+    },
+    {
+      "numero": "1.2",
+      "titulo": "Las nuevas decisiones arancelarias de EEUU han tenido efectos heterogéneos entre países",
+      "pagina": 23
+    },
+    {
+      "numero": "1.3",
+      "titulo": "La inflación prosiguió su proceso de moderación gradual en 2025, de forma más paulatina en su componente subyacente, en un contexto de relativa contención de los precios de las materias primas energéticas hasta el conflicto en Oriente Medio",
+      "pagina": 26
+    },
+    {
+      "numero": "1.4",
+      "titulo": "En 2025 continuó la relajación de las políticas monetarias en la mayoría de las principales áreas económicas globales, con las excepciones de Japón y de Brasil",
+      "pagina": 27
+    },
+    {
+      "numero": "1.5",
+      "titulo": "Exportaciones a EEUU: caen las procedentes de China y de la UE tras un fuerte incremento impulsado por la anticipación de nuevos aranceles",
+      "pagina": 28
+    },
+    {
+      "numero": "1.6",
+      "titulo": "Las importaciones de la UE desde China crecen mucho más que las del resto del mundo desde 2024",
+      "pagina": 29
+    },
+    {
+      "numero": "1.7",
+      "titulo": "Primer episodio de la guerra comercial (2017-2019): desviación de exportaciones chinas a la UE y efectos limitados sobre los precios, aunque heterogéneos por sector (a)",
+      "pagina": 30
+    },
+    {
+      "numero": "1.8",
+      "titulo": "Fuerte incremento de los precios de las materias primas energéticas tras el inicio de la guerra en Irán",
+      "pagina": 32
+    },
+    {
+      "numero": "1.9",
+      "titulo": "La dependencia de los combustibles fósiles en el conjunto de la UE sigue siendo muy elevada (a)",
+      "pagina": 35
+    },
+    {
+      "numero": "1.10",
+      "titulo": "La composición de los proveedores de productos energéticos de la UE y España se ha visto alterada de forma significativa en los últimos años",
+      "pagina": 36
+    },
+    {
+      "numero": "1.11",
+      "titulo": "El cierre del estrecho de Ormuz afecta al comercio de petróleo y gas natural, pero también de fertilizantes y químicos",
+      "pagina": 37
+    },
+    {
+      "numero": "1.12",
+      "titulo": "Evolución dispar de los tipos de interés a largo plazo en el área del euro y EEUU, si bien la prima a plazo aumentó en ambas áreas",
+      "pagina": 40
+    },
+    {
+      "numero": "1.13",
+      "titulo": "La escalada de las tensiones comerciales en abril de 2025 y, más recientemente, el conflicto bélico en Oriente Medio han condicionado la evolución de los mercados financieros a escala global",
+      "pagina": 41
+    },
+    {
+      "numero": "1.14",
+      "titulo": "Los indicadores de mercado que aproximan las expectativas de inflación aumentaron tras el inicio de la guerra en Irán ante el repunte de los precios de la energía",
+      "pagina": 42
+    },
+    {
+      "numero": "1.15",
+      "titulo": "Los efectos de la guerra en Irán en los mercados financieros han sido limitados en comparación con episodios pasados de inestabilidad geopolítica y crisis de oferta",
+      "pagina": 43
+    },
+    {
+      "numero": "1.16",
+      "titulo": "Persisten valoraciones elevadas en algunos segmentos de los mercados de renta fija y variable, especialmente en grandes empresas del sector tecnológico",
+      "pagina": 44
+    },
+    {
+      "numero": "1.17",
+      "titulo": "La evolución del PIB en 2025 mostró disparidades entre los países de la UEM, con España en cabeza",
+      "pagina": 47
+    },
+    {
+      "numero": "1.18",
+      "titulo": "El crecimiento del PIB real se moderó hasta el 2,8 % en 2025, se mantuvo por encima del registrado en la UEM (1,4 %) y amplió la brecha positiva de producción",
+      "pagina": 57
+    },
+    {
+      "numero": "1.19",
+      "titulo": "El coste del crédito dejó de reducirse en los primeros meses de 2026 y el acceso a la financiación de los hogares y las empresas mostró signos de empeoramiento",
+      "pagina": 59
+    },
+    {
+      "numero": "1.20",
+      "titulo": "El aumento del consumo privado se apoyó en el dinamismo de los bienes duraderos",
+      "pagina": 60
+    },
+    {
+      "numero": "1.21",
+      "titulo": "La vulnerabilidad financiera agregada de los hogares se sitúa en un nivel históricamente reducido",
+      "pagina": 62
+    },
+    {
+      "numero": "1.22",
+      "titulo": "En 2025, las exportaciones de bienes mostraron un avance débil y se vieron lastradas por los automóviles y los combustibles",
+      "pagina": 64
+    },
+    {
+      "numero": "1.23",
+      "titulo": "En 2025, las importaciones de bienes mostraron un avance vigoroso, mientras que se mantuvo el proceso de desestacionalización y diversificación de las llegadas de turistas",
+      "pagina": 66
+    },
+    {
+      "numero": "1.24",
+      "titulo": "El dinamismo del empleo permitió seguir reduciendo la tasa de paro",
+      "pagina": 68
+    },
+    {
+      "numero": "1.25",
+      "titulo": "La tasa de ocupación ha aumentado gracias a la inmigración y a los colectivos nacionales de mayor edad",
+      "pagina": 69
+    },
+    {
+      "numero": "1.26",
+      "titulo": "Los desempleados de mayor edad presentan un salario de reserva más elevado",
+      "pagina": 71
+    },
+    {
+      "numero": "1.27",
+      "titulo": "Se esperan cambios en los flujos de entrada de inmigrantes en España en caso de que se apliquen políticas migratorias más expansivas o restrictivas",
+      "pagina": 73
+    },
+    {
+      "numero": "1.28",
+      "titulo": "Ha aumentado la proporción de inmigrantes con educación universitaria, mientras que no se observa un impacto negativo de los flujos recientes de inmigración sobre el empleo de los nativos",
+      "pagina": 74
+    },
+    {
+      "numero": "1.29",
+      "titulo": "Las autorizaciones por arraigo aumentan el empleo formal de extranjeros no pertenecientes a la UE (a)",
+      "pagina": 75
+    },
+    {
+      "numero": "1.30",
+      "titulo": "El diferencial de precios entre España y la UEM se ha mantenido positivo en los últimos dos años. Los precios de los servicios muestran una intensa resistencia a la baja en ambas áreas",
+      "pagina": 77
+    },
+    {
+      "numero": "1.31",
+      "titulo": "El episodio actual de incremento de los precios de los servicios muestra similitudes con el observado a principios de siglo. En el actual, los factores de oferta habrían sido relevantes para explicar la persistencia de la inflación de los servicios",
+      "pagina": 79
+    },
+    {
+      "numero": "1.32",
+      "titulo": "La resistencia a la baja de los servicios contrasta con la evolución de los precios de los bienes industriales no energéticos",
+      "pagina": 80
+    },
+    {
+      "numero": "1.33",
+      "titulo": "Los márgenes de las empresas absorbieron, inicialmente, parte del shock inflacionario de 2022. Su recuperación posterior fue más intensa en algunas ramas de servicios",
+      "pagina": 82
+    },
+    {
+      "numero": "1.34",
+      "titulo": "La remuneración por asalariado sigue creciendo en torno al 4 %, en un mercado laboral tensionado",
+      "pagina": 84
+    },
+    {
+      "numero": "1.35",
+      "titulo": "En 2025, el saldo de las AAPP mejoró por el fuerte avance de los ingresos públicos y los menores gastos transitorios",
+      "pagina": 87
+    },
+    {
+      "numero": "1.36",
+      "titulo": "El impacto del gasto en defensa sobre la actividad económica se materializaría a medio plazo y con un efecto transitorio",
+      "pagina": 90
+    },
+    {
+      "numero": "1.37",
+      "titulo": "Errores de previsión de deuda sobre PIB a 5 años",
+      "pagina": 91
+    },
+    {
+      "numero": "2.1",
+      "titulo": "Los riesgos para la estabilidad financiera asociados al mercado inmobiliario están contenidos",
+      "pagina": 131
+    },
+    {
+      "numero": "2.2",
+      "titulo": "El peso de la inversión residencial en España se recupera desde 2014, aunque se mantiene en niveles reducidos con una perspectiva de cuatro décadas",
+      "pagina": 133
+    },
+    {
+      "numero": "2.3",
+      "titulo": "El precio real de la vivienda muestra una senda de recuperación desde 2014, cuya intensidad se aceleró a partir de 2024",
+      "pagina": 134
+    },
+    {
+      "numero": "2.4",
+      "titulo": "El precio real de la vivienda presenta una elevada heterogeneidad entre áreas urbanas, y su actual dispersión territorial es mayor que al inicio de la recuperación del mercado de la vivienda en 2014",
+      "pagina": 136
+    },
+    {
+      "numero": "2.5",
+      "titulo": "La evolución del precio real de la vivienda entre 2014 y 2025 muestra una elevada heterogeneidad entre áreas urbanas, donde destaca un reducido número con aumentos muy superiores al agregado nacional, que contrasta con el estancamiento y las caídas en las áreas menos dinámicas",
+      "pagina": 137
+    },
+    {
+      "numero": "2.6",
+      "titulo": "La compra de vivienda por parte de los jóvenes se ha reducido significativamente en las dos últimas décadas y en una proporción mayor que la caída de su peso demográfico",
+      "pagina": 143
+    },
+    {
+      "numero": "2.7",
+      "titulo": "Los jóvenes no emancipados presentan serias dificultades para acceder a la vivienda en propiedad sin el apoyo familiar",
+      "pagina": 147
+    },
+    {
+      "numero": "2.8",
+      "titulo": "Los jóvenes no emancipados que deseen alquilar deben destinar una elevada proporción de su renta al alquiler, especialmente en las grandes ciudades",
+      "pagina": 148
+    },
+    {
+      "numero": "2.9",
+      "titulo": "La proporción de hipotecas para la adquisición de vivienda habitual concedidas asumiendo un mayor riesgo es limitada",
+      "pagina": 149
+    },
+    {
+      "numero": "2.10",
+      "titulo": "La creación neta de hogares crece más rápido que el parque de viviendas desde 2011",
+      "pagina": 155
+    },
+    {
+      "numero": "2.11",
+      "titulo": "El desequilibrio entre el crecimiento de los hogares y la producción de viviendas se observa en las principales economías de la zona del euro, con la excepción de Alemania",
+      "pagina": 157
+    },
+    {
+      "numero": "2.12",
+      "titulo": "Las viviendas turísticas tienen especial relevancia en el mercado del alquiler en los centros de las zonas turísticas",
+      "pagina": 161
+    },
+    {
+      "numero": "2.13",
+      "titulo": "Las empresas de la construcción muestran cada vez mayores dificultades para encontrar mano de obra especializada",
+      "pagina": 166
+    },
+    {
+      "numero": "2.14",
+      "titulo": "España cuenta con uno de los parques de vivienda pública más reducidos entre las economías avanzadas",
+      "pagina": 178
+    },
+    {
+      "numero": "3.1",
+      "titulo": "La brecha de crecimiento de la productividad con la UEM se redujo a partir de 2013",
+      "pagina": 213
+    },
+    {
+      "numero": "3.2",
+      "titulo": "La reasignación de recursos entre empresas dentro de los sectores explica la mayor parte del crecimiento de la PTF a partir de 2013",
+      "pagina": 216
+    },
+    {
+      "numero": "3.3",
+      "titulo": "Los indicadores de eficiencia asignativa de los factores productivos, capital y trabajo, apuntan a una mejoría significativa",
+      "pagina": 218
+    },
+    {
+      "numero": "3.4",
+      "titulo": "Las empresas españolas tienen menos capacidad de crecimiento que las europeas en sus primeros años de vida, aunque esta situación ha mejorado en la última década",
+      "pagina": 221
+    },
+    {
+      "numero": "3.5",
+      "titulo": "Las microempresas pierden peso en España desde 2013, si bien siguen teniendo una mayor prevalencia que en el resto de la UEM",
+      "pagina": 222
+    },
+    {
+      "numero": "3.6",
+      "titulo": "Las empresas españolas son menos productivas que las europeas, especialmente las microempresas y las grandes empresas, si bien la brecha se está cerrando ligeramente desde 2013",
+      "pagina": 223
+    },
+    {
+      "numero": "3.7",
+      "titulo": "El descenso de los recursos ajenos muestra una importante heterogeneidad por fuente de financiación desde 2013",
+      "pagina": 226
+    },
+    {
+      "numero": "3.8",
+      "titulo": "Las empresas han reducido su recurso a la financiación ajena, sobre todo las de menor tamaño",
+      "pagina": 227
+    },
+    {
+      "numero": "3.9",
+      "titulo": "Las empresas españolas más productivas se financian en mayor medida con recursos propios",
+      "pagina": 229
+    },
+    {
+      "numero": "3.10",
+      "titulo": "Dentro de la financiación ajena, la bancaria tiene un mayor peso en las pymes más productivas",
+      "pagina": 230
+    },
+    {
+      "numero": "3.11",
+      "titulo": "El vínculo positivo entre el crecimiento del crédito y la productividad en el período 2004-2013 se intensificó a partir de 2014",
+      "pagina": 231
+    },
+    {
+      "numero": "3.12",
+      "titulo": "Pese a su avance reciente, el capital riesgo mantiene en España un grado de desarrollo limitado y una brecha persistente respecto a otras economías más avanzadas",
+      "pagina": 238
+    },
+    {
+      "numero": "3.13",
+      "titulo": "El acceso a financiación mediante CR se asocia con trayectorias de crecimiento más dinámicas a lo largo del ciclo de vida empresarial",
+      "pagina": 240
+    },
+    {
+      "numero": "3.14",
+      "titulo": "Los factores regionales son clave para explicar la heterogeneidad en la eficiencia asignativa y la productividad",
+      "pagina": 248
+    },
+    {
+      "numero": "3.15",
+      "titulo": "Las barreras administrativas limitan el crecimiento de las empresas",
+      "pagina": 250
+    },
+    {
+      "numero": "3.16",
+      "titulo": "El porcentaje de empresas que usan tecnologías de IA se ha duplicado en el período 2021-2025, tanto en España como en otros países de la UEM. Más de la mitad de las empresas que usan IA son empresas muy grandes, con 250 o más empleados",
+      "pagina": 252
+    },
+    {
+      "numero": "3.17",
+      "titulo": "El uso de IA tiene efectos significativos sobre el empleo y la productividad",
+      "pagina": 256
+    },
+    {
+      "numero": "3.18",
+      "titulo": "La exposición de los jóvenes españoles a la IA se ha mantenido estable en los últimos años, aunque presenta una elevada heterogeneidad según el nivel educativo",
+      "pagina": 258
+    }
+  ],
+  "Recuadro": [
+    {
+      "numero": "1.1",
+      "titulo": "BENEFICIOS DE LOS ACUERDOS COMERCIALES ALCANZADOS RECIENTEMENTE POR LA UNIÓN EUROPEA",
+      "pagina": 98
+    },
+    {
+      "numero": "1.2",
+      "titulo": "LA AGENDA DE SIMPLIFICACIÓN REGULATORIA Y SUPERVISORA: AVANCES DESDE EL BANCO DE ESPAÑA",
+      "pagina": 101
+    },
+    {
+      "numero": "1.3",
+      "titulo": "EL IMPACTO DEL PRECIO DEL GAS NATURAL SOBRE EL PRECIO DE LA ELECTRICIDAD EN LAS ECONOMÍAS EUROPEAS",
+      "pagina": 103
+    },
+    {
+      "numero": "1.4",
+      "titulo": "LAS RESPUESTAS FISCALES A SHOCKS ENERGÉTICOS INFLACIONARIOS: EXPERIENCIA PASADA Y DESARROLLOS RECIENTES",
+      "pagina": 105
+    },
+    {
+      "numero": "1.5",
+      "titulo": "LA INVERSIÓN EN INTANGIBLES Y EL AVANCE DE LAS EXPORTACIONES DE SERVICIOS NO TURÍSTICOS EN ESPAÑA",
+      "pagina": 112
+    },
+    {
+      "numero": "1.6",
+      "titulo": "EL SUBSIDIO DE DESEMPLEO PARA MAYORES DE 52/55 AÑOS EN ESPAÑA",
+      "pagina": 116
+    },
+    {
+      "numero": "1.7",
+      "titulo": "LA EVOLUCIÓN DE LOS INGRESOS Y GASTOS PÚBLICOS DESDE LA PANDEMIA",
+      "pagina": 120
+    },
+    {
+      "numero": "2.1",
+      "titulo": "HETEROGENEIDAD EN EL CRECIMIENTO DEL PRECIO DE LA VIVIENDA EN LAS GRANDES ÁREAS URBANAS DE ESPAÑA: UNA PRIMERA APROXIMACIÓN BASADA EN UN ÍNDICE DE VENTAS REPETIDAS",
+      "pagina": 190
+    },
+    {
+      "numero": "2.2",
+      "titulo": "LA EVOLUCIÓN DE LOS PRECIOS DEL ALQUILER RESIDENCIAL (2019-2024): UNA MEDICIÓN DE LOS PRECIOS DEL STOCK Y DE LOS FLUJOS A PARTIR DE LAS FUENTES TRIBUTARIAS",
+      "pagina": 194
+    },
+    {
+      "numero": "2.3",
+      "titulo": "HETEROGENEIDAD EN EL ACCESO Y EN LA TENENCIA DE VIVIENDA EN ESPAÑA: EVIDENCIA DE LA ENCUESTA FINANCIERA DE LAS FAMILIAS (2002-2024)",
+      "pagina": 198
+    },
+    {
+      "numero": "2.4",
+      "titulo": "EFECTOS DEL AUMENTO DE LOS PRECIOS DE LA VIVIENDA EN LA MOVILIDAD INTERNA Y LA LOCALIZACIÓN DE INMIGRANTES EN ESPAÑA",
+      "pagina": 203
+    },
+    {
+      "numero": "3.1",
+      "titulo": "CARACTERIZACIÓN DE LA RENTABILIDAD DEL CAPITAL PRODUCTIVO DE LAS EMPRESAS ESPAÑOLAS",
+      "pagina": 276
+    },
+    {
+      "numero": "3.2",
+      "titulo": "EL ICAS DEL BANCO DE ESPAÑA",
+      "pagina": 281
+    },
+    {
+      "numero": "3.3",
+      "titulo": "LAS COOPERATIVAS DE CRÉDITO Y SU PAPEL EN LA PROVISIÓN DE FINANCIACIÓN A LAS PYMES",
+      "pagina": 285
+    },
+    {
+      "numero": "3.4",
+      "titulo": "EL IMPACTO DEL KIT DIGITAL SOBRE LA PRODUCTIVIDAD EMPRESARIAL",
+      "pagina": 291
+    },
+    {
+      "numero": "3.5",
+      "titulo": "LOS EFECTOS DE LA REFORMA LABORAL DE 2021 SOBRE LA PRODUCTIVIDAD DE LAS EMPRESAS ESPAÑOLAS",
+      "pagina": 296
+    },
+    {
+      "numero": "3.6",
+      "titulo": "LICITACIONES PÚBLICAS Y CRECIMIENTO DE LAS PYMES",
+      "pagina": 300
+    }
+  ]
+}

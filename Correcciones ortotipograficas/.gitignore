@@ -1,0 +1,6 @@
+tools/jre/
+*.pdf
+entrada/*
+salida/*
+!entrada/.gitkeep
+!salida/.gitkeep

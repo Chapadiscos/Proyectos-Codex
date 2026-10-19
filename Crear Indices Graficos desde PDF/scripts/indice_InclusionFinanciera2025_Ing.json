@@ -1,0 +1,110 @@
+{
+  "Table": [
+    {
+      "numero": "1.1",
+      "titulo": "In-person access to banking services. Access points, municipalities and population without access",
+      "pagina": 14
+    },
+    {
+      "numero": "1.2",
+      "titulo": "In-person access to banking services, by municipality size. Access points, municipalities and population without access",
+      "pagina": 18
+    },
+    {
+      "numero": "1.3",
+      "titulo": "In-person access to banking services, by region. 2021-24",
+      "pagina": 20
+    },
+    {
+      "numero": "2.1",
+      "titulo": "Use of means of payment at physical points of sale",
+      "pagina": 27
+    },
+    {
+      "numero": "3.1",
+      "titulo": "Financial products, financing and access to credit among the immigrant and Spanish-born populations. 2021",
+      "pagina": 43
+    }
+  ],
+  "Chart": [
+    {
+      "numero": "1.1",
+      "titulo": "In-person access to banking services in Spain. 2021-24",
+      "pagina": 13
+    },
+    {
+      "numero": "1.2",
+      "titulo": "Change in in-person access to banking services between 2021 and 2024. Access points, municipalities and population without access",
+      "pagina": 15
+    },
+    {
+      "numero": "1.3",
+      "titulo": "In-person access to banking services, by municipality size. 2021-24",
+      "pagina": 17
+    },
+    {
+      "numero": "1.4",
+      "titulo": "Changes in in-person access between 2021 and 2024. Variation by region and municipality gaining or losing access",
+      "pagina": 24
+    },
+    {
+      "numero": "2.1",
+      "titulo": "Main channel for accessing cash. General population and population in municipalities without a stable branch",
+      "pagina": 28
+    },
+    {
+      "numero": "2.2",
+      "titulo": "Use of cash as main means of payment, by population group",
+      "pagina": 29
+    },
+    {
+      "numero": "2.3",
+      "titulo": "Customer satisfaction levels with bank counter services and ATMs. General population and population in municipalities without a stable branch",
+      "pagina": 30
+    },
+    {
+      "numero": "2.4",
+      "titulo": "Travel time to obtain cash. General population and population in municipalities without a stable branch",
+      "pagina": 31
+    },
+    {
+      "numero": "3.1",
+      "titulo": "Demographic impact of immigration in Spain. Growth and age of the total, Spanish-born and immigrant populations",
+      "pagina": 39
+    },
+    {
+      "numero": "3.2",
+      "titulo": "Indicators of financial competences (ECF 2021). Spanish-born and immigrants in the overall and comparable populations",
+      "pagina": 41
+    },
+    {
+      "numero": "3.3",
+      "titulo": "Use of and preference for bank service channels. Spanish-born and immigrants",
+      "pagina": 45
+    },
+    {
+      "numero": "3.4",
+      "titulo": "Basic payment accounts. 2022-25",
+      "pagina": 49
+    }
+  ],
+  "Figure": [
+    {
+      "numero": "3.1",
+      "titulo": "Bank access among irregular immigrants in Spain (2025)",
+      "pagina": 50
+    }
+  ],
+  "Box": [
+    {
+      "numero": "2.1",
+      "titulo": "ACCESS TO BANKING SERVICES IN URBAN AREAS: PROVISION AND DISTANCE",
+      "pagina": 32
+    },
+    {
+      "numero": "3.1",
+      "titulo": "EDUCATION FOR FINANCIAL INCLUSION",
+      "pagina": 55
+    }
+  ]
+}
