@@ -266,6 +266,11 @@ p.Pie-Figura-PO26 {
 	font-weight: 400;
 	line-height:1.1;
 	margin-bottom:8px;
+
+	/* Filete inferior que cierra el pie, como en InDesign (separación 1 mm) */
+	border-bottom: 0.25pt solid #c55b17;
+	padding-bottom: 1mm;
+
 	margin-left:0;
 	margin-right:0;
 	margin-top:1mm; /* separación entre la imagen y el pie */
