@@ -69,7 +69,8 @@ def _jerarquia_vinetas(soup, cfg, informe):
 
     <ul>V1 a</ul> <img> <ul>V2 b</ul>  ->  <ul><li>a <img> <ul><li>b</li></ul></li></ul>
     Igual con un párrafo de texto de viñeta (Texto-base---Viñeta) entre la viñeta
-    madre y sus subviñetas (capítulo 46). El nivel de cada viñeta sale de su clase.
+    madre y sus subviñetas (capítulo 46), y si la madre es numerada (<ol>, capítulo 65).
+    El nivel de cada viñeta sale de su clase.
     """
     patron = re.compile(cfg.get("nivel_vineta", r"Viñeta-(\d+)"))
     clase_pie = cfg.get("clase_pie", "Pie-Figura")
@@ -82,7 +83,7 @@ def _jerarquia_vinetas(soup, cfg, informe):
                 return int(m.group(1))
         return defecto
 
-    for ul in soup.find_all("ul"):
+    for ul in soup.find_all(["ul", "ol"]):
         if ul.parent is None or ul.find_parent(["ul", "ol"]):
             continue
         tramos, pendientes = [], []
@@ -151,9 +152,65 @@ def _reconstruir(soup, raiz, fichas):
         raiz.find_all("li", recursive=False)[-1].append(b)
 
 
-# Añadir aquí las correcciones que salgan del análisis de cada capítulo.
+def _nivel_de(li, patron):
+    for c in li.get("class", []) if isinstance(li, Tag) else []:
+        if m := patron.search(c):
+            return int(m.group(1))
+    return None
+
+
+def _subvinetas_del_mismo_nivel(soup, cfg, informe):
+    """Saca de una viñeta las sublistas que en realidad son del mismo nivel o superior.
+
+    Capítulo 70: tras «a. b. c. d.» (Viñeta-2 numerada) viene «- Reposición…», también
+    Viñeta-2, pero InDesign la mete dentro de la «d.»: se pasa detrás de su lista.
+    """
+    patron = re.compile(cfg.get("nivel_vineta", r"Viñeta-(\d+)"))
+    cambiado = True
+    while cambiado:
+        cambiado = False
+        for sub in soup.find_all(["ul", "ol"]):
+            li = sub.parent
+            if not (isinstance(li, Tag) and li.name == "li" and li.parent is not None):
+                continue
+            nivel_li = _nivel_de(li, patron)
+            nivel_sub = _nivel_de(sub.find("li", recursive=False), patron)
+            if nivel_li and nivel_sub and nivel_sub <= nivel_li:
+                li.parent.insert_after(sub.extract())
+                informe.contar("subviñetas sacadas a su nivel")
+                cambiado = True
+                break
+
+
+def _numeradas_sin_marca_propia(soup, cfg, informe):
+    """Viñetas numeradas (a., b.…) con un estilo que dibuja su marca con ::before.
+
+    En la CSS de Hélice, Viñeta-2 y Viñeta-3 quitan la marca nativa y ponen «-» o «›»
+    con ::before, que un style="" no puede quitar (capítulo 70: salía «-a»). Se les
+    cambia la clase por una sin ::before y se conserva su sangría.
+    """
+    clases = cfg.get("clases_con_marca_propia") or {}
+    sustituta = cfg.get("clase_numerada")
+    if not sustituta:
+        return
+    for li in soup.find_all("li"):
+        estilo = li.get("style", "")
+        m = re.search(r"list-style-type:\s*([\w-]+)", estilo)
+        if not m or m.group(1) in ("none", "disc", "circle", "square"):
+            continue
+        for clase in li.get("class", []):
+            if clase in clases:
+                li["class"] = [sustituta if c == clase else c for c in li["class"]]
+                anadir_style(li, clases[clase] or {})
+                informe.contar("viñetas numeradas sin la marca de su estilo")
+                break
+
+
+# Añadir aquí las correcciones que salgan del análisis de cada capítulo (van en este orden).
 CORRECCIONES = {
     "br_al_final_de_parrafo": _br_al_final_de_parrafo,
     "pie_debajo": _pie_debajo,
+    "subvinetas_del_mismo_nivel": _subvinetas_del_mismo_nivel,
     "jerarquia_vinetas": _jerarquia_vinetas,
+    "numeradas_sin_marca_propia": _numeradas_sin_marca_propia,
 }

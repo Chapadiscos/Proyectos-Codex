@@ -364,6 +364,39 @@ def test_jerarquia_vinetas_con_parrafo_de_texto_de_vineta(tmp_path):
     )
 
 
+def test_jerarquia_vinetas_con_madre_numerada(tmp_path):
+    """Capítulo 65: «1.» numerado (ol), párrafo de texto de viñeta y guiones de nivel 2."""
+    s = _soup(
+        '<ol><li class="V-Viñeta-1">Sustancias</li></ol>'
+        '<p class="Texto-base---Viñeta-PO26">Explicación</p>'
+        '<ul><li class="V-Viñeta-2">BSS</li></ul>'
+        '<ul><li class="V-Viñeta-1">Otros</li></ul>'
+    )
+    p03_correcciones_indesign.aplicar(s, {"activas": ["jerarquia_vinetas"]}, {}, Informe())
+    assert str(s.body) == (
+        '<body><ol><li class="V-Viñeta-1">Sustancias'
+        '<p class="Texto-base---Viñeta-PO26" style="margin-left: 0">Explicación</p>'
+        '<ul><li class="V-Viñeta-2">BSS</li></ul></li></ol>'
+        '<ul><li class="V-Viñeta-1">Otros</li></ul></body>'
+    )
+
+
+def test_vinetas_numeradas_con_subvineta_del_mismo_nivel(tmp_path):
+    """Capítulo 70: «a.» (V2 numerada) con un «-» de V2 metido dentro, y la marca «-» del ::before."""
+    s = _soup(
+        '<ul><li class="V-Viñeta-1">Fijación<ol>'
+        '<li class="V-Viñeta-2" style="list-style-type: lower-alpha">a'
+        '<ul><li class="V-Viñeta-2">Reposición</li></ul></li></ol></li></ul>'
+    )
+    cfg = {"clase_numerada": "V-Viñeta-1", "clases_con_marca_propia": {"V-Viñeta-2": {"margin-left": "-28px"}}}
+    p03_correcciones_indesign.aplicar(s, cfg, {}, Informe())
+    assert str(s.body) == (
+        '<body><ul><li class="V-Viñeta-1">Fijación<ol>'
+        '<li class="V-Viñeta-1" style="list-style-type: lower-alpha; margin-left: -28px">a</li></ol>'
+        '<ul><li class="V-Viñeta-2">Reposición</li></ul></li></ul></body>'
+    )
+
+
 def test_font_weight_normal_es_la_version_light_de_la_familia(tmp_path):
     """Cap. 52: cita en un ladillo (BC Civitas Light) y cap. 35: cursiva de bibliografía (Avenir Light)."""
     (tmp_path / "css").mkdir()

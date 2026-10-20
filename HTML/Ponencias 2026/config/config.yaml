@@ -95,6 +95,12 @@ correcciones_indesign:
   # Regla 3 también con el párrafo de texto de viñeta entre la viñeta madre y sus subviñetas
   clase_texto_vineta: "Texto-base---Viñeta"
   estilo_texto_vineta_en_lista: {margin-left: "0"}
+  # Viñetas numeradas (a., b.…) cuyo estilo pone su marca con ::before en la CSS de Hélice:
+  # se pasan a la clase numerada, conservando la sangría de su estilo (capítulo 70)
+  clase_numerada: "Ladillos_Viñetas_Viñeta-1--•--PO26"
+  clases_con_marca_propia:
+    "Ladillos_Viñetas_Viñeta-2-----PO26": {margin-left: "-28px"}
+    "Ladillos_Viñetas_Viñeta-3-----PO26": {margin-left: "-26px"}
 
 imagenes:
   lista_urls: "*.txt"       # junto al HTML: una URL de Hélice por línea
