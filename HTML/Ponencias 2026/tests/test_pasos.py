@@ -397,6 +397,13 @@ def test_vinetas_numeradas_con_subvineta_del_mismo_nivel(tmp_path):
     )
 
 
+def test_quita_enlaces_vacios_y_conserva_los_que_tienen_url(tmp_path):
+    """Índice (00F): <a href=""> en cada entrada; la bibliografía sí lleva enlaces reales."""
+    s = _soup('<p><a href="">5</a>. <a href="">Epiescleritis</a></p><p><a href="https://doi.org/x">doi</a></p>')
+    p02_limpieza.aplicar(s, {}, _ctx(tmp_path), Informe())
+    assert str(s.body) == '<body><p>5. Epiescleritis</p><p><a href="https://doi.org/x">doi</a></p></body>'
+
+
 def test_font_weight_normal_es_la_version_light_de_la_familia(tmp_path):
     """Cap. 52: cita en un ladillo (BC Civitas Light) y cap. 35: cursiva de bibliografía (Avenir Light)."""
     (tmp_path / "css").mkdir()

@@ -28,7 +28,7 @@ estilos_capitulo:
   # párrafos y listas no: la CSS de Hélice ya los tiene ajustados para la web.
   propiedades:
     span: [font-size, font-style, font-weight, color, vertical-align, text-decoration, text-transform, font-family]
-    p: [text-indent]                       # p. ej. subtítulos sin sangría
+    p: [text-indent, text-align]           # subtítulos sin sangría; centrados (00A, 54) o a la derecha (55)
     li: [list-style-type]                  # listas numeradas (decimal)
   # Peso de los textos con ajustes de InDesign. InDesign exporta como
   # "font-weight: normal" todo lo que no es Bold (Light, Regular, Medium…), así que:
@@ -40,8 +40,11 @@ estilos_capitulo:
   carpetas_fuentes: [salida]          # dónde buscar <capítulo>.fuentes.tsv (y junto al HTML)
   pesos_indesign:                     # estilo de la fuente en InDesign -> peso en el kit de Typekit
     BC Civitas: {Light: 300, Regular: 400, Medium: 500, SemiBold: 600, Bold: 700}
-    Avenir: {Light: 200, Book: 400, Roman: 400, Medium: 400, Heavy: 400, Black: 400}
+    Avenir: {Light: 200, Book: 400, Roman: 400, Medium: 400, Heavy: 400, Black: 800}   # Black = Avenir LT Pro 95 Black (800)
     Neue Haas Grotesk Display Pro: {Light: 400, Roman: 400, Medium: 600, Bold: 600}   # el kit solo trae 400 y 600
+    Gotham: {Light: 300, Book: 400, Medium: 500, Bold: 700, Black: 800}   # en Adobe Fonts, Black = 800
+    Helvetica Neue LT Std: {Light: 300, Roman: 400, Medium: 500, Bold: 700}
+    Roboto: {Light: 300, Regular: 400, Medium: 500, Bold: 700}
   peso_normal_por_familia:
     bc-civitas: "300"
     avenir-lt-pro: "200"
@@ -57,6 +60,14 @@ estilos_capitulo:
     "BC Civitas": bc-civitas
     "BC Civitas SemiBold": bc-civitas
     "NeueHaasGroteskDisp Pro Lt": neue-haas-grotesk-display
+    # Portadilla y créditos (00A): fuentes de Monotype/Google, añadidas al mismo kit
+    "Gotham Black": gotham
+    "HelveticaNeueLT Std Lt": helvetica-neue-lt-pro
+    "Roboto Light": roboto
+  # Fuentes de adornos que no hay en la web: el tramo pasa a una clase de la CSS de
+  # Hélice que dibuja el adorno (InDesign exporta el glifo vacío)
+  fuentes_a_clase:
+    "Hoefler Text Ornaments": Ornamento-PO26
   # Fuentes que se quitan sin avisar: el carácter ya está en Unicode (ε, µ, ±…)
   fuentes_descartar: [Symbol, AnayaSimbolosMat]
   # Clases sin regla en Hélice que se conservan como estilo
@@ -72,11 +83,13 @@ limpieza:
     - "CharOverride-\\d+"
     - "ParaOverride-\\d+"
     - "noPartir-PO26"
+    - "Titulo-PO26"       # estilo de carácter sin formato (índice, 00F)
     - "Marco-.*"          # estilos de objeto de InDesign (marcos); sin regla en Hélice
   ids_eliminar:
     - "_idContainer\\d+"
     - "_idTextAnchor\\d+" # solo se quita si ningún enlace interno apunta a él
   quitar_style_inline: false
+  quitar_enlaces_vacios: true   # <a href=""> del índice (los enlaces se crean a mano en Hélice)
   fusionar_spans_iguales: true
   eliminar_parrafos_vacios: false
   css_eliminar:

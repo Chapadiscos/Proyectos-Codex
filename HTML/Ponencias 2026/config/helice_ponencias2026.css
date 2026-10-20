@@ -385,3 +385,65 @@ span.Symbol-PO26 {
 	font-style:normal;
 	font-weight:normal;
 }
+/* Portadilla y créditos (00A). Fuentes del kit rrc2czj: gotham, helvetica-neue-lt-pro, roboto */
+p.P-rrafo-b-sico {
+	color:#9d9d9c;
+	font-family: gotham, sans-serif;
+	font-size:12px;
+	font-style:normal;
+	font-weight:800;
+	line-height:0.95;
+	margin:0;
+	text-align:center;
+	text-indent:0;
+}
+span.Ornamento-PO26 {
+	/* filete con un rombo en el centro (glifo de Hoefler Text Ornaments, que no existe en la web) */
+	display:inline-block;
+	width:48px;
+	height:5px;
+	vertical-align:middle;
+	background:#000000;
+	clip-path: polygon(0 45%, 38% 45%, 50% 0, 62% 45%, 100% 45%, 100% 55%, 62% 55%, 50% 100%, 38% 55%, 0 55%);
+}
+/* Índice (00F). Avenir LT Pro 95 Black (800) hay que añadirla al kit rrc2czj */
+p.Indice_Titulo-Indice-PO26 {
+	color:#000000;
+	font-family: avenir-lt-pro, sans-serif;
+	font-size:10px;
+	font-style:normal;
+	font-weight:800;
+	line-height:1.2;
+	margin:0;
+	text-align:left;
+	text-indent:0;
+}
+p.Indice_Autores-Indice-PO26 {
+	color:#000000;
+	font-family: avenir-lt-pro, sans-serif;
+	font-size:9px;
+	font-style:italic;
+	font-weight:400;
+	line-height:1.1;
+	margin:0 23px 3px 17px;
+	text-align:left;
+	text-indent:0;
+	hyphens:none;
+}
+p.Indice_Sección-Indice-PO26 {
+	/* filetes arriba y abajo del ancho del texto, centrado */
+	display:table;
+	border-color:#c55b17;
+	border-style:solid;
+	border-width:1px 0;
+	color:#c55b17;
+	font-family: neue-haas-grotesk-display, sans-serif;
+	font-size:12px;
+	font-style:normal;
+	font-weight:600;
+	line-height:1.2;
+	margin:12px auto;
+	padding:0 16px;
+	text-align:center;
+	text-indent:0;
+}

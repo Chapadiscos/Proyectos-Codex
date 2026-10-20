@@ -15,6 +15,13 @@ def aplicar(soup, cfg, ctx, informe):
         for tag in soup.find_all(style=True):
             del tag["style"]
             informe.contar("atributos style eliminados")
+    if cfg.get("quitar_enlaces_vacios", True):
+        # Enlaces sin destino (índice, 00F): InDesign los exporta con href="" y salen en azul;
+        # en Hélice los crea el usuario a mano. Los enlaces con URL (bibliografía) se conservan.
+        for a in soup.find_all("a"):
+            if not a.get("href", "").strip() and not a.get("id"):
+                a.unwrap()
+                informe.contar("enlaces vacíos quitados")
     _quitar_spans(soup, informe)
     if cfg.get("desenvolver_divs_sin_atributos", True):
         for div in soup.find_all("div"):

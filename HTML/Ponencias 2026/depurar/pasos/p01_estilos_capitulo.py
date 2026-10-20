@@ -134,14 +134,22 @@ def _anulaciones(soup, cfg, por_clase, pesos, informe):
     propiedades = cfg.get("propiedades", {})
     fuentes = cfg.get("fuentes", {})
     descartar = cfg.get("fuentes_descartar", [])
+    a_clase = cfg.get("fuentes_a_clase") or {}
     valores_descartar = cfg.get("valores_descartar", {})
     equivalencias = cfg.get("equivalencias", {})
     for tag in soup.find_all(class_=True):
         permitidas = propiedades.get(tag.name, [])
-        for clase in tag["class"]:
+        for clase in list(tag["class"]):
             if not any(p.fullmatch(clase) for p in patrones):
                 continue
             decl = {**por_clase.get((None, clase), {}), **por_clase.get((tag.name, clase), {})}
+            familia = decl.get("font-family", "").split(",")[0].strip().strip('"')
+            if familia in a_clase:
+                # Adorno: lo dibuja su clase en la CSS de Hélice (el espacio evita que se quite por vacío)
+                tag["class"] = tag["class"] + [a_clase[familia]]
+                tag.string = " "
+                informe.contar(f"adornos de {familia} pasados a {a_clase[familia]}")
+                break
             nuevas = {
                 k: equivalencias.get(k, {}).get(v, v)
                 for k, v in decl.items()
@@ -159,6 +167,9 @@ def _anulaciones(soup, cfg, por_clase, pesos, informe):
                 peso = pesos.para_normal(tag, nuevas.get("font-family", "").split(",")[0].strip() or None)
                 if peso:
                     nuevas["font-weight"] = peso
+            if nuevas.get("text-align") in ("center", "right", "left"):
+                # Los estilos del libro llevan text-align-last: left, que ganaría en párrafos de una línea
+                nuevas["text-align-last"] = nuevas["text-align"]
             if nuevas:
                 anadir_style(tag, nuevas)
                 informe.contar(f"anulaciones pasadas a style ({tag.name})")
