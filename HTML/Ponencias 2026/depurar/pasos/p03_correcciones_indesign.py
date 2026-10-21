@@ -10,6 +10,7 @@ from bs4 import Tag
 
 from ..bloques import es_bloque_imagen, es_figura, hermano, tiene_clase
 from ..css import anadir_style
+from .p01_estilos_capitulo import ATRIBUTO_NIVEL
 
 # Caracteres invisibles que InDesign deja en el texto exportado.
 INVISIBLES = {
@@ -98,19 +99,32 @@ def _jerarquia_vinetas(soup, cfg, informe):
             else:
                 break
             sig = hermano(sig, +1)
-        if not tramos:
+        # Texto de viñeta con nivel conocido al final (sin más subviñetas detrás): también dentro
+        cola = []
+        for b in pendientes:
+            if not b.has_attr(ATRIBUTO_NIVEL):
+                break
+            cola.append(b)
+        if not tramos and not cola:
             continue
+
+        def ficha_bloque(b):
+            if tiene_clase(b, clase_texto):
+                # Dentro de la viñeta ya queda alineado con su texto: sin el margen propio
+                anadir_style(b, estilo_texto)
+                if b.has_attr(ATRIBUTO_NIVEL):
+                    return ("texto", int(b[ATRIBUTO_NIVEL]), b.extract())
+            return ("bloque", b.extract())
 
         fichas = _aplanar(ul, 1, nivel)
         for bloques, continuacion in tramos:
-            for b in bloques:
-                if tiene_clase(b, clase_texto):
-                    # Dentro de la viñeta ya queda alineado con su texto: sin el margen propio
-                    anadir_style(b, estilo_texto)
-                fichas.append(("bloque", b.extract()))
+            fichas += [ficha_bloque(b) for b in bloques]
             fichas += _aplanar(continuacion.extract(), 1, nivel)
+        fichas += [ficha_bloque(b) for b in cola]
         _reconstruir(soup, ul, fichas)
         informe.contar("listas de viñetas reunidas")
+    for p in soup.find_all(attrs={ATRIBUTO_NIVEL: True}):
+        del p[ATRIBUTO_NIVEL]
 
 
 def _aplanar(ul, profundidad, nivel):
@@ -129,6 +143,19 @@ def _reconstruir(soup, raiz, fichas):
     for ficha in fichas:
         if ficha[0] == "bloque":
             pendientes.append(ficha[1])
+            continue
+        if ficha[0] == "texto":
+            # Párrafo sangrado: dentro de la última viñeta de su nivel (cap. 5, 23: nivel 2)
+            _, nivel, b = ficha
+            nivel = max(1, min(nivel, len(pila)))
+            ultimos = pila[nivel - 1].find_all("li", recursive=False)
+            if ultimos:
+                for p in pendientes + [b]:
+                    ultimos[-1].append(p)
+                pendientes = []
+            else:
+                pendientes.append(b)
+            del pila[nivel:]
             continue
         _, nivel, li = ficha
         nivel = max(1, min(nivel, len(pila) + 1))
@@ -206,11 +233,43 @@ def _numeradas_sin_marca_propia(soup, cfg, informe):
                 break
 
 
+def _subvinetas_sin_madre(soup, cfg, informe):
+    """Lista de nivel 2 o más sin viñeta madre (capítulo 5: «Órdenes terapéuticas…» y guiones).
+
+    Suelta, la CSS de Hélice la deja menos sangrada que el nivel 1. Se mete dentro de
+    una viñeta de nivel 1 vacía y sin marca, que la coloca a la sangría de su nivel.
+    """
+    patron = re.compile(cfg.get("nivel_vineta", r"Viñeta-(\d+)"))
+    clase_madre = cfg.get("clase_madre_vacia")
+    if not clase_madre:
+        return
+    for lista in soup.find_all(["ul", "ol"]):
+        if lista.parent is None or lista.find_parent(["ul", "ol", "li"]):
+            continue
+        nivel = _nivel_de(lista.find("li", recursive=False), patron)
+        if not nivel or nivel < 2:
+            continue
+        # Sangría de cada nivel vacío: la de los estilos con marca propia (Viñeta-2: -28px)
+        sangrias = {_nivel_de(soup.new_tag("li", attrs={"class": c}), patron): d
+                    for c, d in (cfg.get("clases_con_marca_propia") or {}).items()}
+        for k in range(nivel - 1, 0, -1):
+            ul, li = soup.new_tag("ul"), soup.new_tag("li")
+            li["class"] = [clase_madre]
+            li["style"] = "list-style-type: none"
+            if k > 1 and sangrias.get(k):
+                anadir_style(li, sangrias[k])
+            lista.wrap(li)
+            li.wrap(ul)
+            lista = ul
+        informe.contar("subviñetas sin madre colocadas en su nivel")
+
+
 # Añadir aquí las correcciones que salgan del análisis de cada capítulo (van en este orden).
 CORRECCIONES = {
     "br_al_final_de_parrafo": _br_al_final_de_parrafo,
     "pie_debajo": _pie_debajo,
     "subvinetas_del_mismo_nivel": _subvinetas_del_mismo_nivel,
     "jerarquia_vinetas": _jerarquia_vinetas,
+    "subvinetas_sin_madre": _subvinetas_sin_madre,
     "numeradas_sin_marca_propia": _numeradas_sin_marca_propia,
 }

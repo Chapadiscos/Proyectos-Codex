@@ -137,12 +137,14 @@ def _anulaciones(soup, cfg, por_clase, pesos, informe):
     a_clase = cfg.get("fuentes_a_clase") or {}
     valores_descartar = cfg.get("valores_descartar", {})
     equivalencias = cfg.get("equivalencias", {})
+    sangrados = cfg.get("parrafos_sangrados") or {}
     for tag in soup.find_all(class_=True):
         permitidas = propiedades.get(tag.name, [])
         for clase in list(tag["class"]):
             if not any(p.fullmatch(clase) for p in patrones):
                 continue
             decl = {**por_clase.get((None, clase), {}), **por_clase.get((tag.name, clase), {})}
+            _parrafo_sangrado(tag, decl, por_clase, sangrados, informe)
             familia = decl.get("font-family", "").split(",")[0].strip().strip('"')
             if familia in a_clase:
                 # Adorno: lo dibuja su clase en la CSS de Hélice (el espacio evita que se quite por vacío)
@@ -173,6 +175,35 @@ def _anulaciones(soup, cfg, por_clase, pesos, informe):
             if nuevas:
                 anadir_style(tag, nuevas)
                 informe.contar(f"anulaciones pasadas a style ({tag.name})")
+
+
+ATRIBUTO_NIVEL = "data-nivel-vineta"
+
+
+def _parrafo_sangrado(tag, decl, por_clase, cfg, informe):
+    """Texto base sangrado a mano (cap. 5, 23, 45…): en InDesign es el texto de la viñeta
+    de encima. Pasa al estilo de texto de viñeta y anota a qué nivel pertenece según su
+    sangría, para que la regla de jerarquía lo meta dentro de esa viñeta."""
+    if not cfg or tag.name != "p":
+        return
+    for base, destino in (cfg.get("clases") or {}).items():
+        if base in tag.get("class", []):
+            # La sangría de 1.ª línea puede venir del propio estilo (Texto base: 5 mm)
+            sangria_1 = decl.get("text-indent") or por_clase.get(("p", base), {}).get("text-indent")
+            sangria = _px(decl.get("margin-left")) + max(_px(sangria_1), 0)
+            if _px(decl.get("margin-left")) < cfg.get("margen_minimo_px", 6):
+                return
+            niveles = cfg.get("sangria_por_nivel_px", [23, 31, 40])
+            nivel = min(range(len(niveles)), key=lambda i: abs(niveles[i] - sangria)) + 1
+            tag["class"] = [destino if c == base else c for c in tag["class"]]
+            tag[ATRIBUTO_NIVEL] = str(nivel)
+            informe.contar(f"párrafos sangrados de {base} pasados a {destino}")
+            return
+
+
+def _px(valor):
+    m = re.fullmatch(r"\s*(-?[\d.]+)px\s*", valor or "")
+    return float(m.group(1)) if m else 0
 
 
 def _clases_a_estilo(soup, mapa, informe):

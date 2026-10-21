@@ -64,6 +64,12 @@ estilos_capitulo:
     "Gotham Black": gotham
     "HelveticaNeueLT Std Lt": helvetica-neue-lt-pro
     "Roboto Light": roboto
+  # Párrafos de texto base con sangría izquierda propia (ajuste de InDesign): son texto
+  # de la viñeta de encima, así que pasan al estilo de texto de viñeta (capítulo 5)
+  parrafos_sangrados:
+    clases: {Texto-base-PO26: Texto-base---Viñeta-PO26}
+    margen_minimo_px: 6                  # con menos margen izquierdo (cap. 65, «B.1.», 1 mm) no es texto de viñeta
+    sangria_por_nivel_px: [23, 31, 40]   # texto de viñeta de nivel 1, 2 y 3 (8, 11 y 14 mm)
   # Fuentes de adornos que no hay en la web: el tramo pasa a una clase de la CSS de
   # Hélice que dibuja el adorno (InDesign exporta el glifo vacío)
   fuentes_a_clase:
@@ -111,6 +117,8 @@ correcciones_indesign:
   # Viñetas numeradas (a., b.…) cuyo estilo pone su marca con ::before en la CSS de Hélice:
   # se pasan a la clase numerada, conservando la sangría de su estilo (capítulo 70)
   clase_numerada: "Ladillos_Viñetas_Viñeta-1--•--PO26"
+  # Subviñetas sueltas (sin viñeta madre): se meten en una viñeta de nivel 1 vacía (capítulo 5)
+  clase_madre_vacia: "Ladillos_Viñetas_Viñeta-1--•--PO26"
   clases_con_marca_propia:
     "Ladillos_Viñetas_Viñeta-2-----PO26": {margin-left: "-28px"}
     "Ladillos_Viñetas_Viñeta-3-----PO26": {margin-left: "-26px"}

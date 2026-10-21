@@ -486,3 +486,74 @@ def test_pesos_sin_indesign_respeta_el_estilo_propio_y_el_parrafo(tmp_path):
     )
     assert spans[0]["style"] == "font-style: normal"  # el pie es 400: hereda
     assert spans[1]["style"] == "font-style: normal"  # su estilo _5-Medium manda (600)
+
+
+def _sangrados(tmp_path, cuerpo):
+    """p01 + p03 sobre un HTML con párrafos de Texto base sangrados (ParaOverride)."""
+    (tmp_path / "css").mkdir()
+    (tmp_path / "css" / "id.css").write_text(
+        "p.TB { text-indent:14px; }\n"
+        "p.ParaOverride-6 { margin-left:9px; }\n"            # 3 mm + 5 mm de sangría de 1.ª línea
+        "p.ParaOverride-7 { margin-left:23px; text-indent:0; }\n"   # 8 mm: texto de nivel 1
+        "p.ParaOverride-8 { margin-left:31px; text-indent:0; }\n"   # 11 mm: texto de nivel 2
+        "p.ParaOverride-9 { margin-left:3px; }\n",                  # 1 mm: no es texto de viñeta
+        encoding="utf-8",
+    )
+    s = _soup(f'<html><head><link href="css/id.css" rel="stylesheet"></head><body>{cuerpo}</body></html>')
+    cfg1 = {
+        "clases_anulacion": ["ParaOverride-\\d+"],
+        "propiedades": {"p": ["text-indent"]},
+        "parrafos_sangrados": {"clases": {"TB": "TB---Viñeta"}},
+    }
+    p01_estilos_capitulo.aplicar(s, cfg1, _ctx(tmp_path), Informe())
+    for p in s.find_all("p"):
+        p["class"] = [c for c in p["class"] if not c.startswith("ParaOverride")]
+    cfg3 = {"clase_texto_vineta": "TB---Viñeta", "clase_madre_vacia": "V-Viñeta-1"}
+    p03_correcciones_indesign.aplicar(s, cfg3, {}, Informe())
+    return str(s.body)
+
+
+def test_texto_base_sangrado_va_dentro_de_su_vineta(tmp_path):
+    """Cap. 5: «Principios…» (texto de la viñeta 1) entre «Escleritis» y sus guiones."""
+    html = _sangrados(
+        tmp_path,
+        '<ul><li class="V-Viñeta-1">Escleritis</li></ul>'
+        '<p class="TB ParaOverride-6">Principios</p>'
+        '<ul><li class="V-Viñeta-2">NO iniciar</li></ul>'
+        '<p class="TB ParaOverride-7">Tratamiento</p>'
+        '<ul><li class="V-Viñeta-2">Leve</li></ul>',
+    )
+    assert html == (
+        '<body><ul><li class="V-Viñeta-1">Escleritis'
+        '<p class="TB---Viñeta" style="margin-left: 0">Principios</p>'
+        '<ul><li class="V-Viñeta-2">NO iniciar</li></ul>'
+        '<p class="TB---Viñeta" style="text-indent: 0; margin-left: 0">Tratamiento</p>'
+        '<ul><li class="V-Viñeta-2">Leve</li></ul></li></ul></body>'
+    )
+
+
+def test_texto_sangrado_de_nivel_2_va_dentro_del_guion(tmp_path):
+    """Cap. 23: texto a 11 mm detrás de cada guion; el de 1 mm (cap. 65) se queda fuera."""
+    html = _sangrados(
+        tmp_path,
+        '<ul><li class="V-Viñeta-1">Lesiones</li><li class="V-Viñeta-2">Conmoción</li></ul>'
+        '<p class="TB ParaOverride-8">Explicación</p>'
+        '<ul><li class="V-Viñeta-2">Rotura</li></ul>'
+        '<p class="TB ParaOverride-9">B.1.</p>',
+    )
+    assert html == (
+        '<body><ul><li class="V-Viñeta-1">Lesiones<ul><li class="V-Viñeta-2">Conmoción'
+        '<p class="TB---Viñeta" style="text-indent: 0; margin-left: 0">Explicación</p></li>'
+        '<li class="V-Viñeta-2">Rotura</li></ul></li></ul>'
+        '<p class="TB">B.1.</p></body>'
+    )
+
+
+def test_subvinetas_sin_madre(tmp_path):
+    """Cap. 5: «Órdenes terapéuticas tipo:» (texto normal) y guiones de nivel 2 sueltos."""
+    s = _soup('<p>Órdenes:</p><ul><li class="V-Viñeta-2">Naproxeno</li></ul>')
+    p03_correcciones_indesign.aplicar(s, {"clase_madre_vacia": "V-Viñeta-1"}, {}, Informe())
+    assert str(s.body) == (
+        '<body><p>Órdenes:</p><ul><li class="V-Viñeta-1" style="list-style-type: none">'
+        '<ul><li class="V-Viñeta-2">Naproxeno</li></ul></li></ul></body>'
+    )
