@@ -1,9 +1,9 @@
-// Marcador «Enlaces Hélice»: copia al portapapeles las URL de todas las imágenes
-// que aparecen en la página abierta del panel (carpeta de imágenes del capítulo)
+// Marcador «Enlaces Hélice»: copia al portapapeles las URL de todas las imágenes (y
+// fuentes, para la CSS de un libro nuevo) que aparecen en la página abierta del panel
 // y las muestra en un recuadro que se cierra solo, sin tener que confirmar nada.
 // instalar_marcador.html construye el marcador a partir de esta función.
 function enlacesHelice() {
-  var re = /(?:https?:\/\/[^\s"'<>)]+)?\/uploads\/app\/\d+\/files\/[\w.-]+?\.(?:jpe?g|png|gif|webp)/gi;
+  var re = /(?:https?:\/\/[^\s"'<>)]+)?\/uploads\/app\/\d+\/files\/[\w.-]+?\.(?:jpe?g|png|gif|webp|woff2?|otf|ttf)/gi;
   var urls = new Set();
   for (var m of document.documentElement.innerHTML.matchAll(re)) {
     urls.add(m[0].startsWith("/") ? location.origin + m[0] : m[0]);
@@ -43,7 +43,7 @@ function enlacesHelice() {
   caja.onmouseleave = function () { if (autocierre) programar(3000); };
   function terminar(copiado) {
     if (!urls.size) {
-      titulo.textContent = "No he encontrado enlaces de imágenes en esta página";
+      titulo.textContent = "No he encontrado enlaces de imágenes ni fuentes en esta página";
       lista.style.display = "none";
     } else if (copiado) {
       titulo.textContent = urls.size + " enlaces copiados al portapapeles";

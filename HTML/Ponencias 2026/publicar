@@ -1,0 +1,3 @@
+#!/bin/zsh
+# Uso: ./publicar --estructura | ./publicar "ruta/al/06 … - Helice.html"
+cd "${0:A:h}" && exec .venv/bin/python -m depurar.helice "$@"

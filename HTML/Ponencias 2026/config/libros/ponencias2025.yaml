@@ -1,0 +1,101 @@
+# Libro Ponencias SEO 2025 → Hélice (PRUEBA del proceso completo, 2026-10-22).
+# Hereda de Ponencias 2026; aquí solo lo que cambia. Las CSS subidas con el sufijo
+# -PRUEBAS se borrarán de Hélice después de comprobarlo.
+base: ponencias2026.yaml
+
+libro:
+  nombre: "Ponencias SEO 2025 (prueba)"
+  raiz: "/Users/jose/Desktop/PONENCIA SEO 2025"
+  carpeta: "/Users/jose/Desktop/PONENCIA SEO 2025/Ponencias 2025 (APP)"
+  nombre_txt: "{n:02d}Ponencias2025.txt"
+
+preparar:
+  # Originales: Capitulos/Bloque N/Tema N/NN Ponencias 2025.indd (un capítulo por archivo)
+  destino: "{carpeta}/{n:02d} Ponencias 2025 (APP)/{n:02d} Ponencias 2025 (APP).indd"
+  figuras:
+    estilos_pie: ["Pie Figura"]
+    titulo: "^Figura\\.?[\\s\\u00A0]+(\\d+)"      # «Figura 1:» y también «Figura. 6:»
+    cita: "Figuras?"
+    compuesta: "F{cap}.{n}"
+  # Vídeos: QR con su pie «Video N:» al lado; siempre a JPG (QR y formas), V6.1…
+  otras_figuras:
+    - {clave: video, etiqueta: "Vídeo", titulo: "^V[ÍíIi]deo\\.?[\\s\\u00A0]+(\\d+)", cita: "V[íi]deos?", nombre: "V{cap}.{n}", siempre_jpg: true}
+  cuadros: []                                     # sin algoritmos ni ideas básicas
+  no_partir_vinetas:
+    final_si_unica: true
+    nivel: "Viñeta (\\d+)"
+    continuacion: []
+
+# En InDesign el sufijo sería «/PRUEBAS»: en las clases del HTML, «-PRUEBAS»
+renombrar_clases:
+  sufijo: "-PRUEBAS"
+  excluir: ["_idGen.*", "CharOverride-\\d+", "ParaOverride-\\d+", "Marco-.*", "Basic-.*", "P-rrafo-b-sico",
+            "No-paragraph-style", "_id.*", "_listStyle.*", "HorizontalRule-\\d+", ".*-PRUEBAS"]
+  equivalencias: {}                               # en este libro el grupo Viñetas está en la raíz
+
+# CSS de Hélice del libro: la genera la herramienta a partir de la CSS que exporta InDesign
+# (estilos con el sufijo y fuentes propias con @font-face). Se va completando con cada
+# capítulo; cuando cambia, hay que subirla de nuevo a Hélice.
+css_libro:
+  generar: true
+  archivo: "{carpeta}/CSS Helice/helice_ponencias2025.css"
+  fuentes_web:
+    carpeta: "{carpeta}/CSS Helice/Fuentes"       # aquí se dejan en .woff2 para subirlas a Hélice
+    url_base: ""                                  # la carpeta de Hélice con las fuentes subidas (pendiente)
+    archivos:                                     # familia, peso, estilo, original
+      - ["Adobe Clean UX", 300, normal, "/Users/jose/Desktop/Adobe Clean/AdobeCleanUX-Light.otf"]
+      - ["Adobe Clean UX", 300, italic, "/Users/jose/Desktop/Adobe Clean/AdobeCleanUX-LightIt.otf"]
+      - ["Adobe Clean UX", 400, normal, "/Users/jose/Desktop/Adobe Clean/AdobeCleanUX-Regular.otf"]
+      - ["Adobe Clean UX", 400, italic, "/Users/jose/Desktop/Adobe Clean/AdobeCleanUX-It.otf"]
+      - ["Adobe Clean UX", 700, normal, "/Users/jose/Desktop/Adobe Clean/AdobeCleanUX-Bold.otf"]
+      - ["Adobe Clean UX", 700, italic, "/Users/jose/Desktop/Adobe Clean/AdobeCleanUX-BoldIt.otf"]
+
+estilos_capitulo:
+  css_helice: "/Users/jose/Desktop/PONENCIA SEO 2025/Ponencias 2025 (APP)/CSS Helice/helice_ponencias2025.css"
+  fuentes:
+    "Adobe Clean UX": "Adobe Clean UX"
+  pesos_indesign:
+    Adobe Clean UX: {Light: 300, Regular: 400, Bold: 700}
+  peso_normal_por_familia: {}
+  parrafos_sangrados: {clases: {}}
+  fuentes_a_clase: {}
+  clases_a_estilo:
+    noPartir-PRUEBAS: {white-space: nowrap}
+
+limpieza:
+  clases_eliminar: ["_idGen.*", "CharOverride-\\d+", "ParaOverride-\\d+", "noPartir-PRUEBAS", "Marco-.*"]
+
+correcciones_indesign:
+  clase_texto_vineta: "Texto-base---Viñeta-PRUEBAS"
+  clase_numerada: "Viñetas_Viñeta-1--Numero--PRUEBAS"
+  clase_madre_vacia: "Viñetas_Viñeta-1--•--PRUEBAS"
+  clases_con_marca_propia: {}
+
+reglas_helice:
+  cabecera_con_qr: false                          # la cabecera no lleva QR
+  ideas_basicas: {patron: "^IB\\d+\\.", estilo: {max-width: 60%, display: block, margin: 0 auto}}
+
+inyectar:
+  head: []                                        # sin Adobe Fonts: las fuentes van en la CSS del libro
+
+salida:
+  vista_previa_css: "/Users/jose/Desktop/PONENCIA SEO 2025/Ponencias 2025 (APP)/CSS Helice/helice_ponencias2025.css"
+
+# Publicación en Hélice por la API (./publicar). El Menú de cada bloque se crea a mano en
+# el panel (la API no puede); los temas (Información) los crea ./publicar --estructura y
+# cada capítulo es un elemento «Capítulo NN» con su HTML. Los iconos, en el panel.
+publicar:
+  estado: "{carpeta}/helice_publicacion.json"     # identificadores creados y capítulos publicados
+  titulo: "Capítulo {n:02d}"
+  layout: 1
+  bloques:
+    - nombre: "Bloque 1"
+      seccion:                                    # id del Menú «Bloque 1» dentro de «Ponencias prueba» (238534)
+      temas:
+        - {nombre: "Tema 1", capitulos: [1, 2, 3]}
+        - {nombre: "Tema 2", capitulos: [4, 5, 6]}
+        - {nombre: "Tema 3", capitulos: [7, 8, 9, 10]}
+        - {nombre: "Tema 4", capitulos: [11, 12]}
+        - {nombre: "Tema 5", capitulos: [13, 14]}
+        - {nombre: "Tema 6", capitulos: [15, 16, 17]}
+        - {nombre: "Tema 7", capitulos: [18, 19]}

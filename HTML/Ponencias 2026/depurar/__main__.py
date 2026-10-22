@@ -1,13 +1,13 @@
-"""Uso: python -m depurar entrada/32/archivo.html [más archivos] [--config config/config.yaml]"""
+"""Uso: python -m depurar entrada/32/archivo.html [más archivos] [--libro ponencias2026 | --config archivo.yaml]"""
 
 import argparse
 import os
 import re
 import sys
 
-import yaml
 from bs4 import BeautifulSoup
 
+from . import libros
 from .informe import Informe
 from .pasos import PASOS
 
@@ -52,6 +52,14 @@ def procesar(ruta_html, config, dir_config, dir_salida, sufijo="", dir_auxiliar=
     return destino, informe
 
 
+def configuracion(libro=None, archivo=None, ruta=None):
+    """(config, carpeta de sus rutas relativas) del archivo indicado o del libro de la ruta."""
+    if archivo:
+        return libros.cargar(archivo), os.path.dirname(os.path.abspath(archivo))
+    l = libros.elegir(libro, ruta)
+    return l.config, l.dir_config
+
+
 def _compactar(html):
     """Quita las líneas en blanco que dejan los div desenvueltos."""
     return re.sub(r"\n[ \t]*(?:\n[ \t]*)+", "\n", html)
@@ -60,15 +68,13 @@ def _compactar(html):
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="depurar", description=__doc__)
     ap.add_argument("html", nargs="+", help="HTML exportado por InDesign")
-    ap.add_argument("--config", default=os.path.join(RAIZ, "config", "config.yaml"))
+    ap.add_argument("--libro", help="libro de config/libros (por defecto, según la ruta del HTML)")
+    ap.add_argument("--config", help="archivo de configuración (en vez de --libro)")
     ap.add_argument("--salida", default=os.path.join(RAIZ, "salida"))
     args = ap.parse_args(argv)
 
-    with open(args.config, encoding="utf-8") as f:
-        config = yaml.safe_load(f) or {}
-    dir_config = os.path.dirname(os.path.abspath(args.config))
-
     for ruta in args.html:
+        config, dir_config = configuracion(args.libro, args.config, ruta)
         destino, informe = procesar(ruta, config, dir_config, args.salida)
         print(f"== {ruta} -> {destino}")
         print(informe.texto())

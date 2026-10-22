@@ -1,7 +1,8 @@
 """Procesa un capítulo del libro en su carpeta del servidor.
 
-Uso: ./capitulo 33            (número de capítulo)
+Uso: ./capitulo 33            (número de capítulo; con varios libros, --libro <libro>)
      ./capitulo ruta/al/33 Ponencias 2026 (APP).indd   (o el .html, o la carpeta)
+El libro (config/libros/<libro>.yaml) se reconoce por la ruta.
 
 1. Localiza el HTML exportado desde InDesign y el .txt de URL del capítulo.
 2. Si el portapapeles tiene las URL copiadas con el marcador «Enlaces Hélice»,
@@ -24,9 +25,9 @@ import re
 import subprocess
 import sys
 
-import yaml
-
-from .__main__ import RAIZ, procesar
+from . import css_libro
+from .__main__ import RAIZ, configuracion, procesar
+from .informe import Informe
 
 URL_IMAGEN = re.compile(r"https?://[^\s\"'<>)]+/uploads/[^\s\"'<>)]+\.(?:jpe?g|png|gif|webp)", re.I)
 
@@ -40,7 +41,8 @@ class Parada(Exception):
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="capitulo", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("capitulo", help="número del capítulo, o ruta al .indd, al .html o a su carpeta")
-    ap.add_argument("--config", default=os.path.join(RAIZ, "config", "config.yaml"))
+    ap.add_argument("--libro", help="libro de config/libros (por defecto, según la ruta)")
+    ap.add_argument("--config", help="archivo de configuración (en vez de --libro)")
     ap.add_argument("--no-abrir", action="store_true", help="no abrir la vista previa")
     ap.add_argument("--copiar", action="store_true", help="copiar el HTML al portapapeles aunque haya avisos")
     ap.add_argument("--resumen", action="store_true", help="salida para la app (no copia ni abre nada)")
@@ -77,8 +79,10 @@ def main(argv=None):
 
 
 def _ejecutar(args):
-    with open(args.config, encoding="utf-8") as f:
-        config = yaml.safe_load(f) or {}
+    try:
+        config, dir_config = configuracion(args.libro, args.config, None if args.capitulo.isdigit() else args.capitulo)
+    except ValueError as e:
+        raise Parada("ERROR", str(e))
     libro = config.get("libro", {})
     sufijo = libro.get("sufijo_salida", " - Helice")
 
@@ -89,7 +93,12 @@ def _ejecutar(args):
     lineas.append(_preparar_urls(carpeta, numero, libro))
 
     salida = os.path.join(RAIZ, "salida")
-    destino, informe = procesar(html, config, os.path.dirname(os.path.abspath(args.config)), carpeta, sufijo, salida)
+    # Libro nuevo: su CSS de Hélice se completa con los estilos de este capítulo (antes de
+    # depurar, para que la vista previa y los pesos ya la usen)
+    aviso_css = Informe()
+    css_libro.actualizar(config, html, aviso_css)
+    destino, informe = procesar(html, config, dir_config, carpeta, sufijo, salida)
+    informe.avisos[:0] = aviso_css.avisos
     vista = os.path.join(salida, os.path.basename(destino)[: -len(".html")] + ".vista.html")
     lineas += [informe.texto(), f"\nHTML final: {destino}"]
     breve = []
@@ -155,9 +164,10 @@ def _html_exportado(carpeta, sufijo):
 def urls_del_marcador(texto):
     """URL copiadas con el marcador: el texto es solo una lista de URL (no un HTML que las contenga)."""
     lineas = [l.strip() for l in texto.splitlines() if l.strip()]
-    if not lineas or not all(URL_IMAGEN.fullmatch(l) for l in lineas):
+    # Las de fuentes (CSS de un libro nuevo) pueden venir mezcladas: se ignoran aquí
+    if not lineas or not all(URL_IMAGEN.fullmatch(l) or css_libro.URL_FUENTE.fullmatch(l) for l in lineas):
         return []
-    return list(dict.fromkeys(lineas))
+    return list(dict.fromkeys(l for l in lineas if URL_IMAGEN.fullmatch(l)))
 
 
 def _preparar_urls(carpeta, numero, libro):

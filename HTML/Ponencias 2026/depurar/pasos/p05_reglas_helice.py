@@ -46,6 +46,8 @@ def _enlace_cabecera(soup, cfg, ctx, informe):
     import zxingcpp
     from PIL import Image
 
+    if cfg.get("cabecera_con_qr") is False:  # libro sin QR en la cabecera (Ponencias 2025)
+        return
     for img, ruta, nombre in _imagenes(soup, cfg.get("cabecera", r"^C\d+\."), ctx):
         if img.find_parent("a"):
             continue

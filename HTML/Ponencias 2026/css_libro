@@ -1,0 +1,3 @@
+#!/bin/zsh
+# Uso: ./css_libro [--fuentes] [ruta/al/capitulo.html]
+cd "${0:A:h}" && exec .venv/bin/python -m depurar.css_libro "$@"

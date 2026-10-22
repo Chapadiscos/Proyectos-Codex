@@ -5,6 +5,7 @@ from bs4 import BeautifulSoup
 from depurar.__main__ import procesar
 from depurar.informe import Informe
 from depurar.pasos import (
+    p00_renombrar_clases,
     p01_estilos_capitulo,
     p02_limpieza,
     p03_correcciones_indesign,
@@ -557,3 +558,121 @@ def test_subvinetas_sin_madre(tmp_path):
         '<body><p>Órdenes:</p><ul><li class="V-Viñeta-1" style="list-style-type: none">'
         '<ul><li class="V-Viñeta-2">Naproxeno</li></ul></li></ul></body>'
     )
+
+
+def test_renombrar_clases_con_sufijo_y_equivalencias(tmp_path):
+    # .indd con los nombres de estilo de InDesign: el sufijo del libro lo pone el depurador
+    s = _soup(
+        '<p class="Texto-base ParaOverride-1">a <span class="_5-Medium CharOverride-2">b</span></p>'
+        '<ul><li class="Viñetas_Viñeta-1--•-">c</li></ul><div class="_idGenObjectLayout-1"></div>'
+        '<p class="Pie-Figura-PO26">ya renombrada</p>'
+    )
+    cfg = {
+        "sufijo": "-PO26",
+        "excluir": ["_idGen.*", "CharOverride-\\d+", "ParaOverride-\\d+", ".*-PO26"],
+        "equivalencias": {"Viñetas_(.*)": "Ladillos_Viñetas_\\1"},
+    }
+    ctx = {}
+    p00_renombrar_clases.aplicar(s, cfg, ctx, Informe())
+    assert s.p["class"] == ["Texto-base-PO26", "ParaOverride-1"]
+    assert s.span["class"] == ["_5-Medium-PO26", "CharOverride-2"]
+    assert s.li["class"] == ["Ladillos_Viñetas_Viñeta-1--•--PO26"]
+    assert s.div["class"] == ["_idGenObjectLayout-1"]
+    assert s.find_all("p")[1]["class"] == ["Pie-Figura-PO26"]
+    assert ctx["renombrar_clase"]("Texto-base") == "Texto-base-PO26"  # para la CSS local (p01)
+
+
+def test_libros_herencia_y_deteccion_por_ruta(tmp_path):
+    from depurar import libros
+
+    (tmp_path / "a.yaml").write_text(
+        'libro: {nombre: A, raiz: "/libros/A", carpeta: "/libros/A/app"}\n'
+        "preparar: {cabecera: {activa: true, nombre: C}, cuadros: [{nombre: IB}, {nombre: alg}], extra: {a: 1}}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "b.yaml").write_text(
+        'base: a.yaml\nlibro: {nombre: B, raiz: "' + str(tmp_path / "B") + '"}\n'
+        "preparar: {cabecera: {activa: false}, cuadros: [{nombre: alg}], extra: {}}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "_plantilla.yaml").write_text("base: a.yaml\n", encoding="utf-8")
+    (tmp_path / "B").mkdir()
+    (tmp_path / "B" / "1 cap.indd").write_text("")
+
+    b = libros.elegir(ruta=str(tmp_path / "B" / "1 cap.indd"), directorio=str(tmp_path))
+    assert b.id == "b" and b.nombre == "B"
+    assert b.config["preparar"]["cabecera"] == {"activa": False, "nombre": "C"}  # se mezcla
+    assert b.config["preparar"]["cuadros"] == [{"nombre": "alg"}]  # la lista se sustituye
+    assert b.config["libro"]["carpeta"] == "/libros/A/app"  # heredado
+    assert b.config["preparar"]["extra"] == {}  # «{}» borra lo heredado
+    assert [l.id for l in libros.todos(str(tmp_path))] == ["a", "b"]  # la plantilla no es un libro
+    assert libros.elegir("a", directorio=str(tmp_path)).nombre == "A"
+
+
+def test_destino_de_la_copia_preparada(tmp_path):
+    from depurar.preparar import destino
+
+    config = {
+        "libro": {"carpeta": str(tmp_path)},
+        "preparar": {"destino": "{carpeta}/{n:02d} LIBRO (APP)/{n:02d} Libro (APP).indd"},
+    }
+    original = "/libros/Seccion II (4-17).indd"
+    assert destino(original, 5, config) == str(tmp_path / "05 LIBRO (APP)" / "05 Libro (APP).indd")
+    # La carpeta del capítulo ya tiene su .indd con otro nombre: se usa ese
+    (tmp_path / "02 LIBRO (APP)").mkdir()
+    (tmp_path / "02 LIBRO (APP)" / "02 Libr (APP).indd").write_text("")
+    (tmp_path / "02 LIBRO (APP)" / "02 Libr (APP) (anterior).indd").write_text("")
+    assert destino(original, 2, config) == str(tmp_path / "02 LIBRO (APP)" / "02 Libr (APP).indd")
+    # Sin plantilla, junto al original; con --destino, en esa carpeta con el nombre del libro
+    assert destino("/x/5 Cap.indd", 5, {}) == "/x/5 Cap (HTML).indd"
+    assert destino(original, 5, config, "/tmp/p") == "/tmp/p/05 Libro (APP).indd"
+
+
+def test_css_libro_completa_reglas_con_sufijo_y_no_toca_las_existentes(tmp_path):
+    from depurar import css_libro
+
+    cap = tmp_path / "cap"
+    (cap / "x-web-resources" / "css").mkdir(parents=True)
+    (cap / "x-web-resources" / "css" / "idGeneratedStyles.css").write_text(
+        'p.Texto-base { font-family:"Adobe Clean UX", sans-serif; font-size:9px; }\n'
+        "span.CharOverride-1 { font-size:8px; }\n"
+        'li.Viñetas_Viñeta-1--•- { font-family:"Adobe Clean UX", sans-serif; }\n',
+        encoding="utf-8",
+    )
+    config = {
+        "libro": {"carpeta": str(tmp_path)},
+        "renombrar_clases": {"sufijo": "-PRUEBAS", "excluir": ["CharOverride-\\d+"]},
+        "estilos_capitulo": {"fuentes": {"Adobe Clean UX": "adobe-clean"}},
+        "css_libro": {"generar": True, "archivo": "{carpeta}/CSS/libro.css"},
+    }
+    informe = Informe()
+    archivo, nuevas = css_libro.actualizar(config, str(cap / "x.html"), informe)
+    texto = open(archivo, encoding="utf-8").read()
+    assert len(nuevas) == 2 and "p.Texto-base-PRUEBAS {" in texto and "CharOverride" not in texto
+    assert 'font-family: "adobe-clean", sans-serif;' in texto
+    assert informe.avisos  # la CSS ha cambiado: hay que subirla
+    # Un retoque a mano se conserva y lo ya generado no se repite
+    open(archivo, "w", encoding="utf-8").write(texto.replace("font-size: 9px", "font-size: 10px"))
+    _, nuevas = css_libro.actualizar(config, str(cap / "x.html"), Informe())
+    assert nuevas == [] and "font-size: 10px" in open(archivo, encoding="utf-8").read()
+
+
+def test_publicar_plan_por_tema_y_sin_duplicados(tmp_path):
+    from depurar.helice import Publicacion
+
+    class Libro:
+        config = {
+            "libro": {"carpeta": str(tmp_path)},
+            "publicar": {"bloques": [{"nombre": "Bloque 1", "seccion": 1, "temas": [
+                {"nombre": "Tema 1", "capitulos": [1, 2]}, {"nombre": "Tema 2", "capitulos": [4]}]}]},
+        }
+
+    pub = Publicacion(Libro())
+    assert pub.plan(2)[0] == "NO" and "--estructura" in pub.plan(2)[1]  # aún sin temas creados
+    pub.estado["temas"]["Bloque 1/Tema 1"] = "111"
+    assert pub.plan(2) == ("SI", "Bloque 1 / Tema 1")
+    assert pub.plan(9)[0] == "NO"  # en ningún tema
+    pub.estado["capitulos"]["02"] = {"fecha": "2026-10-22 18:00"}
+    assert pub.plan(2)[0] == "YA"  # no se publica dos veces (la API no deja borrar)
+    pub.guardar()
+    assert Publicacion(Libro()).estado["temas"] == {"Bloque 1/Tema 1": "111"}

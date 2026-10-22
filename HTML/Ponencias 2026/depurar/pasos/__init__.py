@@ -3,10 +3,11 @@
 Cada paso es un módulo que puede definir:
   pre(texto, cfg, ctx, informe) -> texto   sobre el HTML en bruto, antes de parsearlo
   aplicar(soup, cfg, ctx, informe)          sobre el árbol BeautifulSoup
-`cfg` es la sección del paso en config.yaml; `ctx` lleva rutas y datos comunes.
+`cfg` es la sección del paso en la configuración del libro (config/libros/<libro>.yaml); `ctx` lleva rutas y datos comunes.
 """
 
 from . import (
+    p00_renombrar_clases,
     p01_estilos_capitulo,
     p02_limpieza,
     p03_correcciones_indesign,
@@ -17,6 +18,7 @@ from . import (
 )
 
 PASOS = [
+    ("renombrar_clases", p00_renombrar_clases),
     ("estilos_capitulo", p01_estilos_capitulo),
     ("limpieza", p02_limpieza),
     ("correcciones_indesign", p03_correcciones_indesign),

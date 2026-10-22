@@ -16,10 +16,11 @@ SELECTOR_CLASE = re.compile(r"([a-z0-9]+)?\.([^\s.#:>+~\[]+)")
 
 def aplicar(soup, cfg, ctx, informe):
     por_clase = {}
+    renombrar = ctx.get("renombrar_clase", lambda c: c)  # la CSS local no lleva el sufijo del libro
     for selectores, decl in css_local(soup, ctx["dir_entrada"], informe):
         for s in selectores:
             if m := SELECTOR_CLASE.fullmatch(s):
-                por_clase.setdefault((m.group(1), m.group(2)), {}).update(decl)
+                por_clase.setdefault((m.group(1), renombrar(m.group(2))), {}).update(decl)
 
     pesos = Pesos(cfg, ctx, informe)
     _anulaciones(soup, cfg, por_clase, pesos, informe)

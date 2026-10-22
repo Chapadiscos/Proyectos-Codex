@@ -1,6 +1,6 @@
 """Correcciones de errores de la exportación HTML de InDesign.
 
-Los reemplazos simples se configuran en config.yaml. Las correcciones que necesitan
+Los reemplazos simples se configuran en la configuración del libro. Las correcciones que necesitan
 mirar la estructura van como funciones en CORRECCIONES, una por error detectado.
 """
 

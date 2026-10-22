@@ -5,3 +5,5 @@ requests
 zxing-cpp
 pillow
 pytest
+fonttools
+brotli

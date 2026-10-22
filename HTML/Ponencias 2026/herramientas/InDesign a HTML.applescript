@@ -1,24 +1,99 @@
 -- InDesign a HTML: de un capítulo de InDesign al HTML depurado en el portapapeles.
--- 1. Eliges el .indd.  2. InDesign lo exporta a HTML (heredado) en su carpeta.
+-- 1. Eliges el .indd. Si es el de imprenta (o un archivo de sección con varios
+--    capítulos), se prepara antes una copia para HTML (./preparar) en la carpeta del
+--    capítulo de la versión APP; si ya es esa copia, se usa tal cual.
+-- 2. InDesign lo exporta a HTML (heredado) en su carpeta.
 -- 3. Pausa para subir las imágenes a Hélice y copiar sus enlaces con el marcador.
 -- 4. Se depura el HTML; si no hay avisos, queda copiado en el portapapeles.
+-- Cada libro tiene su configuración en config/libros/; se reconoce por la carpeta del .indd.
 -- Compilar: herramientas/compilar_app.sh
 
 property proyecto : "/Volumes/DATOS/Proyectos Codex/HTML/Ponencias 2026"
-property libro : "/Volumes/MACLINE SERVER/LIBROS/PONENCIA SEO 2026/Ponencias 2026 (APP)"
+property libros : "/Volumes/MACLINE SERVER/LIBROS"
 property titulo : "InDesign a HTML"
 
 on run
-	-- 1. Elegir el capítulo
+	-- 1. Elegir el capítulo (por defecto, en la carpeta del último elegido)
 	try
-		set inicio to (POSIX file libro) as alias
+		set inicio to (POSIX file (do shell script "cat " & quoted form of (proyecto & "/salida/.ultima_carpeta") & " 2>/dev/null || echo " & quoted form of libros)) as alias
 	on error
 		set inicio to path to desktop
 	end try
-	set indd to choose file with prompt "Elige el capítulo de InDesign que quieres pasar a Hélice:" of type {"com.adobe.indesign-document", "indd"} default location inicio
+	set indd to choose file with prompt "Elige el capítulo de InDesign (el de imprenta, un archivo de sección o la versión ya preparada):" of type {"com.adobe.indesign-document", "indd"} default location inicio
 	set rutaIndd to POSIX path of indd
+	do shell script "mkdir -p " & quoted form of (proyecto & "/salida") & "; dirname " & quoted form of rutaIndd & " > " & quoted form of (proyecto & "/salida/.ultima_carpeta")
+
+	-- ¿De qué libro es y hay que prepararlo?
+	set progress description to "Leyendo el capítulo en InDesign…"
+	set plan to do shell script quoted form of (proyecto & "/preparar") & " --plan " & quoted form of rutaIndd
+	set tipoIndd to paragraph 1 of plan
+	if tipoIndd is "ERROR" then
+		display dialog my desde(plan, 3) buttons {"Aceptar"} default button 1 with title titulo with icon stop
+		return
+	end if
+	set nombreLibro to paragraph 2 of plan
+	if tipoIndd is not "PREPARADO" then
+		set capitulos to items 3 thru -1 of paragraphs of plan
+		if tipoIndd is "SECCION" then
+			set opciones to {}
+			repeat with c in capitulos
+				set partes to my trozos(c)
+				set texto to "Capítulo " & item 1 of partes
+				if item 3 of partes is "EXISTE" then set texto to texto & "   (ya preparado)"
+				set end of opciones to texto
+			end repeat
+			set elegido to choose from list opciones with prompt "«" & nombreLibro & "»: este archivo tiene varios capítulos. ¿Cuál pasas a Hélice?" with title titulo
+			if elegido is false then return
+			set linea to item (my posicion(item 1 of elegido, opciones)) of capitulos
+		else
+			set linea to item 1 of capitulos
+		end if
+		set partes to my trozos(linea)
+		set numCap to item 1 of partes
+		set copia to item 2 of partes
+		set opcionForzar to ""
+		if item 3 of partes is "EXISTE" then
+			set boton to button returned of (display dialog "El capítulo " & numCap & " ya tiene su versión preparada para HTML:" & return & copia & return & return & ¬
+				"¿La usas tal cual o la preparas de nuevo desde este original? (La actual se guarda como «(anterior)».)" buttons {"Cancelar", "Preparar de nuevo", "Usar la preparada"} default button "Usar la preparada" cancel button "Cancelar" with title titulo)
+			if boton is "Preparar de nuevo" then set opcionForzar to " --forzar"
+		else
+			display dialog "«" & nombreLibro & "», capítulo " & numCap & "." & return & return & ¬
+				"Se preparará para HTML una copia del original de imprenta (que no se toca) en:" & return & copia buttons {"Cancelar", "Preparar"} default button "Preparar" cancel button "Cancelar" with title titulo
+			set boton to "Preparar"
+		end if
+		if boton is not "Usar la preparada" then
+			set progress description to "Preparando el capítulo " & numCap & " en InDesign…"
+			with timeout of 1800 seconds
+				set res to do shell script quoted form of (proyecto & "/preparar") & " --resumen --capitulo " & numCap & opcionForzar & " " & quoted form of rutaIndd
+			end timeout
+			set estadoPrep to paragraph 1 of res
+			set informePrep to my desde(res, 3)
+			if estadoPrep is "ERROR" then
+				display dialog "No se ha podido preparar el capítulo:" & return & return & informePrep buttons {"Aceptar"} default button 1 with title titulo with icon stop
+				return
+			end if
+			if estadoPrep is "AVISOS" then
+				set texto to "Capítulo preparado, con avisos: revísalos en la copia antes de exportar." & return & return & informePrep
+				set icono to caution
+			else
+				set texto to "Capítulo preparado." & return & return & informePrep
+				set icono to note
+			end if
+			set boton to button returned of (display dialog texto buttons {"Cancelar", "Abrir en InDesign", "Exportar a HTML"} default button "Exportar a HTML" cancel button "Cancelar" with title titulo with icon icono)
+			if boton is "Abrir en InDesign" then
+				tell application "Adobe InDesign 2026"
+					activate
+					open (POSIX file copia)
+				end tell
+				display dialog "Cuando lo hayas revisado y guardado, ciérralo, vuelve a abrir esta app y elige:" & return & copia buttons {"Aceptar"} default button 1 with title titulo
+				return
+			end if
+		end if
+		set rutaIndd to copia
+	end if
 
 	-- 2. Exportar a HTML (heredado) en la misma carpeta
+	set progress description to "Exportando a HTML…"
 	set jsx to POSIX file (proyecto & "/herramientas/exportar_html.jsx")
 	try
 		with timeout of 900 seconds
@@ -77,7 +152,9 @@ on run
 	set rutaFinal to paragraph 2 of salida
 	set rutaVista to paragraph 3 of salida
 	set detalle to my desde(salida, 4)
+	set listo to false
 	if estado is "OK" then
+		set listo to true
 		set texto to "HTML depurado copiado al portapapeles." & return & "Pégalo en Hélice con ⌘V." & return & return & detalle
 		repeat
 			set boton to button returned of (display dialog texto buttons {"Ver vista previa", "Aceptar"} default button "Aceptar" with title titulo)
@@ -96,13 +173,42 @@ on run
 			else
 				do shell script "LANG=es_ES.UTF-8 pbcopy < " & quoted form of rutaFinal
 				display dialog "HTML depurado copiado al portapapeles." & return & "Pégalo en Hélice con ⌘V." buttons {"Aceptar"} default button 1 with title titulo
+				set listo to true
 				exit repeat
 			end if
 		end repeat
 	else
 		display dialog "No se ha podido depurar el HTML:" & return & return & detalle buttons {"Aceptar"} default button 1 with title titulo with icon stop
 	end if
+
+	-- 5. Publicar en Hélice por la API (libros con «publicar» configurado; solo capítulos nuevos)
+	if listo then
+		set planPub to do shell script quoted form of (proyecto & "/publicar") & " --plan " & quoted form of rutaFinal
+		if paragraph 1 of planPub is "SI" then
+			set boton to button returned of (display dialog "¿Publicar el capítulo en Hélice, en «" & paragraph 2 of planPub & "», en vez de pegarlo a mano?" & return & return & ¬
+				"Antes, sube a Hélice la CSS del libro si te lo ha pedido. Solo se publica una vez: las correcciones, en el panel." buttons {"No", "Publicar"} default button "Publicar" with title titulo)
+			if boton is "Publicar" then
+				set progress description to "Publicando en Hélice…"
+				set res to do shell script quoted form of (proyecto & "/publicar") & " " & quoted form of rutaFinal & " 2>&1; true"
+				display dialog res buttons {"Aceptar"} default button 1 with title titulo
+			end if
+		end if
+	end if
 end run
+
+on trozos(linea)
+	set AppleScript's text item delimiters to "|"
+	set r to text items of linea
+	set AppleScript's text item delimiters to ""
+	return r
+end trozos
+
+on posicion(x, lista)
+	repeat with i from 1 to count of lista
+		if item i of lista is x then return i
+	end repeat
+	return 0
+end posicion
 
 on carpetaDe(ruta)
 	return do shell script "dirname " & quoted form of ruta

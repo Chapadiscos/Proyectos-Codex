@@ -1,0 +1,3 @@
+#!/bin/zsh
+# Uso: ./preparar "ruta/al/05 Ponencias 2026 (APP).indd"
+cd "${0:A:h}" && exec .venv/bin/python -m depurar.preparar "$@"

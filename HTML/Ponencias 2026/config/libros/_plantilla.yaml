@@ -1,0 +1,35 @@
+# Plantilla para un libro nuevo: cópiala como config/libros/<libro>.yaml (sin «_»).
+# Hereda todo de Ponencias 2026; aquí solo va lo que cambia. Las secciones se mezclan
+# y las listas se sustituyen enteras.
+base: ponencias2026.yaml
+
+libro:
+  nombre: "Nombre del libro"
+  raiz: "/Volumes/MACLINE SERVER/LIBROS/CARPETA DEL LIBRO"
+  carpeta: "/Volumes/MACLINE SERVER/LIBROS/CARPETA DEL LIBRO/Libro (APP)"
+  nombre_txt: "{n:02d}Libro.txt"
+
+preparar:
+  destino: "{carpeta}/{n:02d} LIBRO (APP)/{n:02d} Libro (APP).indd"
+  # cabecera: {activa: false}                     # si los capítulos no llevan cabecera
+  # cuadros:                                      # p. ej. sin ideas básicas
+  #   - {nombre: "algoritmo {cap}", estilos: ["Algoritmo"]}
+  # cuadros_en_texto: {activa: false}             # recuadros anclados en el texto: dejarlos como texto
+  # figuras: {estilos_pie: ["Pie de foto"], titulo: "^Fig\\.[\\s\\u00A0]+(\\d+)", cita: "Fig\\.", compuesta: "F{cap}.{n}"}
+
+# Sufijo de las clases en la CSS de Hélice de este libro (que no pise otros libros)
+renombrar_clases:
+  sufijo: "-XX27"
+  excluir: ["_idGen.*", "CharOverride-\\d+", "ParaOverride-\\d+", "Marco-.*", "Basic-.*", "P-rrafo-b-sico", "No-paragraph-style", "_id.*", "_listStyle.*", "HorizontalRule-\\d+", ".*-XX27"]
+  equivalencias: {}
+
+# CSS de Hélice del libro (copia local para la vista previa) y fuentes de su kit de Typekit
+# estilos_capitulo:
+#   css_helice: helice_libro.css
+# salida:
+#   vista_previa_css: helice_libro.css
+# inyectar:
+#   head:
+#     - html: |
+#         <!-- Adobe Fonts -->
+#         <link rel="stylesheet" href="https://use.typekit.net/XXXXXXX.css">

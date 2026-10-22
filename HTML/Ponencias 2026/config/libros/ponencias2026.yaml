@@ -1,14 +1,86 @@
-# Configuración del depurador (Ponencias 2026 → Hélice).
-# Las rutas relativas de esta sección son relativas a esta carpeta (config/).
+# Libro Ponencias SEO 2026 → Hélice. Las rutas relativas son relativas a esta carpeta
+# (config/libros/). Para otro libro: copia _plantilla.yaml y cambia solo lo que varíe.
 
-# Libro: ./capitulo NN trabaja en la carpeta "NN …" de aquí
 libro:
-  carpeta: "/Volumes/MACLINE SERVER/LIBROS/PONENCIA SEO 2026/Ponencias 2026 (APP)"
+  nombre: "Ponencias SEO 2026"
+  raiz: "/Volumes/MACLINE SERVER/LIBROS/PONENCIA SEO 2026"   # todo .indd o .html de aquí es de este libro
+  carpeta: "/Volumes/MACLINE SERVER/LIBROS/PONENCIA SEO 2026/Ponencias 2026 (APP)"   # ./capitulo NN: carpeta "NN …" de aquí
   nombre_txt: "{n:02d}Ponencias2026.txt"   # si el capítulo aún no tiene .txt
   sufijo_salida: " - Helice"                # "33 Ponencias 2026 (APP) - Helice.html"
 
+# Preparar el .indd de imprenta para exportarlo a HTML (./preparar, herramientas/preparar_html.jsx).
+# Se trabaja sobre una copia; el original no se toca. Los estilos se nombran como en
+# InDesign: el sufijo del libro (-PO26) lo pone después el depurador (renombrar_clases).
+# En los nombres de los JPG, {cap} es el número de capítulo y {n} el de figura o tabla.
+preparar:
+  # Dónde va la copia preparada (y sus JPG). {carpeta} = libro.carpeta, {n} = capítulo.
+  # El original de imprenta está en Maquetas/Carpeta 5 Ponencias 2026/5 Ponencias 2026.indd
+  destino: "{carpeta}/{n:02d} PONENCIAS 2026 (APP)/{n:02d} Ponencias 2026 (APP).indd"
+  jpeg: {resolucion: 150}            # calidad máxima, RGB con perfil, suavizado
+  estilo_parrafo_ancla: "Texto base" # párrafo propio de cada objeto anclado (no se exporta)
+  cabecera: {activa: true, nombre: "C{cap}"}   # lo que hay encima del texto en la 1.ª página
+  tablas: {activa: true, nombre: "T{cap}.{n}", titulo: "Tabla[\\s\\u00A0]+(\\d+)", cita: "Tablas?",
+           sin_titulo: "TABLA {cap}.{n}"}   # sin «Tabla N» (cap. 04): tras el párrafo que tiene encima
+  figuras:
+    estilos_pie: ["Pie Figura"]
+    titulo: "^Figura[\\s\\u00A0]+(\\d+)"
+    cita: "Figuras?"
+    compuesta: "F{cap}.{n}"          # varias imágenes con letras encima: un solo JPG
+  # Bloques de texto que pasan a imagen y se anclan al final, en este orden. Si llevan un
+  # pie pegado, va con la imagen; y si el pie es «Tabla N.» o «Figura N.», es esa tabla o
+  # figura y se ancla donde se cita (cap. 04: el algoritmo es la «Tabla 3»)
+  cuadros:
+    - {nombre: "algoritmo {cap}", estilos: ["Algoritmo"]}
+    - {nombre: "IB{cap}", estilos: ["titulo Ideas basicas", "Texto Ideas"]}
+  # Recuadros de texto anclados en el texto (cap. 04): JPG en el mismo sitio
+  cuadros_en_texto: {activa: true, nombre: "CUADRO {cap}.{n}", minimo_mm: 15}
+  # Figura o tabla citada en una lista: si es la única de la lista, al final de la lista;
+  # si hay varias, cada una tras su viñeta y sus subviñetas
+  no_partir_vinetas:
+    final_si_unica: true
+    nivel: "Viñeta (\\d+)"
+    continuacion: ["Texto base - Viñeta", "Texto base - Viñeta (MAQUETA)"]
+  final_antes_de: {estilo: "Ladillo", texto: "^Bibliograf"}
+  ignorar_citas_en: ["Bibliografia"]
+  # Ajustes de exportación HTML (heredado) que se guardan en la copia (los del cap. 05 subido)
+  html_export:
+    preserveLayoutAppearence: true    # «Conservar aspecto del diseño»
+    imageConversion: ImageConversion.JPEG
+    jpegOptionsQuality: JPEGOptionsQuality.MEDIUM
+  limpiar:
+    mesa_de_trabajo: true
+    maestras: true
+    variables: true
+    guiones_discrecionales: true
+    retornos_forzados: true
+    saltos: true
+    estilos_sin_uso: true
+    muestras_sin_uso: true
+
+# Sufijo del libro en las clases de estilo de párrafo y carácter («Texto-base» → «Texto-base-PO26»)
+renombrar_clases:
+  sufijo: "-PO26"
+  excluir:                       # clases de InDesign que no son estilos del libro
+    - "_idGen.*"
+    - "CharOverride-\\d+"
+    - "ParaOverride-\\d+"
+    - "Marco-.*"
+    - "Basic-.*"
+    - "P-rrafo-b-sico"
+    - "No-paragraph-style"
+    - "_id.*"                    # notas al pie y demás de InDesign
+    - "_listStyle.*"
+    - "HorizontalRule-\\d+"
+    - ".*-PO26"                  # ya renombrada en InDesign (capítulos anteriores)
+  # En la CSS de Hélice el grupo «Viñetas» va dentro de «Ladillos» (así estaba en los
+  # capítulos ya subidos); en el .indd de imprenta está en la raíz
+  equivalencias:
+    "Viñetas_(.*)": "Ladillos_Viñetas_\\1"
+    "Texto-base---Viñeta--MAQUETA-": "Texto-base---Viñeta"   # estilo de maqueta (cap. 04)
+
 # Activar / desactivar pasos (por defecto todos activos)
 pasos:
+  renombrar_clases: true
   estilos_capitulo: true
   limpieza: true
   correcciones_indesign: true
