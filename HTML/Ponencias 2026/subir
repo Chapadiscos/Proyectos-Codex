@@ -1,0 +1,3 @@
+#!/bin/zsh
+# Uso: ./subir "ruta/al/06 … .html"  (sube las imágenes a Hélice desde la pestaña del panel)
+cd "${0:A:h}" && exec .venv/bin/python -m depurar.subida "$@"

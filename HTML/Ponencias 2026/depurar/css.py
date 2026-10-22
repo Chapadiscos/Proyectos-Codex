@@ -8,6 +8,7 @@ from urllib.parse import unquote
 def leer_reglas(texto):
     """Devuelve [(selectores, {propiedad: valor}), ...]"""
     texto = re.sub(r"/\*.*?\*/", "", texto, flags=re.S)
+    texto = re.sub(r"@[a-z-]+[^;{}]*;", "", desescapar(texto))  # @charset, @import
     reglas = []
     for selector, cuerpo in re.findall(r"([^{}]+)\{([^{}]*)\}", texto):
         decl = {}
@@ -17,6 +18,16 @@ def leer_reglas(texto):
                 decl[k.strip()] = v.strip()
         reglas.append(([s.strip() for s in selector.split(",")], decl))
     return reglas
+
+
+def escapar(texto):
+    """Caracteres no ASCII como escapes CSS («Viñetas» → «Vi\\F1 etas»): la CSS se lee igual
+    aunque Hélice o un editor la abran con otra codificación (salía «ViÃ±etas»)."""
+    return "".join(c if ord(c) < 128 else "\\%X " % ord(c) for c in texto)
+
+
+def desescapar(texto):
+    return re.sub(r"\\([0-9a-fA-F]{1,6}) ?", lambda m: chr(int(m.group(1), 16)), texto)
 
 
 def css_local(soup, dir_entrada, informe):

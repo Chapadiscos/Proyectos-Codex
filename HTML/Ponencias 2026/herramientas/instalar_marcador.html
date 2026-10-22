@@ -2,29 +2,42 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<title>Marcador Enlaces Hélice</title>
+<title>Marcadores Hélice</title>
 <style>
   body { font: 16px/1.5 -apple-system, sans-serif; max-width: 640px; margin: 40px auto; padding: 0 16px; color: #222; background: #fff; }
   a.marcador { display: inline-block; padding: 10px 16px; background: #c55b17; color: #fff; border-radius: 6px; text-decoration: none; font-weight: 600; }
   code { background: #f2f2f2; padding: 1px 4px; border-radius: 3px; }
 </style>
 <script src="enlaces_helice.js"></script>
+<script src="subir_helice.js"></script>
 </head>
 <body>
-<h1>Marcador «Enlaces Hélice»</h1>
-<p>Arrastra este botón a la barra de marcadores del navegador. Si ya tenías una versión anterior, bórrala y arrastra esta:</p>
-<p><a class="marcador" id="marcador" href="#">Enlaces Hélice</a></p>
-<h2>Uso</h2>
+<h1>Marcadores de Hélice</h1>
+<p>Arrastra los botones a la barra de marcadores del navegador. Si ya tenías una versión anterior, bórrala y arrastra la nueva.</p>
+
+<h2>«Subir a Hélice»</h2>
+<p><a class="marcador" id="subir" href="#">Subir a Hélice</a></p>
 <ol>
-  <li>En Hélice, abre la carpeta de imágenes del capítulo.</li>
-  <li>Pulsa el marcador: copia al portapapeles las URL de las imágenes de esa página y las muestra en un recuadro arriba a la derecha, que se cierra solo.</li>
+  <li>Con el panel de Hélice abierto (cualquier página del panel), pulsa el marcador y luego «Elegir la carpeta del capítulo…».</li>
+  <li>Elige la carpeta del capítulo (por ejemplo <code>06 Ponencias 2025 (APP)</code>): la app ha dejado en ella <code>helice_subida.json</code> con la carpeta de destino en Ficheros y los archivos que hay que subir. El navegador pedirá confirmar que la página lea la carpeta: solo se suben los archivos de esa lista.</li>
+  <li>Crea las carpetas que falten (Ponencias Prueba / Bloque 1 / Tema 2 / Capítulo 06), sube lo que no esté ya y copia las URL al portapapeles. Vuelve a la app y pulsa Continuar.</li>
+</ol>
+
+<h2>«Enlaces Hélice»</h2>
+<p><a class="marcador" id="marcador" href="#">Enlaces Hélice</a></p>
+<ol>
+  <li>Para lo que se sube a mano: en Hélice, abre la carpeta con las imágenes (o las fuentes).</li>
+  <li>Pulsa el marcador: copia al portapapeles las URL de las imágenes y fuentes de esa página y las muestra en un recuadro arriba a la derecha, que se cierra solo.</li>
   <li>Si las imágenes ocupan varias páginas, la app «InDesign a HTML» te pedirá pasar a la siguiente y volver a pulsarlo: los enlaces se suman.</li>
 </ol>
 <p>No importa el orden ni que haya alguna URL de más: cada imagen se empareja por su contenido.</p>
 <script>
-  // El marcador se construye a partir de enlaces_helice.js (una sola copia del código)
-  document.getElementById("marcador").href =
-    "javascript:" + encodeURIComponent("(" + enlacesHelice.toString() + ")();void 0");
+  // Los marcadores se construyen a partir de los .js (una sola copia del código)
+  function marcador(id, f) {
+    document.getElementById(id).href = "javascript:" + encodeURIComponent("(" + f.toString() + ")();void 0");
+  }
+  marcador("marcador", enlacesHelice);
+  marcador("subir", subirHelice);
 </script>
 </body>
 </html>

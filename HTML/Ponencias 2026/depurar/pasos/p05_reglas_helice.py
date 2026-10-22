@@ -2,7 +2,8 @@
 
 1. Las imágenes no llevan texto alternativo (alt="").
 4. <br> entre un párrafo y una imagen, y entre la imagen (o su pie) y el párrafo
-   siguiente, salvo que sea un ladillo, que ya tiene espacio por definición.
+   siguiente, salvo que sea un ladillo, que ya tiene espacio por definición. También
+   entre dos imágenes seguidas (con o sin pie), para todos los libros.
 5. El HTML empieza con un <br>.
 6. La cabecera CXX enlaza a la URL de su código QR (se lee de la imagen).
 7. Entre dos ladillos seguidos se anula el espacio del segundo.
@@ -97,9 +98,13 @@ def _separadores(soup, cfg, informe):
         fin = b
         if tiene_clase(hermano(fin, +1), pie):
             fin = hermano(fin, +1)  # pie suelto: el salto va después del pie
-        if separable(hermano(fin, +1)):
+        siguiente = hermano(fin, +1)
+        if separable(siguiente):
             fin.insert_after(soup.new_tag("br"))
             informe.contar("<br> después de imagen o pie")
+        elif es_bloque_imagen(siguiente) and cfg.get("separar_imagenes_seguidas", True):
+            fin.insert_after(soup.new_tag("br"))
+            informe.contar("<br> entre imágenes seguidas")
 
 
 def _salto_inicial(soup, informe):

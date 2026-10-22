@@ -81,9 +81,14 @@ inyectar:
 salida:
   vista_previa_css: "/Users/jose/Desktop/PONENCIA SEO 2025/Ponencias 2025 (APP)/CSS Helice/helice_ponencias2025.css"
 
-# Publicación en Hélice por la API (./publicar). El Menú de cada bloque se crea a mano en
-# el panel (la API no puede); los temas (Información) los crea ./publicar --estructura y
-# cada capítulo es un elemento «Capítulo NN» con su HTML. Los iconos, en el panel.
+# Carpeta en Ficheros de Hélice de las imágenes de cada capítulo, para el marcador
+# «Subir a Hélice» (crea las carpetas que falten)
+ficheros:
+  capitulo: ["Ponencias Prueba", "{bloque}", "{tema}", "Capítulo {n:02d}"]
+
+# Publicación en Hélice por la API (./publicar). Bloques y temas son Menús creados a mano
+# en el panel (la API no puede, y una Información no admite secciones dentro); cada
+# capítulo es una sección de Información «Capítulo NN» con su HTML. Iconos, en el panel.
 publicar:
   estado: "{carpeta}/helice_publicacion.json"     # identificadores creados y capítulos publicados
   titulo: "Capítulo {n:02d}"
@@ -92,10 +97,10 @@ publicar:
     - nombre: "Bloque 1"
       seccion: 238573                             # Menú «Bloque 1» (creado a mano) dentro de «Ponencias prueba» (238534)
       temas:
-        - {nombre: "Tema 1", capitulos: [1, 2, 3]}
-        - {nombre: "Tema 2", capitulos: [4, 5, 6]}
-        - {nombre: "Tema 3", capitulos: [7, 8, 9, 10]}
-        - {nombre: "Tema 4", capitulos: [11, 12]}
-        - {nombre: "Tema 5", capitulos: [13, 14]}
-        - {nombre: "Tema 6", capitulos: [15, 16, 17]}
-        - {nombre: "Tema 7", capitulos: [18, 19]}
+        - {nombre: "Tema 1", capitulos: [1, 2, 3], seccion: 238589}
+        - {nombre: "Tema 2", capitulos: [4, 5, 6], seccion: 238590}
+        - {nombre: "Tema 3", capitulos: [7, 8, 9, 10], seccion: 238591}
+        - {nombre: "Tema 4", capitulos: [11, 12], seccion: 238592}
+        - {nombre: "Tema 5", capitulos: [13, 14], seccion: 238593}
+        - {nombre: "Tema 6", capitulos: [15, 16, 17], seccion: 238594}
+        - {nombre: "Tema 7", capitulos: [18, 19], seccion: 238595}

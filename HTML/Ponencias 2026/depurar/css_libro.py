@@ -13,7 +13,11 @@ contenido con los .woff2 o con los originales:
     ./css_libro --fuentes        (con las URL copiadas por el marcador «Enlaces Hélice»)
 Mientras no estén, el @font-face apunta a los archivos locales (sirve para la vista previa).
 
-Uso: ./css_libro [--libro ponencias2025] [--fuentes] [ruta/al/capitulo.html …]
+Para pegarla en Hélice: ./css_libro --copiar la deja en el portapapeles legible (con la «ñ»
+y el «•» tal cual; en el archivo van como escapes CSS, «\\F1 », para que no dependa de la
+codificación con que se abra).
+
+Uso: ./css_libro [--libro ponencias2025] [--fuentes] [--copiar] [ruta/al/capitulo.html …]
 """
 
 import argparse
@@ -22,10 +26,11 @@ import hashlib
 import os
 import pathlib
 import re
+import subprocess
 import sys
 
 from . import libros
-from .css import leer_reglas
+from .css import desescapar, escapar, leer_reglas
 from .pasos.p00_renombrar_clases import renombrador
 from .pasos.p01_estilos_capitulo import SELECTOR_CLASE
 
@@ -54,10 +59,11 @@ def actualizar(config, ruta_html, informe=None):
     actual = open(archivo, encoding="utf-8").read() if os.path.exists(archivo) else ""
 
     fuentes, faltan = bloque_fuentes(cfg.get("fuentes_web") or {}, dir_fuentes, txt_urls)
-    if INICIO_FUENTES in actual:
-        resto = actual.split(FIN_FUENTES, 1)[1].lstrip("\n")
+    actual_sin = re.sub(r'^@charset "UTF-8";\n*', "", actual)
+    if INICIO_FUENTES in actual_sin:
+        resto = actual_sin.split(FIN_FUENTES, 1)[1].lstrip("\n")
     else:
-        resto = actual
+        resto = actual_sin
     existentes = {s for selectores, _ in leer_reglas(resto) for s in selectores}
 
     nuevas = []
@@ -75,11 +81,12 @@ def actualizar(config, ruta_html, informe=None):
                 existentes.add(selector)
                 nuevas.append(_regla(selector, decl, familias))
 
-    contenido = fuentes + resto.rstrip("\n")
+    resto = re.sub(r'^@charset "UTF-8";\n*', "", resto)
+    contenido = '@charset "UTF-8";\n' + fuentes + resto.rstrip("\n")
     if nuevas:
         nombre = os.path.basename(ruta_html)
         contenido += f"\n\n/* ----- Estilos nuevos de {nombre} ----- */\n" + "\n".join(nuevas)
-    contenido = contenido.strip("\n") + "\n"
+    contenido = escapar(contenido.strip("\n")) + "\n"  # también lo ya escrito sin escapar
     cambiada = contenido != actual
     if cambiada:
         with open(archivo, "w", encoding="utf-8") as f:
@@ -167,6 +174,7 @@ def main(argv=None):
     ap.add_argument("html", nargs="*", help="capítulos exportados (por defecto, solo se rehacen las fuentes)")
     ap.add_argument("--libro", help="libro de config/libros (por defecto, según la ruta del HTML)")
     ap.add_argument("--fuentes", action="store_true", help="guarda las URL de fuentes del portapapeles (marcador)")
+    ap.add_argument("--copiar", action="store_true", help="copia la CSS al portapapeles, legible, para pegarla en Hélice")
     args = ap.parse_args(argv)
     libro = libros.elegir(args.libro, args.html[0] if args.html else None)
     archivo, dir_fuentes, txt_urls = rutas(libro.config)
@@ -181,6 +189,13 @@ def main(argv=None):
         with open(txt_urls, "w", encoding="utf-8") as f:
             f.write("\n".join(dict.fromkeys(urls + previas)) + "\n")
         print(f"{len(urls)} URL de fuentes guardadas en {txt_urls}")
+    if args.copiar:
+        from .capitulo import ENTORNO_UTF8
+
+        texto = re.sub(r'^@charset "UTF-8";\n*', "", desescapar(open(archivo, encoding="utf-8").read()))
+        subprocess.run(["pbcopy"], input=texto.encode("utf-8"), env=ENTORNO_UTF8, check=True)
+        print(f"CSS del libro copiada al portapapeles ({len(texto)} caracteres): pégala en Hélice")
+        return 0
     from .informe import Informe
 
     informe = Informe()

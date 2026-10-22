@@ -1,19 +1,26 @@
 """Publicación en Hélice con su API (panel.helice.app/api/ws, token en el llavero de macOS).
 
-La API no deja crear secciones de tipo Menú, ni borrar ni editar lo creado. Por eso:
-- los bloques (Menú) se crean a mano en el panel y su identificador va en la
-  configuración del libro (publicar.bloques[].seccion);
-- ./publicar --estructura crea dentro de cada bloque sus temas (secciones de
-  Información) y guarda sus identificadores en publicar.estado;
-- ./publicar 06 añade al tema del capítulo un elemento «Capítulo 06» con su HTML
-  depurado y comprueba que ha quedado (getContent). Un capítulo ya publicado no se
-  vuelve a publicar: las correcciones, en el panel.
+La API no deja crear secciones de tipo Menú, ni borrar ni editar lo creado, y una
+sección de Información no puede contener otras (el panel no las muestra). Por eso:
+- los bloques y los temas (Menú) se crean a mano en el panel y sus identificadores van
+  en la configuración del libro (publicar.bloques[].seccion y .temas[].seccion);
+- ./publicar --estructura crearía los temas como Información (solo para libros sin
+  capítulos como sección propia; no se usa en Ponencias);
+- ./publicar 06 crea dentro del tema la sección de Información «Capítulo 06», le añade
+  un elemento con el HTML depurado y comprueba que ha quedado igual (getContent). Un
+  capítulo ya publicado no se vuelve a publicar: las correcciones, en el panel.
 Los iconos se asignan en el panel.
+
+Subida de archivos (la API no puede): el marcador «Subir a Hélice» (herramientas/
+subir_helice.js) lo hace desde el panel con la sesión iniciada. ./publicar --manifiesto
+ruta.html deja en la carpeta del capítulo «helice_subida.json» con su carpeta en Ficheros
+(ficheros.capitulo) y las imágenes exportadas que hay que subir.
 
 --plan ruta.html   para la app: SI | YA | NO, y el tema o el motivo
 """
 
 import argparse
+import glob
 import json
 import os
 import re
@@ -51,7 +58,8 @@ def llamar(funcion, metodo="POST", **datos):
     except ValueError:
         raise ErrorHelice(f"{funcion}: respuesta no válida ({r.status_code})")
     if respuesta.get("status") != 200:
-        raise ErrorHelice(f"{funcion}: {respuesta.get('error') or respuesta}")
+        detalle = respuesta.get("msgs")  # el motivo concreto («El campo nombre es obligatorio»)
+        raise ErrorHelice(f"{funcion}: {respuesta.get('error') or respuesta}" + (f" ({detalle})" if detalle else ""))
     return respuesta
 
 
@@ -64,6 +72,7 @@ class Publicacion:
         self.estado = json.load(open(self.ruta_estado, encoding="utf-8")) if os.path.exists(self.ruta_estado) else {}
         self.estado.setdefault("temas", {})
         self.estado.setdefault("capitulos", {})
+        self.estado.setdefault("secciones_capitulo", {})  # creadas aunque falle luego el elemento
 
     def guardar(self):
         os.makedirs(os.path.dirname(self.ruta_estado), exist_ok=True)
@@ -77,6 +86,10 @@ class Publicacion:
                 if n in tema.get("capitulos", []):
                     return bloque, tema
         return None, None
+
+    def seccion_tema(self, bloque, tema):
+        """El Menú del tema creado a mano (configuración) o, si no, el creado por la API."""
+        return tema.get("seccion") or self.estado["temas"].get(f"{bloque['nombre']}/{tema['nombre']}")
 
     def crear_estructura(self, avisar=print):
         for bloque in self.cfg.get("bloques") or []:
@@ -100,9 +113,8 @@ class Publicacion:
         bloque, tema = self.tema_de(n)
         if not tema:
             return "NO", f"el capítulo {n} no está en ningún tema de publicar.bloques"
-        seccion = self.estado["temas"].get(f"{bloque['nombre']}/{tema['nombre']}")
-        if not seccion:
-            return "NO", f"falta crear «{bloque['nombre']} / {tema['nombre']}» (./publicar --estructura)"
+        if not self.seccion_tema(bloque, tema):
+            return "NO", f"falta la sección de «{bloque['nombre']} / {tema['nombre']}» (publicar.bloques[].temas[].seccion)"
         return "SI", f"{bloque['nombre']} / {tema['nombre']}"
 
     def publicar(self, n, ruta_html):
@@ -110,20 +122,50 @@ class Publicacion:
         if estado != "SI":
             raise ErrorHelice(f"Capítulo {n:02d}: {detalle}")
         bloque, tema = self.tema_de(n)
-        seccion = self.estado["temas"][f"{bloque['nombre']}/{tema['nombre']}"]
+        seccion_tema = self.seccion_tema(bloque, tema)
         titulo = self.cfg.get("titulo", "Capítulo {n:02d}").format(n=n)
         html = open(ruta_html, encoding="utf-8").read()
-        antes = len(elementos(seccion))
-        llamar("addListElement", section=str(seccion), header=titulo, text=html, layout=str(self.cfg.get("layout", 1)))
+        clave = f"{n:02d}"
+        # Sección de Información propia del capítulo, dentro del tema (se apunta enseguida:
+        # si falla el elemento, al repetir se usa la misma y no se crea otra)
+        seccion = self.estado["secciones_capitulo"].get(clave)
+        if not seccion:
+            seccion = llamar("createSection", type="info", father=str(seccion_tema), name=titulo)["sectionid"]
+            self.estado["secciones_capitulo"][clave] = seccion
+            self.guardar()
+        if elementos(seccion):
+            raise ErrorHelice(f"{titulo}: su sección ({seccion}) ya tiene contenido; revísala en el panel")
+        # «name» es obligatorio aunque la especificación OpenAPI no lo incluya
+        llamar("addListElement", section=str(seccion), name=titulo, text=html, layout=str(self.cfg.get("layout", 1)))
         despues = elementos(seccion)
-        if len(despues) != antes + 1:
-            raise ErrorHelice(f"Capítulo {n:02d}: Hélice dice que se ha añadido, pero la sección tiene {len(despues)} elementos (antes {antes})")
+        if len(despues) != 1 or despues[0].get("text") != html:
+            raise ErrorHelice(f"{titulo}: Hélice dice que se ha añadido, pero el contenido de la sección {seccion} no coincide")
         from datetime import datetime
 
         self.estado["capitulos"][f"{n:02d}"] = {"seccion": seccion, "titulo": titulo, "html": os.path.basename(ruta_html),
                                                "fecha": datetime.now().strftime("%Y-%m-%d %H:%M")}
         self.guardar()
-        return f"{titulo} publicado en {bloque['nombre']} / {tema['nombre']} (sección {seccion})"
+        return f"{titulo} publicado en {bloque['nombre']} / {tema['nombre']} / {titulo} (sección {seccion})"
+
+
+def manifiesto(libro, ruta_html):
+    """Escribe helice_subida.json junto al HTML; devuelve su ruta (None si el libro no lo usa)."""
+    plantilla = (libro.config.get("ficheros") or {}).get("capitulo")
+    if not plantilla:
+        return None
+    n = numero(ruta_html)
+    bloque, tema = Publicacion(libro).tema_de(n)
+    valores = {"n": n, "bloque": bloque["nombre"] if bloque else "", "tema": tema["nombre"] if tema else ""}
+    ruta = [p.format(**valores) for p in plantilla]
+    if any(not p.strip() for p in ruta):
+        raise ErrorHelice(f"Capítulo {n}: no está en ningún tema de publicar.bloques, no sé su carpeta en Ficheros")
+    carpeta = os.path.dirname(os.path.abspath(ruta_html))
+    archivos = sorted(os.path.relpath(f, carpeta) for f in glob.glob(os.path.join(carpeta, "*-web-resources", "image", "*"))
+                      if not os.path.basename(f).startswith("."))
+    destino = os.path.join(carpeta, "helice_subida.json")
+    with open(destino, "w", encoding="utf-8") as f:
+        json.dump({"capitulo": f"{n:02d}", "ruta": ruta, "archivos": archivos}, f, ensure_ascii=False, indent=1)
+    return destino
 
 
 def elementos(seccion):
@@ -146,6 +188,7 @@ def main(argv=None):
     ap.add_argument("--libro", help="libro de config/libros (por defecto, según la ruta)")
     ap.add_argument("--estructura", action="store_true", help="crea los temas de cada bloque")
     ap.add_argument("--plan", action="store_true", help="solo dice si se puede publicar (para la app)")
+    ap.add_argument("--manifiesto", action="store_true", help="escribe helice_subida.json para el marcador «Subir a Hélice»")
     args = ap.parse_args(argv)
     try:
         libro = libros.elegir(args.libro, args.html)
@@ -161,9 +204,16 @@ def main(argv=None):
         if args.plan:
             print("\n".join(pub.plan(n)))
             return 0
+        if args.manifiesto:
+            ruta = manifiesto(libro, args.html)
+            print(ruta or "")
+            return 0
         print(pub.publicar(n, args.html))
         return 0
     except (ErrorHelice, ValueError) as e:
+        if args.manifiesto:  # sin manifiesto, la app sigue con la subida a mano
+            print("")
+            return 0
         print(("NO\n" if args.plan else "ERROR: ") + str(e))
         return 0 if args.plan else 1
 

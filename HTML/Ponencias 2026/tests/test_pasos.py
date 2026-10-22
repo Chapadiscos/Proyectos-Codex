@@ -668,7 +668,10 @@ def test_publicar_plan_por_tema_y_sin_duplicados(tmp_path):
         }
 
     pub = Publicacion(Libro())
-    assert pub.plan(2)[0] == "NO" and "--estructura" in pub.plan(2)[1]  # aún sin temas creados
+    assert pub.plan(2)[0] == "NO" and "temas[].seccion" in pub.plan(2)[1]  # aún sin la sección del tema
+    assert pub.plan(4)[0] == "NO"
+    Libro.config["publicar"]["bloques"][0]["temas"][1]["seccion"] = 222  # Menú creado a mano
+    assert pub.plan(4) == ("SI", "Bloque 1 / Tema 2")
     pub.estado["temas"]["Bloque 1/Tema 1"] = "111"
     assert pub.plan(2) == ("SI", "Bloque 1 / Tema 1")
     assert pub.plan(9)[0] == "NO"  # en ningún tema
@@ -676,3 +679,23 @@ def test_publicar_plan_por_tema_y_sin_duplicados(tmp_path):
     assert pub.plan(2)[0] == "YA"  # no se publica dos veces (la API no deja borrar)
     pub.guardar()
     assert Publicacion(Libro()).estado["temas"] == {"Bloque 1/Tema 1": "111"}
+
+
+def test_css_escapa_lo_que_no_es_ascii_y_se_lee_igual():
+    from depurar.css import escapar, leer_reglas
+
+    css = 'li.Viñetas_Viñeta-1--•- { font-family: "Adobe Clean UX"; }'
+    escapada = '@charset "UTF-8";\n' + escapar(css)
+    assert escapada.isascii() and "Vi\\F1 etas" in escapada
+    assert escapar(escapada) == escapada  # repetirlo no cambia nada
+    assert leer_reglas(escapada) == leer_reglas(css) == [(["li.Viñetas_Viñeta-1--•-"], {"font-family": '"Adobe Clean UX"'})]
+
+
+def test_br_entre_imagenes_seguidas_con_y_sin_pie(tmp_path):
+    s = _soup(
+        '<p class="Texto-base">a</p><img src="1.jpg"><p class="Pie-Figura-X">Figura 1</p>'
+        '<img src="2.jpg"><img src="3.jpg"><p class="Texto-base">b</p>'
+    )
+    p05_reglas_helice._separadores(s, {"clase_pie": "Pie-Figura"}, Informe())
+    orden = [t.name if t.name != "p" else t.get_text() for t in s.body.find_all(["p", "img", "br"])]
+    assert orden == ["a", "br", "img", "Figura 1", "br", "img", "br", "img", "br", "b"]

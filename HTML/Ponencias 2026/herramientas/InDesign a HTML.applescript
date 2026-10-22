@@ -121,13 +121,42 @@ on run
 		return
 	end if
 	set numImagenes to do shell script "ls " & quoted form of carpetaImagenes & " | grep -v '^\\.' | wc -l | tr -d ' '"
-	set aviso to "HTML exportado." & return & return & ¬
-		"1. Sube a Hélice, en la carpeta del capítulo, las " & numImagenes & " imágenes de:" & return & carpetaImagenes & return & ¬
-		"2. Abre esa carpeta en Hélice y pulsa el marcador «Enlaces Hélice»." & return & ¬
-		"3. Vuelve aquí y pulsa Continuar."
+	-- Con «ficheros» en el libro, las imágenes se suben a su carpeta de Ficheros de Hélice
+	set subida to do shell script quoted form of (proyecto & "/publicar") & " --manifiesto " & quoted form of rutaHtml
+	if subida is not "" then
+		set aviso to "HTML exportado." & return & return & ¬
+			"1. En el panel de Hélice pulsa el marcador «Subir a Hélice» y elige la carpeta del capítulo:" & return & my carpetaDe(rutaHtml) & return & ¬
+			"   Sube las " & numImagenes & " imágenes a su carpeta de Ficheros y copia sus enlaces." & return & ¬
+			"2. Vuelve aquí y pulsa Continuar."
+	else
+		set aviso to "HTML exportado." & return & return & ¬
+			"1. Sube a Hélice, en la carpeta del capítulo, las " & numImagenes & " imágenes de:" & return & carpetaImagenes & return & ¬
+			"2. Abre esa carpeta en Hélice y pulsa el marcador «Enlaces Hélice»." & return & ¬
+			"3. Vuelve aquí y pulsa Continuar."
+	end if
+	-- Si se puede, la app sube las imágenes ella sola desde la pestaña del panel abierta en
+	-- Safari o Chrome (./subir) y se salta la pausa; si no, se sigue con el marcador
+	set saltarPausa to false
+	if subida is not "" then
+		set progress description to "Subiendo a Hélice las " & numImagenes & " imágenes…"
+		with timeout of 1800 seconds
+			set resSubida to do shell script quoted form of (proyecto & "/subir") & " " & quoted form of rutaHtml & " 2>&1; true"
+		end timeout
+		if paragraph 1 of resSubida is "OK" then
+			set saltarPausa to true
+		else
+			display dialog "No se han podido subir las imágenes automáticamente:" & return & return & my desde(resSubida, 2) & return & return & ¬
+				"Puedes subirlas con el marcador «Subir a Hélice»." buttons {"Cancelar", "Usar el marcador"} default button "Usar el marcador" cancel button "Cancelar" with title titulo with icon caution
+		end if
+	end if
 	set botones to {"Cancelar", "Continuar"}
 	repeat
-		set boton to button returned of (display dialog aviso buttons botones default button "Continuar" cancel button "Cancelar" with title titulo)
+		if saltarPausa then
+			set saltarPausa to false
+			set boton to "Continuar"
+		else
+			set boton to button returned of (display dialog aviso buttons botones default button "Continuar" cancel button "Cancelar" with title titulo)
+		end if
 		if boton is "Seguir sin ellas" then
 			-- El HTML ya está generado; se trata como un resultado con avisos
 			set estado to "AVISOS"
@@ -152,6 +181,16 @@ on run
 	set rutaFinal to paragraph 2 of salida
 	set rutaVista to paragraph 3 of salida
 	set detalle to my desde(salida, 4)
+	-- La CSS del libro ha cambiado (libro nuevo): se ofrece copiarla para pegarla en Hélice
+	if detalle contains "la CSS del libro ha cambiado" then
+		set boton to button returned of (display dialog "La CSS del libro ha cambiado (estilos o fuentes nuevos)." & return & return & ¬
+			"Cópiala y pégala en Hélice, sustituyendo la anterior, antes de pegar o publicar el HTML." buttons {"Más tarde", "Copiar la CSS"} default button "Copiar la CSS" with title titulo)
+		if boton is "Copiar la CSS" then
+			do shell script quoted form of (proyecto & "/css_libro") & " --copiar " & quoted form of rutaFinal
+			display dialog "CSS copiada al portapapeles: pégala en Hélice y pulsa Continuar." buttons {"Continuar"} default button 1 with title titulo
+		end if
+	end if
+
 	set listo to false
 	if estado is "OK" then
 		set listo to true

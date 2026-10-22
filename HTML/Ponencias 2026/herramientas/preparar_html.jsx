@@ -117,6 +117,20 @@ function exportarJPG(it, carpeta, nombre, cfg) {
     return f;
 }
 
+// Marco para un JPG generado: sin estilo de objeto ni contorno. Si no, toma el estilo
+// por defecto del documento («Marco 80» en Ponencias 2025, con filete) y la exportación
+// HTML con «Conservar aspecto» lo incrusta en la imagen
+function marcoLimpio(doc, marco, f) {
+    marco.appliedObjectStyle = doc.objectStyles[0];  // [Ninguno]
+    marco.clearObjectStyleOverrides();
+    marco.strokeWeight = 0;
+    marco.strokeColor = doc.swatches[0];  // [Ninguno]
+    marco.fillColor = doc.swatches[0];
+    marco.place(f);
+    marco.fit(FitOptions.FRAME_TO_CONTENT);
+    return marco;
+}
+
 // Sustituye los objetos por un marco con su JPG en el mismo sitio y los borra
 function rasterizar(doc, items, carpeta, nombre, cfg) {
     var spread = items[0].parent;
@@ -125,10 +139,7 @@ function rasterizar(doc, items, carpeta, nombre, cfg) {
     var vb = obj.visibleBounds;
     var f = exportarJPG(obj, carpeta, nombre, cfg);
     obj.remove();
-    var marco = spread.rectangles.add({ geometricBounds: vb, strokeWeight: 0, fillColor: doc.swatches[0] });
-    marco.place(f);
-    marco.fit(FitOptions.FRAME_TO_CONTENT);
-    return marco;
+    return marcoLimpio(doc, spread.rectangles.add({ geometricBounds: vb }), f);
 }
 
 // ---------------------------------------------------------------------------
@@ -234,10 +245,8 @@ function principal(doc, cfg, cap, carpeta) {
             var vb = it.visibleBounds, f = exportarJPG(it, carpeta, nombre, cfg.jpeg || {});
             var resumen = it.parentStory.contents.substr(0, 40).replace(/[\r\n]/g, " ");
             it.remove();
-            var marco = historia.insertionPoints[idx].rectangles.add({
-                geometricBounds: [0, 0, vb[2] - vb[0], vb[3] - vb[1]], strokeWeight: 0, fillColor: doc.swatches[0] });
-            marco.place(f);
-            marco.fit(FitOptions.FRAME_TO_CONTENT);
+            var marco = marcoLimpio(doc, historia.insertionPoints[idx].rectangles.add({
+                geometricBounds: [0, 0, vb[2] - vb[0], vb[3] - vb[1]] }), f);
             marco.anchoredObjectSettings.anchoredPosition = AnchorPosition.ANCHORED;
             // En un párrafo propio y sin ajustes locales: si no, la exportación HTML lo
             // mete en la viñeta de encima (cap. 04)

@@ -26,11 +26,16 @@ Con `css_libro.generar: true`, cada capítulo que se depura completa la CSS del 
 3. Sube la CSS a Hélice.
 Mientras no estén las URL, el `@font-face` apunta a los archivos locales y la vista previa los usa.
 
+### Subir las imágenes a Ficheros: marcador «Subir a Hélice»
+La API no sube archivos, pero el panel sí: el marcador usa sus mismas llamadas (`/cloud-create-folder`, `/cloud-upload-file`; no son oficiales y podrían cambiar) con la sesión iniciada en el navegador (el acceso es por código al correo, así que la app no puede entrar sola). Con `ficheros.capitulo` en el libro, la app deja al exportar `helice_subida.json` en la carpeta del capítulo (ruta en Ficheros y las imágenes de `-web-resources/image`); en la pausa, en el panel, se pulsa el marcador y se elige esa carpeta: crea las carpetas que falten, sube lo que no esté y copia las URL. Se instala desde `herramientas/instalar_marcador.html` (código en `herramientas/subir_helice.js`).
+
+**Sin marcador (subida automática, `./subir`):** si en Safari o Chrome hay una pestaña del panel abierta con la sesión iniciada, la app le pasa las imágenes en base64 y ejecuta allí el mismo código del marcador; los enlaces van al `.txt` del capítulo y la app sigue sin pausa. Hay que permitirlo una vez en el navegador (Safari: menú Desarrollo › «Permitir JavaScript desde eventos de Apple»; Chrome: Ver › Desarrollador › «Permitir JavaScript desde eventos de Apple») y aceptar el aviso de macOS para que la app controle el navegador. Si falla, la app lo explica y se sigue con el marcador.
+
 ### Publicar en Hélice por la API (`./publicar`)
 La API de Hélice (OpenAPI en `panel.helice.app/docs/openapi.webservices.viewer.html`; token en el llavero de macOS, servicio `helice-api`) permite crear secciones de tipo Información (`info`), lista, agenda, galería o PDF y añadirles elementos con HTML. **No** permite crear Menús, subir archivos (imágenes, fuentes, CSS), editar ni borrar, ni poner iconos de sección. Por eso:
 1. En el panel: crea el Menú de cada bloque y pon su identificador en `publicar.bloques[].seccion`.
 2. `./publicar --estructura`: crea los temas (Información) de cada bloque y guarda sus identificadores en `publicar.estado`.
-3. Cada capítulo, al terminar la app (o `./publicar "…/06 … - Helice.html"`): se añade a su tema un elemento «Capítulo 06» con el HTML y se comprueba con `getContent`. Un capítulo ya publicado no se repite; las correcciones y los iconos, en el panel.
+3. Cada capítulo, al terminar la app (o `./publicar "…/06 … - Helice.html"`): se crea dentro de su tema la sección de Información «Capítulo 06», con un elemento con el HTML, y se comprueba con `getContent` que ha quedado igual. Un capítulo ya publicado no se repite; las correcciones y los iconos, en el panel.
 
 ## Paso previo: preparar el .indd de imprenta
 ```sh
@@ -105,7 +110,7 @@ Para un HTML suelto: `.venv/bin/python -m depurar ruta/al/archivo.html [--libro 
 1. Las imágenes no llevan texto alternativo (`alt=""`).
 2. Los pies de figura van siempre debajo de la imagen.
 3. Se respeta la jerarquía de las viñetas aunque haya imágenes entre ellas.
-4. `<br>` entre un párrafo y una imagen, y entre la imagen o su pie y el párrafo siguiente, salvo si es un ladillo.
+4. `<br>` entre un párrafo y una imagen, entre la imagen o su pie y el párrafo siguiente (salvo si es un ladillo) y entre dos imágenes seguidas.
 5. El HTML empieza con un `<br>`.
 6. La cabecera `CXX` enlaza (en pestaña nueva) a la URL de su QR, que se lee automáticamente de la imagen.
 7. Entre dos ladillos seguidos: `<p style="margin-top: -1.3em; margin-bottom: 0.3em;"></p>`.
