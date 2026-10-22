@@ -90,7 +90,7 @@ publicar:
   layout: 1
   bloques:
     - nombre: "Bloque 1"
-      seccion:                                    # id del Menú «Bloque 1» dentro de «Ponencias prueba» (238534)
+      seccion: 238573                             # Menú «Bloque 1» (creado a mano) dentro de «Ponencias prueba» (238534)
       temas:
         - {nombre: "Tema 1", capitulos: [1, 2, 3]}
         - {nombre: "Tema 2", capitulos: [4, 5, 6]}
