@@ -64,7 +64,7 @@ on run
 		if boton is not "Usar la preparada" then
 			set progress description to "Preparando el capítulo " & numCap & " en InDesign…"
 			with timeout of 1800 seconds
-				set res to do shell script quoted form of (proyecto & "/preparar") & " --resumen --capitulo " & numCap & opcionForzar & " " & quoted form of rutaIndd
+				set res to do shell script quoted form of (proyecto & "/preparar") & " " & quoted form of rutaIndd & " --resumen" & opcionForzar & " --capitulo " & numCap
 			end timeout
 			set estadoPrep to paragraph 1 of res
 			set informePrep to my desde(res, 3)

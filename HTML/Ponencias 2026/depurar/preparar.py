@@ -37,7 +37,7 @@ INDESIGN = "Adobe InDesign 2026"
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="preparar", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("indd", help="capítulo de InDesign de imprenta")
+    ap.add_argument("indd", nargs="?", help="capítulo de InDesign de imprenta")
     ap.add_argument("--libro", help="libro de config/libros (por defecto, según la ruta)")
     ap.add_argument("--capitulo", nargs="+", help="capítulos que preparar de un archivo de sección (o «todos»)")
     ap.add_argument("--destino", help="carpeta para la copia y sus JPG (en vez de la del libro)")
@@ -45,6 +45,11 @@ def main(argv=None):
     ap.add_argument("--plan", action="store_true", help="solo dice qué haría (para la app)")
     ap.add_argument("--resumen", action="store_true", help="salida breve para la app")
     args = ap.parse_args(argv)
+    # «--capitulo 5 ruta.indd»: --capitulo admite varios números y se queda con la ruta
+    if not args.indd and args.capitulo and args.capitulo[-1].lower().endswith(".indd"):
+        args.indd = args.capitulo.pop()
+    if not args.indd:
+        ap.error("falta el .indd")
 
     try:
         original = os.path.abspath(args.indd)
