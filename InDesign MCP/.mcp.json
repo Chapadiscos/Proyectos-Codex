@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "indesign": {
+      "command": "/Volumes/DATOS/Proyectos Codex/InDesign MCP/.venv/bin/python",
+      "args": ["/Volumes/DATOS/Proyectos Codex/InDesign MCP/servidor.py"],
+      "env": {"INDESIGN_APP": "Adobe InDesign 2026"}
+    }
+  }
+}
