@@ -18,7 +18,7 @@ python3 -m venv .venv
 ```
 
 ### CSS de Hélice de un libro nuevo (`css_libro`)
-Con `css_libro.generar: true`, cada capítulo que se depura completa la CSS del libro (`css_libro.archivo`) con los estilos que aún no tenía, tomados de la CSS que exporta InDesign: con el sufijo del libro y la familia web de cada fuente. Lo que ya está no se toca (se puede retocar a mano). Cuando cambia, el resultado sale con el aviso «súbela a Hélice antes de pegar el HTML».
+Con `css_libro.generar: true`, cada capítulo que se depura completa la CSS del libro (`css_libro.archivo`) con los estilos que aún no tenía, tomados de la CSS que exporta InDesign: con el sufijo del libro y la familia web de cada fuente. Lo que ya está no se toca (se puede retocar a mano). Lo nuevo de cada capítulo se apunta además en `<css>.pendiente.css`: la app ofrece «Copiar la CSS nueva» (o `./css_libro --copiar`), que copia solo eso para añadirlo al final de la CSS de Hélice y lo da por subido (queda en `<css>.copiada.css`). `./css_libro --copiar --todo` copia la CSS entera.
 
 **Fuentes propias** (no de Adobe Fonts), en `css_libro.fuentes_web`: se convierten a `.woff2` en su carpeta y la CSS lleva un `@font-face` por archivo.
 1. Sube los `.woff2` a una carpeta de Hélice, ábrela y pulsa el marcador «Enlaces Hélice» (recoge imágenes y fuentes; si lo instalaste antes del 2026-10-22, vuelve a arrastrarlo desde `herramientas/instalar_marcador.html`).

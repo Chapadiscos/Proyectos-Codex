@@ -699,3 +699,54 @@ def test_br_entre_imagenes_seguidas_con_y_sin_pie(tmp_path):
     p05_reglas_helice._separadores(s, {"clase_pie": "Pie-Figura"}, Informe())
     orden = [t.name if t.name != "p" else t.get_text() for t in s.body.find_all(["p", "img", "br"])]
     assert orden == ["a", "br", "img", "Figura 1", "br", "img", "br", "img", "br", "b"]
+
+
+def test_css_libro_apunta_aparte_solo_lo_nuevo(tmp_path):
+    from depurar import css_libro
+
+    cap = tmp_path / "cap" / "x-web-resources" / "css"
+    cap.mkdir(parents=True)
+    hoja = cap / "idGeneratedStyles.css"
+    hoja.write_text("p.Texto-base { font-size:9px; }\n", encoding="utf-8")
+    config = {
+        "libro": {"carpeta": str(tmp_path)},
+        "renombrar_clases": {"sufijo": "-PRUEBAS"},
+        "css_libro": {"generar": True, "archivo": "{carpeta}/CSS/libro.css"},
+    }
+    html = str(tmp_path / "cap" / "x.html")
+    archivo, _ = css_libro.actualizar(config, html)
+    pend = css_libro.pendiente(archivo)
+    assert "Texto-base-PRUEBAS" in open(pend, encoding="utf-8").read()  # libro nuevo: todo es nuevo
+    os.remove(pend)  # copiado y subido a Hélice
+    informe = Informe()
+    css_libro.actualizar(config, html, informe)  # el mismo capítulo otra vez: nada nuevo
+    assert not os.path.exists(pend) and not informe.avisos
+    hoja.write_text("p.Texto-base { font-size:9px; }\np.Ladillo { font-size:12px; }\n", encoding="utf-8")
+    css_libro.actualizar(config, html, informe)
+    nuevo = open(pend, encoding="utf-8").read()
+    assert "Ladillo-PRUEBAS" in nuevo and "Texto-base-PRUEBAS" not in nuevo  # solo lo nuevo
+    assert informe.avisos
+
+
+def test_css_libro_conserva_la_url_de_helice_si_falta_la_fuente_original(tmp_path):
+    from depurar import css_libro
+
+    (tmp_path / "cap").mkdir()
+    url = "https://avpm.helice.app/uploads/app/1/files/abc.otf"
+    config = {
+        "libro": {"carpeta": str(tmp_path)},
+        "css_libro": {"generar": True, "archivo": "{carpeta}/CSS/libro.css", "fuentes_web": {
+            "carpeta": "{carpeta}/CSS/Fuentes",
+            "archivos": [["Adobe Clean UX", 400, "normal", str(tmp_path / "borrada.otf")]]}},
+    }
+    (tmp_path / "CSS").mkdir()
+    archivo = tmp_path / "CSS" / "libro.css"
+    archivo.write_text(
+        '@charset "UTF-8";\n' + css_libro.INICIO_FUENTES + '\n@font-face {\n\tfont-family: "Adobe Clean UX";\n'
+        f'\tfont-weight: 400;\n\tfont-style: normal;\n\tfont-display: swap;\n\tsrc: url("{url}") format("opentype");\n}}\n'
+        + css_libro.FIN_FUENTES + "\n", encoding="utf-8")
+    antes = archivo.read_text(encoding="utf-8")
+    informe = Informe()
+    css_libro.actualizar(config, str(tmp_path / "cap" / "x.html"), informe)
+    assert archivo.read_text(encoding="utf-8") == antes  # sigue apuntando a Hélice, no a file://
+    assert not informe.avisos and not os.path.exists(css_libro.pendiente(str(archivo)))

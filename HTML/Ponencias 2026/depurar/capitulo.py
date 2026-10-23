@@ -110,7 +110,7 @@ def _ejecutar(args):
             "",
         ]
     if informe.avisos:
-        breve += ["Avisos:"] + [f"• {a}" for a in informe.avisos]
+        breve += [f"⚠️ AVISOS ({len(informe.avisos)}):"] + [f"⚠️ {a}" for a in informe.avisos]
     if informe.informacion:
         breve += ["Información:"] + [f"• {i}" for i in informe.informacion]
     estado = "FALTAN_IMAGENES" if informe.sin_url else "AVISOS" if informe.avisos else "OK"

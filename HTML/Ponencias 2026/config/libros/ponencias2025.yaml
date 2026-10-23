@@ -43,12 +43,12 @@ css_libro:
     carpeta: "{carpeta}/CSS Helice/Fuentes"       # aquí se dejan en .woff2 para subirlas a Hélice
     url_base: ""                                  # la carpeta de Hélice con las fuentes subidas (pendiente)
     archivos:                                     # familia, peso, estilo, original
-      - ["Adobe Clean UX", 300, normal, "/Users/jose/Desktop/Adobe Clean/AdobeCleanUX-Light.otf"]
-      - ["Adobe Clean UX", 300, italic, "/Users/jose/Desktop/Adobe Clean/AdobeCleanUX-LightIt.otf"]
-      - ["Adobe Clean UX", 400, normal, "/Users/jose/Desktop/Adobe Clean/AdobeCleanUX-Regular.otf"]
-      - ["Adobe Clean UX", 400, italic, "/Users/jose/Desktop/Adobe Clean/AdobeCleanUX-It.otf"]
-      - ["Adobe Clean UX", 700, normal, "/Users/jose/Desktop/Adobe Clean/AdobeCleanUX-Bold.otf"]
-      - ["Adobe Clean UX", 700, italic, "/Users/jose/Desktop/Adobe Clean/AdobeCleanUX-BoldIt.otf"]
+      - ["Adobe Clean UX", 300, normal, "/Users/jose/Library/Fonts/AdobeCleanUX-Light.otf"]
+      - ["Adobe Clean UX", 300, italic, "/Users/jose/Library/Fonts/AdobeCleanUX-LightIt.otf"]
+      - ["Adobe Clean UX", 400, normal, "/Users/jose/Library/Fonts/AdobeCleanUX-Regular.otf"]
+      - ["Adobe Clean UX", 400, italic, "/Users/jose/Library/Fonts/AdobeCleanUX-It.otf"]
+      - ["Adobe Clean UX", 700, normal, "/Users/jose/Library/Fonts/AdobeCleanUX-Bold.otf"]
+      - ["Adobe Clean UX", 700, italic, "/Users/jose/Library/Fonts/AdobeCleanUX-BoldIt.otf"]
 
 estilos_capitulo:
   css_helice: "/Users/jose/Desktop/PONENCIA SEO 2025/Ponencias 2025 (APP)/CSS Helice/helice_ponencias2025.css"

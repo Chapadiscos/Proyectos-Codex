@@ -198,10 +198,11 @@ def _informe(copia, lineas):
     oks = [l[3:] for l in lineas[1:] if l.startswith("OK|")]
     avisos = [l[6:] for l in lineas[1:] if l.startswith("AVISO|")]
     partes = [f"{estado}: {copia}"]
+    if avisos:  # primero, para que se vean (las ventanas de macOS no admiten negrita ni color)
+        partes += ["", f"⚠️ AVISOS ({len(avisos)}): revísalos en la copia"]
+        partes += ["⚠️ " + l for l in avisos]
+        partes += ["", "Hecho:"]
     partes += ["  · " + l for l in oks]
-    if avisos:
-        partes.append(f"Avisos ({len(avisos)}):")
-        partes += ["  ! " + l for l in avisos]
     return "\n".join(partes)
 
 

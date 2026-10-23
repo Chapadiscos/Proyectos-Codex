@@ -12,8 +12,15 @@ por archivo. Como Hélice cambia el nombre de lo que se sube, sus URL se emparej
 contenido con los .woff2 o con los originales:
     ./css_libro --fuentes        (con las URL copiadas por el marcador «Enlaces Hélice»)
 Mientras no estén, el @font-face apunta a los archivos locales (sirve para la vista previa).
+Una fuente que ya tenía su URL de Hélice la conserva aunque el original se mueva o se borre
+del Mac: la web la carga de Hélice.
 
-Para pegarla en Hélice: ./css_libro --copiar la deja en el portapapeles legible (con la «ñ»
+Lo nuevo de cada capítulo (reglas y, si cambian, las fuentes) se apunta además en
+<archivo>.pendiente.css: ./css_libro --copiar copia solo eso, para añadirlo al final de la
+CSS que ya está en Hélice, y lo da por subido (queda en <archivo>.copiada.css por si acaso).
+Con --todo copia la CSS entera, para rehacerla en Hélice.
+
+Al copiarla queda en el portapapeles legible (con la «ñ»
 y el «•» tal cual; en el archivo van como escapes CSS, «\\F1 », para que no dependa de la
 codificación con que se abra).
 
@@ -57,13 +64,18 @@ def actualizar(config, ruta_html, informe=None):
     archivo, dir_fuentes, txt_urls = rutas(config)
     os.makedirs(os.path.dirname(archivo), exist_ok=True)
     actual = open(archivo, encoding="utf-8").read() if os.path.exists(archivo) else ""
+    nuevo_libro = not actual.strip()
 
-    fuentes, faltan = bloque_fuentes(cfg.get("fuentes_web") or {}, dir_fuentes, txt_urls)
+    fuentes, faltan = bloque_fuentes(cfg.get("fuentes_web") or {}, dir_fuentes, txt_urls, urls_previas(actual))
     actual_sin = re.sub(r'^@charset "UTF-8";\n*', "", actual)
+    fuentes_antes = ""
     if INICIO_FUENTES in actual_sin:
-        resto = actual_sin.split(FIN_FUENTES, 1)[1].lstrip("\n")
+        fuentes_antes, resto = actual_sin.split(FIN_FUENTES, 1)
+        fuentes_antes += FIN_FUENTES
+        resto = resto.lstrip("\n")
     else:
         resto = actual_sin
+    fuentes_cambian = escapar(fuentes).strip() != fuentes_antes.strip()
     existentes = {s for selectores, _ in leer_reglas(resto) for s in selectores}
 
     nuevas = []
@@ -91,13 +103,30 @@ def actualizar(config, ruta_html, informe=None):
     if cambiada:
         with open(archivo, "w", encoding="utf-8") as f:
             f.write(contenido)
+    # Lo nuevo, aparte: es lo que hay que añadir a la CSS que ya está en Hélice
+    delta = (fuentes if (fuentes_cambian or nuevo_libro) else "")
+    if nuevas:
+        delta += f"/* ----- Estilos nuevos de {os.path.basename(ruta_html)} ----- */\n" + "\n".join(nuevas) + "\n"
+    if delta.strip():
+        with open(pendiente(archivo), "a", encoding="utf-8") as f:
+            f.write(escapar(delta.strip("\n")) + "\n\n")
     if informe is not None:
-        if cambiada:
-            que = f"{len(nuevas)} reglas nuevas" if nuevas else "fuentes"
-            informe.avisar(f"la CSS del libro ha cambiado ({que}): súbela a Hélice antes de pegar el HTML: {archivo}")
-        if faltan:
+        if delta.strip():
+            que = ", ".join(x for x in [f"{len(nuevas)} reglas nuevas" if nuevas else "", "fuentes" if fuentes_cambian else ""] if x)
+            informe.avisar(f"la CSS del libro ha cambiado ({que or 'nueva'}): añade lo nuevo al final de la CSS de Hélice "
+                           f"antes de pegar el HTML (./css_libro --copiar)")
+        perdidas = [a[3] for a in (cfg.get("fuentes_web") or {}).get("archivos") or [] if not os.path.exists(a[3])]
+        if faltan and perdidas:  # sin el original no se puede reconocer la subida a Hélice
+            informe.avisar(f"no encuentro {len(perdidas)} fuentes originales (¿se han movido?): corrige su ruta en "
+                           f"css_libro.fuentes_web.archivos: " + ", ".join(perdidas))
+        elif faltan:
             informe.avisar(f"faltan las URL de Hélice de {faltan} fuentes: súbelas desde {dir_fuentes} y ejecuta ./css_libro --fuentes")
     return archivo, nuevas
+
+
+def pendiente(archivo):
+    """Lo nuevo de la CSS que aún no se ha copiado para Hélice."""
+    return os.path.splitext(archivo)[0] + ".pendiente.css"
 
 
 def _regla(selector, decl, familias):
@@ -110,11 +139,15 @@ def _regla(selector, decl, familias):
     return selector + " {\n" + "\n".join(lineas) + "\n}"
 
 
-def bloque_fuentes(fw, dir_fuentes, txt_urls):
-    """@font-face de las fuentes propias. Devuelve (texto, cuántas no tienen URL de Hélice)."""
+def bloque_fuentes(fw, dir_fuentes, txt_urls, previas=None):
+    """@font-face de las fuentes propias. Devuelve (texto, cuántas no tienen URL de Hélice).
+
+    previas: {(familia, peso, estilo): (url, formato)} de la CSS anterior, para las fuentes
+    cuyo original ya no está en el Mac."""
     archivos = fw.get("archivos") or []
     if not archivos:
         return "", 0
+    previas = previas or {}
     woff2s = [convertir(a[3], dir_fuentes) for a in archivos]
     urls = urls_por_contenido(txt_urls, woff2s + [a[3] for a in archivos])
     partes, faltan = [INICIO_FUENTES], 0
@@ -123,6 +156,8 @@ def bloque_fuentes(fw, dir_fuentes, txt_urls):
             url, formato = urls[woff2], "woff2"
         elif original in urls:  # se subió el original
             url, formato = urls[original], FORMATOS.get(os.path.splitext(original)[1].lower(), "opentype")
+        elif (familia, str(peso), estilo) in previas:  # la de Hélice que ya tenía
+            url, formato = previas[(familia, str(peso), estilo)]
         else:
             faltan += 1
             url, formato = pathlib.Path(woff2).as_uri(), "woff2"  # vista previa en local hasta tener la de Hélice
@@ -135,16 +170,32 @@ def bloque_fuentes(fw, dir_fuentes, txt_urls):
 
 
 def convertir(original, dir_fuentes):
-    """El .woff2 de una fuente (lo crea la primera vez)."""
+    """El .woff2 de una fuente (lo crea la primera vez, si está el original)."""
     os.makedirs(dir_fuentes, exist_ok=True)
     destino = os.path.join(dir_fuentes, os.path.splitext(os.path.basename(original))[0] + ".woff2")
-    if not os.path.exists(destino):
+    if not os.path.exists(destino) and os.path.exists(original):
         from fontTools.ttLib import TTFont
 
         fuente = TTFont(original)
         fuente.flavor = "woff2"
         fuente.save(destino)
     return destino
+
+
+FONT_FACE = re.compile(r"@font-face\s*\{(.*?)\}", re.S)
+
+
+def urls_previas(css):
+    """{(familia, peso, estilo): (url, formato)} de los @font-face de la CSS que ya apuntan a Hélice."""
+    r = {}
+    for cuerpo in FONT_FACE.findall(desescapar(css)):
+        campos = dict(re.findall(r"([\w-]+)\s*:\s*([^;]+);", cuerpo))
+        src = re.search(r'url\("?(https?://[^")]+)"?\)\s*format\("([^"]+)"\)', campos.get("src", ""))
+        if src:
+            clave = (campos.get("font-family", "").strip().strip('"'), campos.get("font-weight", "").strip(),
+                     campos.get("font-style", "").strip())
+            r[clave] = (src.group(1), src.group(2))
+    return r
 
 
 def urls_por_contenido(txt_urls, archivos):
@@ -174,7 +225,8 @@ def main(argv=None):
     ap.add_argument("html", nargs="*", help="capítulos exportados (por defecto, solo se rehacen las fuentes)")
     ap.add_argument("--libro", help="libro de config/libros (por defecto, según la ruta del HTML)")
     ap.add_argument("--fuentes", action="store_true", help="guarda las URL de fuentes del portapapeles (marcador)")
-    ap.add_argument("--copiar", action="store_true", help="copia la CSS al portapapeles, legible, para pegarla en Hélice")
+    ap.add_argument("--copiar", action="store_true", help="copia lo nuevo de la CSS (legible) para añadirlo en Hélice")
+    ap.add_argument("--todo", action="store_true", help="con --copiar, la CSS entera")
     args = ap.parse_args(argv)
     libro = libros.elegir(args.libro, args.html[0] if args.html else None)
     archivo, dir_fuentes, txt_urls = rutas(libro.config)
@@ -192,9 +244,17 @@ def main(argv=None):
     if args.copiar:
         from .capitulo import ENTORNO_UTF8
 
-        texto = re.sub(r'^@charset "UTF-8";\n*', "", desescapar(open(archivo, encoding="utf-8").read()))
+        origen = archivo if args.todo else pendiente(archivo)
+        if not os.path.exists(origen) or not open(origen, encoding="utf-8").read().strip():
+            print("No hay CSS nueva pendiente de subir a Hélice")
+            return 0
+        texto = re.sub(r'^@charset "UTF-8";\n*', "", desescapar(open(origen, encoding="utf-8").read())).strip() + "\n"
         subprocess.run(["pbcopy"], input=texto.encode("utf-8"), env=ENTORNO_UTF8, check=True)
-        print(f"CSS del libro copiada al portapapeles ({len(texto)} caracteres): pégala en Hélice")
+        if args.todo:
+            print(f"CSS entera del libro copiada al portapapeles ({len(texto)} caracteres): sustituye la de Hélice")
+        else:
+            os.replace(origen, os.path.splitext(archivo)[0] + ".copiada.css")
+            print(f"CSS nueva copiada al portapapeles ({len(texto)} caracteres): añádela al final de la CSS de Hélice")
         return 0
     from .informe import Informe
 

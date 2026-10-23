@@ -90,10 +90,14 @@ function estiloParrafo(doc, nombre) {
     return doc.paragraphStyles[1];  // [Párrafo básico]
 }
 
-function describir(it) {
-    var g = it.visibleBounds, pag = it.parentPage ? it.parentPage.name : "-";
+var TIPOS = { TextFrame: "Marco de texto", Rectangle: "Imagen", Group: "Grupo", GraphicLine: "Línea", Polygon: "Forma", Oval: "Óvalo" };
+
+function describir(it) {  // «Marco de texto «C», pág. 46, a 30 mm de arriba y 118 mm de la izquierda»
+    var g = it.visibleBounds, p = it.parentPage;
     var txt = tipo(it) == "TextFrame" ? " «" + it.contents.substr(0, 30).replace(/[\r\n]/g, " ") + "»" : "";
-    return tipo(it) + " pág. " + pag + " [" + Math.round(g[0]) + "," + Math.round(g[1]) + "]" + txt;
+    var donde = !p ? ", en la mesa de trabajo" : ", pág. " + p.name + ", a " + Math.round(g[0] - p.bounds[0]) +
+        " mm de arriba y " + Math.round(g[1] - p.bounds[1]) + " mm de la izquierda";  // medido en su página, no en el pliego
+    return (TIPOS[tipo(it)] || tipo(it)) + txt + donde;
 }
 
 // ---------------------------------------------------------------------------
@@ -336,23 +340,60 @@ function principal(doc, cfg, cap, carpeta) {
     // Figuras (y vídeos…): grupos con pie y pares imagen + pie sueltos. Lo que no es una
     // sola imagen (varias, letras o rótulos encima, QR con formas) pasa a un solo JPG
     function esSimple(objs) { return objs.length == 1 && tipo(objs[0]) != "Group" && objs[0].allGraphics.length == 1; }
+    // Rótulos encima de una imagen (letras A, B, C… en marcos sueltos, cap. 02 de 2025):
+    // marcos de texto que caen dentro del marco de una imagen van con esa figura al JPG
+    function dentro(a, b) { return a[0] >= b[0] - 1 && a[1] >= b[1] - 1 && a[2] <= b[2] + 1 && a[3] <= b[3] + 1; }
+    var encima = {}, asignado = {};  // id del objeto con la imagen -> [marcos de texto encima]
+    for (var i = 0; i < sueltos.length; i++) {
+        var t = sueltos[i];
+        if (!libre(t) || tipo(t) != "TextFrame" || esPie(t) || t.parentStory.tables.length) continue;
+        for (var k = 0; k < sueltos.length && !asignado[t.id]; k++) {
+            var s = sueltos[k];
+            if (!libre(s) || tipo(s) == "TextFrame" || !s.allGraphics.length || !s.parentPage || !t.parentPage || s.parentPage.id != t.parentPage.id) continue;
+            var g = s.allGraphics;
+            for (var q = 0; q < g.length; q++) {
+                if (dentro(t.visibleBounds, g[q].parent.visibleBounds)) {
+                    (encima[s.id] = encima[s.id] || []).push(t);
+                    asignado[t.id] = true;
+                    break;
+                }
+            }
+        }
+    }
+    function conRotulos(obj) {
+        var r = encima[obj.id] || [];
+        for (var i = 0; i < r.length; i++) usados[r[i].id] = true;
+        return r;
+    }
+    // Desagrupa del todo (grupos dentro de grupos) y devuelve las piezas sueltas
+    function aplanar(it) {
+        if (tipo(it) != "Group") return [it];
+        var hijos = it.pageItems.everyItem().getElements(), r = [];
+        it.ungroup();
+        for (var i = 0; i < hijos.length; i++) r = r.concat(aplanar(hijos[i]));
+        return r;
+    }
     for (var i = 0; i < sueltos.length; i++) {
         var it = sueltos[i];
         if (!libre(it) || tipo(it) != "Group") continue;
-        var hijos = it.pageItems.everyItem().getElements(), pie = null, tp = null, resto = [];
-        for (var k = 0; k < hijos.length; k++) {
-            var t = pie ? null : tipoDePie(hijos[k]);
-            if (t) { pie = hijos[k]; tp = t; }
-            else resto.push(hijos[k]);
+        // El pie puede estar en un grupo dentro del grupo (letras agrupadas con figura + pie)
+        var todos = it.allPageItems, pie = null, tp = null;
+        for (var k = 0; k < todos.length && !pie; k++) {
+            var t = tipoDePie(todos[k].getElements()[0]);
+            if (t) { pie = todos[k].getElements()[0]; tp = t; }
         }
         if (!pie) continue;
         usados[it.id] = true;
-        if (esSimple(resto) && !tp.t.siempre) { anotar(it, tp.t.clave, tp.n, 0, tp.t.etiqueta); continue; }
-        it.ungroup();
+        var extra = conRotulos(it), hijos = it.pageItems.everyItem().getElements(), otros = [];
+        for (var k = 0; k < hijos.length; k++) if (hijos[k].id != pie.id) otros.push(hijos[k]);
+        if (esSimple(otros) && hijos.length == 2 && !extra.length && !tp.t.siempre) { anotar(it, tp.t.clave, tp.n, 0, tp.t.etiqueta); continue; }
+        var piezas = aplanar(it), resto = [];
+        for (var k = 0; k < piezas.length; k++) if (piezas[k].id != pie.id) resto.push(piezas[k]);
+        resto = resto.concat(extra);
         var nombre = plantilla(tp.t.nombre, cap, tp.n);
         var marco = rasterizar(doc, resto, carpeta, nombre, cfg.jpeg || {});
         anotar(doc.groups.add([marco, pie]), tp.t.clave, tp.n, 0, tp.t.etiqueta);
-        ok(tp.t.etiqueta + " " + tp.n + " (" + resto.length + " objetos) → " + nombre + ".jpg");
+        ok(tp.t.etiqueta + " " + tp.n + " (" + resto.length + " objetos" + (extra.length ? ", con " + extra.length + " rótulos encima" : "") + ") → " + nombre + ".jpg");
     }
     var piesSueltos = [], imagenes = [];
     for (var i = 0; i < sueltos.length; i++) {
@@ -372,14 +413,15 @@ function principal(doc, cfg, cap, carpeta) {
         usados[pie.id] = true;
         if (!mejor || dmin > 10) { aviso(tp.t.etiqueta + " " + tp.n + ": no encuentro su imagen junto al pie (" + describir(pie) + ")"); continue; }
         usados[mejor.id] = true;
-        if (esSimple([mejor]) && !tp.t.siempre) {
+        var extra = conRotulos(mejor);
+        if (esSimple([mejor]) && !extra.length && !tp.t.siempre) {
             anotar(doc.groups.add([mejor, pie]), tp.t.clave, tp.n, 0, tp.t.etiqueta);
             ok(tp.t.etiqueta + " " + tp.n + ": imagen y pie sueltos agrupados");
         } else {
             var nombre = plantilla(tp.t.nombre, cap, tp.n);
-            var marco = rasterizar(doc, [mejor], carpeta, nombre, cfg.jpeg || {});
+            var marco = rasterizar(doc, [mejor].concat(extra), carpeta, nombre, cfg.jpeg || {});
             anotar(doc.groups.add([marco, pie]), tp.t.clave, tp.n, 0, tp.t.etiqueta);
-            ok(tp.t.etiqueta + " " + tp.n + ": con su pie suelto → " + nombre + ".jpg");
+            ok(tp.t.etiqueta + " " + tp.n + ": con su pie suelto" + (extra.length ? " y " + extra.length + " rótulos encima" : "") + " → " + nombre + ".jpg");
         }
     }
     var nSinPie = 0;
@@ -387,10 +429,11 @@ function principal(doc, cfg, cap, carpeta) {
         var im = imagenes[k];
         if (!libre(im)) continue;
         usados[im.id] = true;
-        if (!esSimple([im])) {  // grupo sin pie: a JPG igualmente, para que se vea como en el libro
+        var extra = conRotulos(im);
+        if (!esSimple([im]) || extra.length) {  // grupo o rótulos encima: a JPG, para que se vea como en el libro
             var nombre = plantilla(cfg.imagen_sin_pie || "IMAGEN {cap}.{n}", cap, ++nSinPie);
-            im = rasterizar(doc, [im], carpeta, nombre, cfg.jpeg || {});
-            aviso("Grupo sin pie → " + nombre + ".jpg: se ancla donde está, revísalo");
+            im = rasterizar(doc, [im].concat(extra), carpeta, nombre, cfg.jpeg || {});
+            aviso("Imagen sin pie → " + nombre + ".jpg: se ancla donde está, revísala");
         } else aviso("Imagen sin pie: " + describir(im) + " — se ancla donde está, revísala");
         anotar(im, "imagen", 0, 0);
     }

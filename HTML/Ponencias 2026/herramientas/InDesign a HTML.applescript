@@ -57,9 +57,7 @@ on run
 				"¿La usas tal cual o la preparas de nuevo desde este original? (La actual se guarda como «(anterior)».)" buttons {"Cancelar", "Preparar de nuevo", "Usar la preparada"} default button "Usar la preparada" cancel button "Cancelar" with title titulo)
 			if boton is "Preparar de nuevo" then set opcionForzar to " --forzar"
 		else
-			display dialog "«" & nombreLibro & "», capítulo " & numCap & "." & return & return & ¬
-				"Se preparará para HTML una copia del original de imprenta (que no se toca) en:" & return & copia buttons {"Cancelar", "Preparar"} default button "Preparar" cancel button "Cancelar" with title titulo
-			set boton to "Preparar"
+			set boton to "Preparar"  -- sin versión preparada: se prepara sin preguntar (el informe dice dónde)
 		end if
 		if boton is not "Usar la preparada" then
 			set progress description to "Preparando el capítulo " & numCap & " en InDesign…"
@@ -81,10 +79,14 @@ on run
 			end if
 			set boton to button returned of (display dialog texto buttons {"Cancelar", "Abrir en InDesign", "Exportar a HTML"} default button "Exportar a HTML" cancel button "Cancelar" with title titulo with icon icono)
 			if boton is "Abrir en InDesign" then
-				tell application "Adobe InDesign 2026"
-					activate
-					open (POSIX file copia)
-				end tell
+				-- Como el Finder (open -a): «open (POSIX file …)» dentro de un tell a InDesign
+				-- hacía que InDesign resolviera la ruta, fallaba y la app se cerraba sin avisar
+				try
+					do shell script "open -a " & quoted form of "Adobe InDesign 2026" & " " & quoted form of copia
+				on error msg
+					display dialog "No se ha podido abrir en InDesign:" & return & return & msg & return & return & copia buttons {"Aceptar"} default button 1 with title titulo with icon stop
+					return
+				end try
 				display dialog "Cuando lo hayas revisado y guardado, ciérralo, vuelve a abrir esta app y elige:" & return & copia buttons {"Aceptar"} default button 1 with title titulo
 				return
 			end if
@@ -183,18 +185,30 @@ on run
 	set detalle to my desde(salida, 4)
 	-- La CSS del libro ha cambiado (libro nuevo): se ofrece copiarla para pegarla en Hélice
 	if detalle contains "la CSS del libro ha cambiado" then
-		set boton to button returned of (display dialog "La CSS del libro ha cambiado (estilos o fuentes nuevos)." & return & return & ¬
-			"Cópiala y pégala en Hélice, sustituyendo la anterior, antes de pegar o publicar el HTML." buttons {"Más tarde", "Copiar la CSS"} default button "Copiar la CSS" with title titulo)
-		if boton is "Copiar la CSS" then
-			do shell script quoted form of (proyecto & "/css_libro") & " --copiar " & quoted form of rutaFinal
-			display dialog "CSS copiada al portapapeles: pégala en Hélice y pulsa Continuar." buttons {"Continuar"} default button 1 with title titulo
+		set boton to button returned of (display dialog "Este capítulo trae CSS nueva (estilos o fuentes que no tenían los anteriores)." & return & return & ¬
+			"Cópiala y añádela al final de la CSS del libro en Hélice antes de pegar o publicar el HTML. Solo se copia lo nuevo." buttons {"Más tarde", "Copiar la CSS nueva"} default button "Copiar la CSS nueva" with title titulo)
+		if boton is "Copiar la CSS nueva" then
+			set resCss to do shell script quoted form of (proyecto & "/css_libro") & " --copiar " & quoted form of rutaFinal
+			display dialog resCss & return & return & "Después pulsa Continuar." buttons {"Continuar"} default button 1 with title titulo
 		end if
 	end if
+
+	-- ¿Se publica por la API? Entonces no se habla del portapapeles (se publica en su sitio)
+	set planPub to ""
+	if estado is "OK" or estado is "AVISOS" then
+		set planPub to do shell script quoted form of (proyecto & "/publicar") & " --plan " & quoted form of rutaFinal
+	end if
+	set publicable to (planPub starts with "SI")
 
 	set listo to false
 	if estado is "OK" then
 		set listo to true
-		set texto to "HTML depurado copiado al portapapeles." & return & "Pégalo en Hélice con ⌘V." & return & return & detalle
+		if publicable then
+			set texto to detalle
+			if texto is "" then set texto to "HTML depurado sin avisos."
+		else
+			set texto to "HTML depurado copiado al portapapeles." & return & "Pégalo en Hélice con ⌘V." & return & return & detalle
+		end if
 		repeat
 			set boton to button returned of (display dialog texto buttons {"Ver vista previa", "Aceptar"} default button "Aceptar" with title titulo)
 			if boton is "Aceptar" then exit repeat
@@ -202,13 +216,22 @@ on run
 			activate
 		end repeat
 	else if estado is "AVISOS" then
-		set texto to "El HTML depurado tiene avisos y NO se ha copiado al portapapeles." & return & return & detalle
+		if publicable then
+			set texto to "El HTML depurado tiene avisos: revísalos antes de publicarlo." & return & return & detalle
+			set seguir to "Continuar igualmente"
+		else
+			set texto to "El HTML depurado tiene avisos y NO se ha copiado al portapapeles." & return & return & detalle
+			set seguir to "Copiar igualmente"
+		end if
 		repeat
-			set boton to button returned of (display dialog texto buttons {"Ver vista previa", "Copiar igualmente", "Cancelar"} default button "Ver vista previa" with title titulo with icon caution)
+			set boton to button returned of (display dialog texto buttons {"Ver vista previa", seguir, "Cancelar"} default button "Ver vista previa" with title titulo with icon caution)
 			if boton is "Cancelar" then exit repeat
 			if boton is "Ver vista previa" then
 				do shell script "open " & quoted form of rutaVista
 				activate
+			else if publicable then
+				set listo to true
+				exit repeat
 			else
 				do shell script "LANG=es_ES.UTF-8 pbcopy < " & quoted form of rutaFinal
 				display dialog "HTML depurado copiado al portapapeles." & return & "Pégalo en Hélice con ⌘V." buttons {"Aceptar"} default button 1 with title titulo
@@ -221,16 +244,13 @@ on run
 	end if
 
 	-- 5. Publicar en Hélice por la API (libros con «publicar» configurado; solo capítulos nuevos)
-	if listo then
-		set planPub to do shell script quoted form of (proyecto & "/publicar") & " --plan " & quoted form of rutaFinal
-		if paragraph 1 of planPub is "SI" then
-			set boton to button returned of (display dialog "¿Publicar el capítulo en Hélice, en «" & paragraph 2 of planPub & "», en vez de pegarlo a mano?" & return & return & ¬
-				"Antes, sube a Hélice la CSS del libro si te lo ha pedido. Solo se publica una vez: las correcciones, en el panel." buttons {"No", "Publicar"} default button "Publicar" with title titulo)
-			if boton is "Publicar" then
-				set progress description to "Publicando en Hélice…"
-				set res to do shell script quoted form of (proyecto & "/publicar") & " " & quoted form of rutaFinal & " 2>&1; true"
-				display dialog res buttons {"Aceptar"} default button 1 with title titulo
-			end if
+	if listo and publicable then
+		set boton to button returned of (display dialog "¿Publicar el capítulo en Hélice, en «" & paragraph 2 of planPub & "»?" & return & return & ¬
+			"Antes, sube a Hélice la CSS del libro si te lo ha pedido. Solo se publica una vez: las correcciones, en el panel." buttons {"No", "Publicar"} default button "Publicar" with title titulo)
+		if boton is "Publicar" then
+			set progress description to "Publicando en Hélice…"
+			set res to do shell script quoted form of (proyecto & "/publicar") & " " & quoted form of rutaFinal & " 2>&1; true"
+			display dialog res buttons {"Aceptar"} default button 1 with title titulo
 		end if
 	end if
 end run
