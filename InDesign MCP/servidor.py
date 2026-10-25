@@ -94,6 +94,33 @@ def ver_pagina(pagina: str = "", resolucion: int = 100) -> list:
 
 
 @mcp.tool()
+def consultar(codigo: str, documento: str = "") -> dict:
+    """Ejecuta ExtendScript de SOLO LECTURA sobre un documento y devuelve
+    lo que el código devuelva con `return` (datos simples, nunca objetos de InDesign).
+    Si el código modifica el documento, se deshace y se devuelve un error.
+
+    El código recibe `doc` y estas ayudas:
+    - `pagina(o)`: nombre de la página de un texto u objeto (null si está fuera).
+    - `ref(o)`: referencia para volver a localizar `o` después.
+    - `contexto(t)`: texto alrededor de `t`, con `t` marcado entre ⟦ ⟧.
+    Si usas findGrep/findText, deja las preferencias en NothingEnum.NOTHING al acabar.
+    `documento`: nombre de un documento abierto (también los abiertos sin ventana, p. ej.
+    capítulos de un libro); vacío = el documento activo."""
+    return ejecutar_jsx((JSX / "consultar.jsx").read_text(encoding="utf-8"),
+                        {"codigo": codigo, "documento": documento}, timeout=120)
+
+
+@mcp.tool()
+def probar_cambio(aplicar: str, refs: list[str]) -> list:
+    """Prueba un cambio sin dejarlo hecho: para cada referencia (hasta 5, de `ref(o)`
+    en `consultar`) aplica `aplicar` (cuerpo de función que recibe `obj` y `doc`),
+    anota el texto antes y después (con el objetivo entre ⟦ ⟧) y lo deshace en el acto.
+    Úsala para comprobar un cambio antes de proponerlo."""
+    return ejecutar_jsx((JSX / "probar_cambio.jsx").read_text(encoding="utf-8"),
+                        {"aplicar": aplicar, "refs": refs}, timeout=120)
+
+
+@mcp.tool()
 def ejecutar_script(codigo: str, descripcion: str) -> dict:
     """Ejecuta ExtendScript sobre el documento activo de InDesign como un único
     paso de deshacer: el usuario lo revierte entero con un solo Cmd+Z.
