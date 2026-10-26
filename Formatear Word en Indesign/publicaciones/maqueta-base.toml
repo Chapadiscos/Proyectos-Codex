@@ -5,9 +5,9 @@
 maqueta = "Maqueta base.indd"
 
 [parrafo]
-capitulo_palabra    = "Portadilla/Capitulo"        # «Capítulo»
-capitulo_numero     = "Portadilla/Numero Capitulo" # «5»
-capitulo_titulo     = "Portadilla/Titulo"
+# Galerada: título y autores van al principio del texto con estos estilos; la portadilla
+# se monta a mano con el elemento de la Biblioteca de la publicación.
+capitulo_titulo     = "Portadilla/Titulo"          # «5. Epiescleritis y escleritis»
 autores             = "Portadilla/Autores"
 ladillo1            = "Ladillos/Ladillo 1"
 ladillo2            = "Ladillos/Ladillo 2"
@@ -24,14 +24,43 @@ texto_ideas         = "Ideas basicas/Texto Ideas"
 titulo_bibliografia = "Ladillos/Ladillo 1"
 bibliografia        = "Bibliografia"
 titulo_tabla        = "Tabla/Titulo tabla"
-pie_tabla           = "Tabla/Pie tabla"
+pie_tabla           = "Tabla/Pie tabla"            # dentro de la tabla, en la fila de pie
 pie_figura          = "Pie Figura"
+celda_cabecera      = "Tabla/Cabecera Tabla"       # párrafos de la fila de cabecera
+celda               = "Tabla/Celda Izda."          # párrafos del resto de celdas
 
 [caracter]
 negrita         = "65 Medium"
 cursiva         = "46 Light Italic"
 negrita_cursiva = "66 Medium Italic"
 superindice     = "Super"
+etiqueta_figura = "Figura X"   # «Figura 1.» al principio del pie
+simbolos        = "→←↔⇒"       # caracteres que la fuente del texto no tiene
+estilo_simbolos = "Symbol"
+
+# Estilos de párrafo cuya fuente no es la del texto: sus equivalentes de negrita y cursiva
+# (por grupo de estilos o nombre de estilo sin grupo). "" = no aplicar ese formato.
+[caracter_por_grupo]
+"Ideas basicas" = { negrita = "Black", cursiva = "", negrita_cursiva = "Black" }
+"Tabla"         = { negrita = "Bold", cursiva = "Italic", negrita_cursiva = "Bold" }
+"Pie Figura"    = { negrita = "Bold", cursiva = "Italic", negrita_cursiva = "Bold" }
+"Bibliografia"  = { negrita = "", cursiva = "", negrita_cursiva = "" }
+"Portadilla"    = { negrita = "", cursiva = "", negrita_cursiva = "" }
+
+[tabla]
+estilo         = "Ponencias 2026"
+celda_cabecera = "Cabecera"
+celda          = "Celda Izquierda"
+celda_pie      = "Pie tabla"   # fila de pie: las notas que en el Word van debajo de la tabla
+ancho          = 170      # mm: el ancho de las dos columnas
+
+[figuras]
+estilo_objeto = "Marco 80"
+ancho         = 80        # mm: una columna
+filete        = 0.5       # pt: filete blanco entre las imágenes de una figura compuesta
+
+[dudas]
+notas = false     # además del texto condicional, una nota de InDesign con el motivo
 
 [citas]
 rango_minimo = 3      # 3,4,5 → 3-5 ; 3,4 → 3,4

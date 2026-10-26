@@ -22,31 +22,41 @@ def id_archivo(nombre):
     return None
 
 
+def indice_archivos(carpeta):
+    por_id = {}
+    for f in archivos_imagen(carpeta):
+        por_id.setdefault(id_archivo(f), []).append(f)
+    return por_id
+
+
+def buscar_archivos(fid, texto_pie, por_id):
+    """Archivos sueltos para la figura fid ('5A', '4'...) y aviso, si lo hay."""
+    num = re.match(r'\d+', fid).group(0)
+    encontrados, aviso = por_id.get(fid, []), ''
+    if not encontrados and fid != num:
+        encontrados = por_id.get(num, [])
+        aviso = 'no hay archivo %s; uso el de la figura %s' % (fid, num) if encontrados else ''
+    if not encontrados and fid == num:
+        encontrados = [f for k, fs in por_id.items() if k and k[:-1] == num and k[-1].isalpha() for f in fs]
+    if not encontrados and 'algoritmo' in texto_pie.lower():
+        encontrados = por_id.get('algoritmo', [])
+    if not encontrados:
+        aviso = 'sin archivo suelto: se usará la imagen incrustada en el Word'
+    elif len(encontrados) > 1:
+        aviso = aviso or '%d archivos para una figura: ¿compuesta o hay que elegir?' % len(encontrados)
+    return encontrados, aviso
+
+
 def inventario(elementos, carpeta):
     """Lista de (figura, pie, archivos, aviso) y archivos sin pie."""
     archivos = archivos_imagen(carpeta)
-    por_id = {}
-    for f in archivos:
-        por_id.setdefault(id_archivo(f), []).append(f)
+    por_id = indice_archivos(carpeta)
     usados, filas = set(), []
     for e in elementos:
         if e.papel != 'pie_figura' or 'figuras' not in e.datos:
             continue
         for fid in e.datos['figuras']:
-            num = re.match(r'\d+', fid).group(0)
-            encontrados = por_id.get(fid, [])
-            aviso = ''
-            if not encontrados and fid != num:
-                encontrados = por_id.get(num, [])
-                aviso = 'no hay archivo %s; uso el de la figura %s' % (fid, num) if encontrados else ''
-            if not encontrados and fid == num:
-                encontrados = [f for k, fs in por_id.items() if k and k[:-1] == num and k[-1].isalpha() for f in fs]
-            if not encontrados and 'algoritmo' in e.texto.lower():
-                encontrados = por_id.get('algoritmo', [])
-            if not encontrados:
-                aviso = 'sin archivo suelto: se usará la imagen incrustada en el Word'
-            elif len(encontrados) > 1:
-                aviso = aviso or '%d archivos para una figura: ¿compuesta o hay que elegir?' % len(encontrados)
+            encontrados, aviso = buscar_archivos(fid, e.texto, por_id)
             usados.update(encontrados)
             filas.append((fid, e.texto, encontrados, aviso))
     sobrantes = [f for f in archivos if f not in usados]

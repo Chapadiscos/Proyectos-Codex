@@ -26,7 +26,7 @@ OMITIDOS = ('rotulo_material', 'etiqueta_imagen')
 def estilo_de(e, conf):
     p = conf['parrafo']
     if e.papel == 'capitulo':
-        return '%s + %s + %s' % (p['capitulo_palabra'], p['capitulo_numero'], p['capitulo_titulo'])
+        return p['capitulo_titulo']
     if e.papel == 'vineta':
         return p['vineta%d' % max(e.nivel, 1)]
     if e.papel == 'lista_num':

@@ -113,7 +113,7 @@ def normalizar(trozos, n_bibliografia=0, rango_minimo=3, guion='\u2013'):
             dudosa = 'número suelto entre paréntesis'
         citas.append(Cita(texto, nums, nuevo, tipo, dudosa))
         if dudosa.startswith('va pegada'):
-            salida.append(replace(base, texto=texto))
+            salida.append(replace(base, texto=texto, duda='¿Cita o exponente? ' + dudosa))
             continue
         if dudosa == 'va en medio de una palabra':
             # «inmunodeprimido¹s.» → «inmunodeprimidos (1).»: el resto de la palabra pasa delante.
@@ -135,7 +135,7 @@ def normalizar(trozos, n_bibliografia=0, rango_minimo=3, guion='\u2013'):
                 salida.pop()
         if salida and salida[-1].texto and not salida[-1].texto[-1].isspace():
             nuevo = ' ' + nuevo
-        salida.append(replace(base, texto=nuevo, pos='', nota=0))
+        salida.append(replace(base, texto=nuevo, pos='', nota=0, duda=('Cita: ' + dudosa) if dudosa else ''))
         if puntuacion:
             salida.append(replace(base, texto=puntuacion, pos='', nota=0))
     return [t for t in salida if t.texto], citas

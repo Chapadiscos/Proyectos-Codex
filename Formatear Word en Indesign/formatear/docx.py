@@ -25,6 +25,7 @@ class Trozo:
     pos: str = ''          # 'sup' | 'sub' | ''
     pt: float = 0.0
     nota: int = 0          # número de nota final si el trozo es su llamada
+    duda: str = ''         # motivo, si este trozo concreto hay que revisarlo en InDesign
 
 
 @dataclass
@@ -47,6 +48,8 @@ class Tabla:
     filas: list            # filas → celdas → lista de Parrafo
     origen: str = 'cuerpo'
     indice: int = 0
+    combinadas: list = field(default_factory=list)  # filas → celdas → (columnas que ocupa, 'restart'|'continue'|'')
+    anchos: list = field(default_factory=list)      # ancho de cada columna de la rejilla, en twips
 
 
 def _val(el, tag, defecto=None):
@@ -164,13 +167,19 @@ class Documento:
             if el.tag == W + 'p':
                 self.bloques.append(self._parrafo(el, rels, origen))
             elif el.tag == W + 'tbl':
-                filas = []
+                filas, combinadas = [], []
                 for tr in el.findall(W + 'tr'):
-                    celdas = []
+                    celdas, comb = [], []
                     for tc in tr.findall(W + 'tc'):
                         celdas.append([self._parrafo(p, rels, origen) for p in tc.iter(W + 'p')])
+                        tcpr = tc.find(W + 'tcPr')
+                        vm = tcpr.find(W + 'vMerge') if tcpr is not None else None
+                        comb.append((int(_val(tcpr, 'gridSpan', '1')),
+                                     '' if vm is None else (vm.get(W + 'val') or 'continue')))
                     filas.append(celdas)
-                self.bloques.append(Tabla(filas, origen))
+                    combinadas.append(comb)
+                anchos = [int(g.get(W + 'w') or 0) for g in el.iter(W + 'gridCol')]
+                self.bloques.append(Tabla(filas, origen, combinadas=combinadas, anchos=anchos))
             elif el.tag == W + 'sdt':
                 c = el.find(W + 'sdtContent')
                 if c is not None:
