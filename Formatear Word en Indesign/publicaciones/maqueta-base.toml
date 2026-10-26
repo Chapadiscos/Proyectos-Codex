@@ -34,6 +34,7 @@ negrita         = "65 Medium"
 cursiva         = "46 Light Italic"
 negrita_cursiva = "66 Medium Italic"
 superindice     = "Super"
+no_partir       = "noPartir"   # palabras compuestas con guion que no se deben partir (Revisar dudas)
 etiqueta_figura = "Figura X"   # «Figura 1.» al principio del pie
 simbolos        = "→←↔⇒"       # caracteres que la fuente del texto no tiene
 estilo_simbolos = "Symbol"
@@ -58,6 +59,35 @@ ancho          = 170      # mm: el ancho de las dos columnas
 estilo_objeto = "Marco 80"
 ancho         = 80        # mm: una columna
 filete        = 0.5       # pt: filete blanco entre las imágenes de una figura compuesta
+
+[resaltar]
+# Al importar se resaltan estas palabras con la condición indicada, para ver dónde se cita cada
+# figura, tabla, algoritmo… al colocarlos. Palabra entera y sin distinguir mayúsculas.
+# Para repetirlo en los documentos abiertos tras cambiar la lista: python3 resaltar.py
+condicion = "Risk word"           # la maqueta ya la trae; si no, se crea con este color
+color     = "GREEN"               # UIColors de InDesign
+palabras  = [
+    "Tabla",
+    "Figura",
+    "Fig.",
+    "Figs.",
+    "Vídeo",
+    "Video",
+    "Tablas",
+    "Figuras",
+    "Figure",
+    "Table",
+    "Algoritmo",
+    "Cuadro",
+    "Grafico",
+    "Gráfico",
+    "Graficos",
+    "gráficos",
+    "Tables",
+    "Cuadros",
+    "Imagen",
+    "Imágenes"
+]
 
 [dudas]
 notas = false     # además del texto condicional, una nota de InDesign con el motivo

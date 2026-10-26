@@ -1,0 +1,207 @@
+# Correcciones ortotipográficas seguras (bloque 1): se aplican con Buscar/Cambiar GREP de
+# InDesign, en el orden de este archivo. Sintaxis GREP de InDesign: ~S = espacio de no
+# separación, $1 = primer grupo, $ = fin de párrafo, [[:alpha:]] = cualquier letra.
+#
+# solo    = estilos de párrafo donde se aplica (si falta, en todos).
+# excluir = estilos de párrafo donde no se aplica.
+#   En las dos listas vale «Grupo/Estilo», el nombre solo o un grupo entero («Tabla»).
+# excluir_texto = expresiones regulares (de JavaScript) sobre el texto del párrafo: si encaja
+#   alguna, no se toca. Una por patrón: unirlas con «|» falla en InDesign.
+# tipo = "ladillos_seguidos": regla especial que no es Buscar/Cambiar (ver abajo).
+# estilo = "cursiva" (o negrita…): en vez de cambiar el texto, aplica a lo encontrado ese estilo
+#   de carácter, el que le toca según maqueta-base.toml ([caracter] y [caracter_por_grupo]).
+#
+# Norma general: ante una duda ortotipográfica, criterio de Vancouver.
+
+[[regla]]
+nombre   = "Cifra y unidad"
+descripcion = "Espacio de no separación entre la cifra y su unidad (10 %, 4 mm, 16 h). Si ya lo tiene, no la encuentra."
+buscar   = '(?<=\d)[ ~<]?(%|mm|cm|µm|μm|nm|km|m|mg|µg|μg|ng|kg|g|ml|mL|dl|dL|l|L|h|min|s|mmHg|UI|°C|ºC|Hz)(?![[:alpha:]\d])'
+cambiar  = '~S$1'
+ejemplo  = "10% → 10 %   ·   4mm → 4 mm   ·   16 h → 16 h (no separable)"
+
+[[regla]]
+nombre   = "Bibliografía: espacio tras «;»"
+descripcion = "Entre la fecha y el volumen"
+buscar   = ';(?=\S)'
+cambiar  = '; '
+solo     = ["Bibliografia"]
+ejemplo  = "2007 Jul;5(3) → 2007 Jul; 5(3)"
+
+[[regla]]
+nombre   = "Bibliografía: espacio tras «:»"
+descripcion = "Antes de las páginas; solo detrás de una cifra o «)», así no toca «doi:10…» ni las direcciones web"
+buscar   = '(?<=[\d)]):(?=[^\s/])'
+cambiar  = ': '
+solo     = ["Bibliografia"]
+ejemplo  = "5(3):240-50 → 5(3): 240-50   ·   2012;130:143 → 2012; 130: 143"
+
+[[regla]]
+nombre   = "Comillas latinas"
+descripcion = "“…” y \"…\" → «…». Con códigos: en la GREP de InDesign, \" encuentra cualquier comilla doble, también «»"
+buscar   = '[\x{201C}\x{0022}]([^\x{201C}\x{201D}\x{0022}\r]+)[\x{201D}\x{0022}]'
+cambiar  = '«$1»'
+ejemplo  = "“conjuntivitis” → «conjuntivitis»"
+
+[[regla]]
+nombre   = "Coma decimal (0.x)"
+descripcion = "Punto decimal → coma; fuera de la bibliografía (DOI, volúmenes…)"
+buscar   = '(?<![\d.,/])0\.(?=\d)'
+cambiar  = '0,'
+excluir  = ["Bibliografia"]
+ejemplo  = "0.5 → 0,5"
+
+[[regla]]
+nombre   = "Coma decimal (1 o 2 decimales)"
+descripcion = "Con 3 decimales no se toca: 1.000 es separador de millar"
+buscar   = '(?<![\d.,/])([1-9]\d{0,2})\.(?=\d{1,2}(?![\d.]))'
+cambiar  = '$1,'
+excluir  = ["Bibliografia"]
+ejemplo  = "1.5 millones → 1,5 millones   ·   1.000 → sin cambio"
+
+[[regla]]
+nombre   = "Figs. → Figuras"
+descripcion = "Abreviatura de las llamadas a figura"
+buscar   = '\bFigs\.\s*(?=\d)'
+cambiar  = 'Figuras '
+excluir  = ["Pie Figura"]
+ejemplo  = "(Figs. 5A y 5B) → (Figuras 5A y 5B)"
+
+[[regla]]
+nombre   = "Fig. → Figura"
+descripcion = "Abreviatura de las llamadas a figura"
+buscar   = '\bFig\.\s*(?=\d)'
+cambiar  = 'Figura '
+excluir  = ["Pie Figura"]
+ejemplo  = "(Fig. 1) → (Figura 1)"
+
+[[regla]]
+nombre   = "vs → vs."
+descripcion = "Abreviatura de versus con punto"
+buscar   = '\bvs\b(?!\.)'
+cambiar  = 'vs.'
+excluir  = ["Bibliografia"]
+ejemplo  = "epitelio vs estroma → epitelio vs. estroma"
+
+[[regla]]
+nombre   = "e.g. / i.e."
+descripcion = "Con espacio entre las letras"
+buscar   = '\b([ei])\.([gi])\.'
+cambiar  = '$1. $2.'
+excluir  = ["Bibliografia"]
+ejemplo  = "e.g. → e. g."
+
+[[regla]]
+nombre   = "Puntos suspensivos"
+descripcion = "Tres puntos → carácter de puntos suspensivos"
+buscar   = '(?<!\.)\.\.\.(?!\.)'
+cambiar  = '…'
+ejemplo  = "... → …"
+
+[[regla]]
+nombre   = "Espacios dobles"
+descripcion = "Dos o más espacios seguidos → uno"
+buscar   = ' {2,}'
+cambiar  = ' '
+ejemplo  = "paracetamol ±  desketoprofen → paracetamol ± desketoprofen"
+
+[[regla]]
+nombre   = "Espacio antes de puntuación"
+descripcion = "Fuera el espacio antes de . , ; : ) ]"
+buscar   = ' +(?=[.,;:)\]])'
+cambiar  = ''
+ejemplo  = "( 3,4 ) → ( 3,4)   ·   visión ,  → visión,"
+
+[[regla]]
+nombre   = "Espacio tras paréntesis de apertura"
+descripcion = "Fuera el espacio después de ( y ["
+buscar   = '(?<=[(\[]) +'
+cambiar  = ''
+ejemplo  = "( 3,4) → (3,4)"
+
+[[regla]]
+nombre   = "Espacios al final del párrafo"
+descripcion = "Espacios sobrantes antes del salto de párrafo"
+buscar   = ' +$'
+cambiar  = ''
+ejemplo  = "…del limbo. ¶ → …del limbo.¶"
+
+# ---- Matemáticas -------------------------------------------------------------------------
+# Espacios: los que trae el Word (normal, fino ~<, de no separación fijo ~s) se cambian por el
+# espacio de no separación ~S. Lo que ya lleva ~S no se vuelve a encontrar.
+
+[[regla]]
+nombre   = "Operador binario entre espacios de no separación"
+descripcion = "+ − × ÷ ± entre dos términos, pegado a los dos o separado de los dos. No toca «gram+ y» ni el guion de los rangos (5-7)"
+buscar   = '(?<=[[:alnum:])%])(?:([+×÷±\x{2212}])|(?: |~<|~s)([+×÷±\x{2212}])(?: |~<|~s))(?=[[:alnum:](])'
+cambiar  = '~S$1$2~S'
+excluir  = ["Bibliografia"]
+ejemplo  = "paracetamol ± desketoprofen · 2×3 → 2 × 3 (no separables)"
+
+[[regla]]
+nombre   = "Relación entre dos expresiones (tras cifra)"
+descripcion = "= ≠ < > ≤ ≥ ≈ con un término a la izquierda: cifra, «%» o «)»"
+buscar   = '(?<=[\d)%])(?:([=≠<>≤≥≈])|(?: |~<|~s)([=≠<>≤≥≈])(?: |~<|~s))(?=[[:alnum:](\x{2212}-])'
+cambiar  = '~S$1$2~S'
+excluir  = ["Bibliografia"]
+ejemplo  = "5<10 → 5 < 10   ·   (a+b)=c → (a + b) = c"
+
+[[regla]]
+nombre   = "Relación entre dos expresiones (tras variable)"
+descripcion = "= ≠ < > ≤ ≥ ≈ con una variable de una letra a la izquierda (si va separada, no y, e, o, u, a: «20 % o < 100» es una conjunción)"
+buscar   = '(?<![[:alnum:]])([[:alpha:]])(?:([=≠<>≤≥≈])|(?<![yeouaó])(?: |~<|~s)([=≠<>≤≥≈])(?: |~<|~s))(?=[[:alnum:](\x{2212}-])'
+cambiar  = '$1~S$2$3~S'
+excluir  = ["Bibliografia"]
+ejemplo  = "p<0,05 → p < 0,05   ·   x = 2"
+
+[[regla]]
+nombre   = "Relación delante de una sola cantidad"
+descripcion = "Sin término a la izquierda, el signo va pegado a la cifra (como «≈60 %», el uso más frecuente en los Word)"
+buscar   = '(?<![[:alnum:])%~S])([<>≤≥≈])(?: |~<|~s|~S)(?=\d)'
+cambiar  = '$1'
+excluir  = ["Bibliografia"]
+ejemplo  = "diámetro < 2 mm → diámetro <2 mm   ·   (≥ 5 mm) → (≥5 mm)"
+
+[[regla]]
+nombre   = "Variable en cursiva (antes del operador)"
+descripcion = "Letra sola delante de un operador (ya con espacios de no separación)"
+buscar   = '(?<![[:alnum:]])[[:alpha:]](?=~S[=≠<>≤≥≈+×÷±\x{2212}]~S)'
+estilo   = "cursiva"
+excluir  = ["Bibliografia"]
+ejemplo  = "p < 0,05 → p en cursiva   ·   x + y = 1"
+
+[[regla]]
+nombre   = "Variable en cursiva (después del operador)"
+descripcion = "Letra sola detrás de un operador"
+buscar   = '(?<=~S[=≠<>≤≥≈+×÷±\x{2212}]~S)[[:alpha:]](?![[:alnum:]])'
+estilo   = "cursiva"
+excluir  = ["Bibliografia"]
+ejemplo  = "x + y = 1 → y en cursiva"
+
+[[regla]]
+nombre   = "Punto final del párrafo"
+descripcion = "Los párrafos de texto terminan en punto. No se toca el que acaba en «:» (presenta una lista), «;», «,», «?», «!» o «…»"
+buscar   = '(?<![.!?…])([[:alnum:]%)\]»])$'
+cambiar  = '$1.'
+solo     = ["Texto base", "Texto base - Viñeta", "Viñetas", "Ideas basicas/Texto Ideas", "Bibliografia", "Pie Figura", "Tabla/Pie tabla"]
+# Fuera: DOI o dirección web al final; el aviso «Imagen sin pie»; y «texto. (Figura 10)», que
+# acabaría en «. (Figura 10).»: la puntuación tiene que pasar antes detrás del paréntesis.
+excluir_texto = ['(?:doi|DOI|https?:|www\.)\S*$', '^Imagen sin pie$', '[.,;:]\s*\([^()]*\)$']
+ejemplo  = "Episcleritis nodular → Episcleritis nodular."
+
+[[regla]]
+nombre   = "Sin punto final en ladillos y tablas"
+descripcion = "Ladillos y párrafos de tabla sin punto final; el Pie tabla sí lo lleva. No se quita el de una abreviatura (etc., vs., aprox., et al.)"
+buscar   = '(?<!\.)\.$'
+cambiar  = ''
+solo     = ["Ladillos", "Tabla"]
+excluir  = ["Tabla/Pie tabla"]
+excluir_texto = '(?:\b(?:etc|vs|aprox|al|ej|máx|mín|pág|[A-Za-z]))\.$'
+ejemplo  = "Tratamiento. → Tratamiento"
+
+[[regla]]
+nombre   = "Ladillos seguidos sin separación"
+descripcion = "Dos ladillos seguidos: el de arriba sin espacio después y el de abajo sin espacio antes"
+tipo     = "ladillos_seguidos"
+solo     = ["Ladillos"]
+ejemplo  = "MANEJO ⟂ Tratamiento inicial"

@@ -40,7 +40,7 @@ function colocarICML(marco, ruta) {
 // Duda en una pieza de la mesa de trabajo: texto condicional y, si se pide, nota.
 function marcarDuda(d, texto, motivo, nombre, conNota) {
     var c = d.conditions.itemByName(nombre);
-    if (!c.isValid) c = d.conditions.add({ name: nombre, indicatorMethod: ConditionIndicatorMethod.USE_HIGHLIGHT, indicatorColor: UIColors.GREEN });
+    if (!c.isValid) c = d.conditions.add({ name: nombre, indicatorMethod: ConditionIndicatorMethod.USE_HIGHLIGHT, indicatorColor: UIColors.CYAN });
     try { texto.texts[0].appliedConditions = [c]; } catch (e) {}
     if (conNota) {
         try { texto.insertionPoints[0].notes.add().texts[0].contents = motivo; } catch (e) {}

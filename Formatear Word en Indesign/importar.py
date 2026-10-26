@@ -175,6 +175,22 @@ def lanzar_indesign(manifiesto):
     return (r.stdout + r.stderr).replace('\r', '\n').strip()
 
 
+def resaltar(documento, conf):
+    """Resalta las palabras de [resaltar] de la publicación (Tabla, Figura…) en un documento abierto."""
+    r = conf.get('resaltar', {})
+    if not r.get('palabras'):
+        return ''
+    jsx = os.path.join(AQUI, 'jsx', 'resaltar_palabras.jsx')
+    script = ('with timeout of 600 seconds\n'
+              'tell application id "com.adobe.InDesign" to do script (POSIX file "%s") '
+              'language javascript with arguments {"%s", "%s", "%s", "%s"}\nend timeout') % tuple(
+                  x.replace('\\', '\\\\').replace('"', '\\"')
+                  for x in (jsx, '|'.join(r['palabras']), documento, r.get('condicion', 'Risk word'),
+                            r.get('color', 'GREEN')))
+    res = subprocess.run(['osascript', '-e', script], capture_output=True, text=True)
+    return (res.stdout + res.stderr).replace('\r', '\n').strip()
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('ruta', help='carpeta del capítulo o archivo .docx')
@@ -197,6 +213,7 @@ def main():
         os.path.relpath(ruta, AQUI), m['dudas_en_texto'], len(m['figuras']), len(m['tablas']), len(m['sueltas'])))
     if not args.solo_preparar:
         print(lanzar_indesign(ruta))
+        print(resaltar(nombre + '.indd', conf))
 
 
 if __name__ == '__main__':

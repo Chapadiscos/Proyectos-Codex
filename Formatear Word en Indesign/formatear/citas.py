@@ -36,6 +36,13 @@ def numeros(texto):
     return res
 
 
+def crudo(texto):
+    """Números de una cita tal como viene, de cualquier tipo o de varias unidas:
+    '(4) (6,7,8)' → '4,6,7,8'   ·   '¹ ²' → '1,2'. Los espacios entre cifras valen como coma."""
+    t = re.sub(r'[()]', ' ', texto.translate(A_SUPER)).strip()
+    return re.sub(r'(?<=\d)\s+(?=\d)', ',', t)
+
+
 def compactar(nums, rango_minimo=3, guion='\u2013'):
     """[1,3,4,5,6,12] → '1,3-6,12'. Dos seguidos (3,4) se dejan con coma."""
     nums = sorted(set(nums))
@@ -88,6 +95,25 @@ def normalizar(trozos, n_bibliografia=0, rango_minimo=3, guion='\u2013'):
             pos = m.end()
         expandidas.append((texto[pos:], base, False, None))
 
+    # 2b. Citas seguidas, separadas solo por espacios, en una sola (también entre tipos):
+    #     «(4) (6,7,8) (12)» → (4,6–8,12)   ·   «texto¹ ²» → (1,2)
+    #     No se une una cita en superíndice pegada a una cifra o unidad (¿exponente?).
+    unidas = []
+    for pieza in expandidas:
+        if pieza[2]:
+            j = len(unidas) - 1
+            while j >= 0 and not unidas[j][2] and not unidas[j][0].strip():
+                j -= 1
+            if j >= 0 and unidas[j][2] and not (
+                    unidas[j][3] in ('superíndice', 'unicode') and j and UNIDADES.search(unidas[j - 1][0])):
+                hueco = ''.join(u[0] for u in unidas[j + 1:])
+                texto_prev, base_prev, _, tipo_prev = unidas[j]
+                del unidas[j:]
+                unidas.append((texto_prev + hueco + pieza[0], base_prev, True, tipo_prev))
+                continue
+        unidas.append(pieza)
+    expandidas = unidas
+
     # 3. Reescribir cada cita y mover la puntuación previa detrás de ella.
     salida, citas = [], []
     for k, (texto, base, es_cita, tipo) in enumerate(expandidas):
@@ -95,10 +121,7 @@ def normalizar(trozos, n_bibliografia=0, rango_minimo=3, guion='\u2013'):
             if texto:
                 salida.append(replace(base, texto=texto))
             continue
-        crudo = texto.translate(A_SUPER) if tipo == 'unicode' else texto
-        if tipo == 'paréntesis':
-            crudo = RE_PARENTESIS.match(crudo).group(1)
-        nums = numeros(crudo)
+        nums = numeros(crudo(texto))
         nuevo = '(%s)' % compactar(nums, rango_minimo, guion)
         anterior = ''.join(t.texto for t in salida)
         siguiente = next((x[0] for x in expandidas[k + 1:] if x[0]), '')
@@ -126,7 +149,20 @@ def normalizar(trozos, n_bibliografia=0, rango_minimo=3, guion='\u2013'):
                     break
             dudosa = 'iba en medio de la palabra: revisar'
             citas[-1].dudosa = dudosa
-        # Puntuación final del texto anterior → detrás de la cita.
+        # Puntuación final del texto anterior → detrás de la cita. Con espacio en medio
+        # («utilizado. (4)») también, salvo que siga en minúscula: «fases: (1) la primera…»
+        # puede ser una enumeración → se deja y se marca como duda.
+        previo = ''.join(t.texto for t in salida)
+        if previo.rstrip()[-1:] in tuple('.,;:') and previo[-1:].isspace():
+            if siguiente.lstrip()[:1].islower():
+                if not dudosa:
+                    dudosa = '«%s» delante: ¿pasa detrás o es una enumeración?' % previo.rstrip()[-1]
+                    citas[-1].dudosa = dudosa
+            else:
+                while salida and salida[-1].texto[-1:].isspace():
+                    salida[-1] = replace(salida[-1], texto=salida[-1].texto.rstrip())
+                    if not salida[-1].texto:
+                        salida.pop()
         puntuacion = ''
         while salida and salida[-1].texto[-1:] in tuple('.,;:'):
             puntuacion = salida[-1].texto[-1] + puntuacion
@@ -135,7 +171,8 @@ def normalizar(trozos, n_bibliografia=0, rango_minimo=3, guion='\u2013'):
                 salida.pop()
         if salida and salida[-1].texto and not salida[-1].texto[-1].isspace():
             nuevo = ' ' + nuevo
-        salida.append(replace(base, texto=nuevo, pos='', nota=0, duda=('Cita: ' + dudosa) if dudosa else ''))
+        # La cita va en redonda, sin estilo de carácter, aunque en el Word fuera en negrita o cursiva.
+        salida.append(replace(base, texto=nuevo, pos='', nota=0, b=False, i=False, u=False, duda=('Cita: ' + dudosa) if dudosa else ''))
         if puntuacion:
             salida.append(replace(base, texto=puntuacion, pos='', nota=0))
     return [t for t in salida if t.texto], citas

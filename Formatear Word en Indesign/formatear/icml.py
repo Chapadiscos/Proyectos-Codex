@@ -20,7 +20,7 @@ CONDICIONES = [            # (nombre, color de InDesign, palabras del motivo)
     ('Duda-caracter', 'Red', ('carácter extraño',)),
     ('Duda-cita', 'LightBlue', ('cita',)),
     ('Duda-salto', 'Orange', ('salto',)),
-    ('Duda-figura', 'Green', ('figura', 'imagen', 'tabla', 'archivo')),
+    ('Duda-figura', 'Cyan', ('figura', 'imagen', 'tabla', 'archivo')),
     ('Duda-estilo', 'Yellow', ()),        # el resto: ¿ladillo, viñeta o texto?
 ]
 
@@ -142,6 +142,7 @@ class Generador:
             trozos = e.trozos
             if e.papel not in SIN_CITAS:
                 trozos, _ = mod_citas.normalizar(trozos, n_bib, cc.get('rango_minimo', 3), cc.get('guion', '–'))
+            trozos = referencias_sin_formato(puntuacion_tras_referencias(trozos))
             attrs = ''
             if e.papel == 'vineta':
                 estilo = self.parrafo['vineta%d' % max(e.nivel, 1)]
@@ -303,10 +304,12 @@ class Generador:
                     quoteattr('ParagraphStyleGroup/' + grupo), quoteattr(grupo), estilos))
             else:
                 defs_p.append(estilos)
+        # Solo las condiciones que lleva algún texto: las demás saldrían vacías en el panel.
         defs_cond = ''.join(
             '<Condition Self=%s Name=%s IndicatorColor="%s" IndicatorMethod="UseHighlight" '
             'UnderlineIndicatorAppearance="Wavy" Visible="true"/>' % (
-                quoteattr(ref_condicion(n)), quoteattr(n), color) for n, color, _ in CONDICIONES)
+                quoteattr(ref_condicion(n)), quoteattr(n), color) for n, color, _ in CONDICIONES
+            if quoteattr(ref_condicion(n)) in cuerpo)
         defs_c = ''.join('<CharacterStyle Self=%s Name=%s/>' % (
             quoteattr(ref_estilo('CharacterStyle', n)), quoteattr(n)) for n in sorted(self.usados_c))
         return ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
@@ -333,6 +336,63 @@ def _caracter_raro(c):
         return True
     nombre = unicodedata.name(c, '')
     return any(nombre.startswith(a) for a in ALFABETOS_RAROS)
+
+
+# Llamadas a tabla o figura entre paréntesis: «(Tabla 4)», «(ver Figuras 5A y 5B)», «(Fig. 2)».
+RE_REFERENCIA = re.compile(r'\((?:[^()]*?\s)?(?:Tablas?|Figuras?|Figs?\.)\s*\d[^()]*\)')
+
+
+def puntuacion_tras_referencias(trozos):
+    """«inflamatorias. (Figura 10)» → «inflamatorias (Figura 10).», como con las citas. Si detrás
+    sigue minúscula no se mueve y queda como duda."""
+    from dataclasses import replace
+    texto = ''.join(t.texto for t in trozos)
+    casos = [m for m in re.finditer(r'([.,;:])(\s+)(' + RE_REFERENCIA.pattern + ')', texto)]
+    if not casos:
+        return trozos
+    # Carácter a carácter, cada uno con su trozo; luego se vuelven a juntar.
+    chars = [(c, t) for t in trozos for c in t.texto]
+    for m in reversed(casos):
+        p, ref = m.start(1), m.start(3)
+        signo = chars[p]
+        if texto[m.end():].lstrip()[:1].islower():
+            con_duda = {}
+            for k in range(ref, m.end()):
+                t = chars[k][1]
+                if id(t) not in con_duda:
+                    con_duda[id(t)] = replace(t, duda=t.duda or
+                                              'Llamada a figura o tabla con «%s» delante: ¿pasa detrás?' % signo[0])
+                chars[k] = (chars[k][0], con_duda[id(t)])
+            continue
+        # El espacio nuevo toma el formato del signo, que venía del texto de delante.
+        chars[p:m.end()] = [(' ', signo[1])] + chars[ref:m.end()] + [signo]
+    res = []
+    for c, t in chars:
+        if res and res[-1][1] is t:
+            res[-1][0].append(c)
+        else:
+            res.append(([c], t))
+    return [replace(t, texto=''.join(cs)) for cs, t in res]
+
+
+def referencias_sin_formato(trozos):
+    """Las llamadas a tabla o figura entre paréntesis van en redonda, sin estilo de carácter:
+    se les quita negrita, cursiva, subrayado y superíndice aunque los traigan del Word."""
+    from dataclasses import replace
+    texto = ''.join(t.texto for t in trozos)
+    zonas = [m.span() for m in RE_REFERENCIA.finditer(texto)]
+    if not zonas:
+        return trozos
+    res, ini = [], 0
+    for t in trozos:
+        fin = ini + len(t.texto)
+        cortes = sorted({ini, fin} | {x for z in zonas for x in z if ini < x < fin})
+        for a, b in zip(cortes, cortes[1:]):
+            dentro = any(z0 <= a and b <= z1 for z0, z1 in zonas)
+            res.append(replace(t, texto=t.texto[a - ini:b - ini], b=False, i=False, u=False, pos='')
+                       if dentro else replace(t, texto=t.texto[a - ini:b - ini]))
+        ini = fin
+    return res
 
 
 def _limpios(trozos):
