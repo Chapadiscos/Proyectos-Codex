@@ -247,7 +247,7 @@ function importar(m) {
             acomodar(grupo, pagina, ancho);
         }
         // Tabla (o pie suelto): marco de texto que crece hasta que no sobre texto.
-        function colocarTabla(pagina, tablaICML, avisos, anchoMarco) {
+        function colocarTabla(pagina, tablaICML, avisos, anchoMarco, conTitulo) {
             var ancho = anchoMarco || m.tabla.ancho, h = provisional(pagina);
             var tf = pagina.parent.textFrames.add({ geometricBounds: [h.y, h.x, h.y + 20, h.x + ancho] });
             colocarICML(tf, tablaICML);
@@ -258,8 +258,13 @@ function importar(m) {
                 try { tbl.rows[0].rowType = RowTypes.HEADER_ROW; } catch (e) {}
                 for (var c = 0; c < tbl.cells.length; c++) {
                     var celda = tbl.cells[c];
-                    var tipo = celda.parentRow.rowType;
-                    var est = tipo == RowTypes.HEADER_ROW ? m.tabla.celda_cabecera : tipo == RowTypes.FOOTER_ROW ? m.tabla.celda_pie : m.tabla.celda;
+                    // Sin ternarios encadenados: ExtendScript evalúa mal «a ? x : b ? y : z» (las filas de
+                    // cabecera salían con el estilo del pie).
+                    var tipo = celda.parentRow.rowType, est = m.tabla.celda;
+                    if (tipo == RowTypes.HEADER_ROW) est = m.tabla.celda_cabecera;
+                    else if (tipo == RowTypes.FOOTER_ROW) est = m.tabla.celda_pie;
+                    // El título de la tabla, en la primera fila («Encabezado»).
+                    if (conTitulo && m.tabla.celda_titulo && celda.parentRow.index == 0) est = m.tabla.celda_titulo;
                     try { celda.appliedCellStyle = d.cellStyles.itemByName(est); } catch (e) {}
                 }
             }
@@ -289,7 +294,7 @@ function importar(m) {
         for (var i = 0; i < m.tablas.length; i++) {
             var tb = m.tablas[i];
             var pag = tb.buscar ? paginaDeCita("(?i)\\btabla\\s+" + tb.buscar + "(?!\\d)") : d.pages[d.pages.length - 1];
-            colocarTabla(pag, tb.icml, tb.avisos.slice(0));
+            colocarTabla(pag, tb.icml, tb.avisos.slice(0), 0, tb.titulo);
         }
         for (var i = 0; i < m.sueltas.length; i++) {
             var su = m.sueltas[i], pag = d.pages[d.pages.length - 1];

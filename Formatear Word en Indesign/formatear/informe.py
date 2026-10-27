@@ -12,6 +12,9 @@ NOMBRES = {
     'bibliografia': 'Bibliografía', 'titulo_tabla': 'Título tabla', 'tabla': 'Tabla', 'pie_tabla': 'Pie tabla',
     'pie_figura': 'Pie figura', 'imagen': 'Imagen', 'rotulo_material': 'Rótulo (se omite)',
     'etiqueta_imagen': 'Etiqueta (se omite)',
+    'titulo': 'Título', 'titulo_ing': 'Título en inglés', 'centro': 'Centro', 'comunicacion': 'Comunicación',
+    'titulo_resumen': 'Título resumen', 'resumen': 'Resumen', 'abstract': 'Abstract',
+    'palabras_clave': 'Palabras clave', 'primer_texto': 'Primer párrafo',
 }
 COLORES = {
     'capitulo': '#7b1fa2', 'autores': '#7b1fa2', 'ladillo1': '#c62828', 'ladillo2': '#ef6c00',
@@ -19,13 +22,16 @@ COLORES = {
     'titulo_ideas': '#00838f', 'texto_ideas': '#00838f', 'titulo_bibliografia': '#1565c0',
     'bibliografia': '#1565c0', 'titulo_tabla': '#6d4c41', 'tabla': '#6d4c41', 'pie_tabla': '#6d4c41',
     'pie_figura': '#ad1457', 'imagen': '#ad1457', 'rotulo_material': '#bdbdbd', 'etiqueta_imagen': '#bdbdbd',
+    'titulo': '#7b1fa2', 'titulo_ing': '#7b1fa2', 'centro': '#7b1fa2', 'comunicacion': '#7b1fa2',
+    'titulo_resumen': '#00838f', 'resumen': '#00838f', 'abstract': '#00838f', 'palabras_clave': '#00838f',
+    'primer_texto': '#9e9e9e',
 }
 OMITIDOS = ('rotulo_material', 'etiqueta_imagen')
 
 
 def estilo_de(e, conf):
     p = conf['parrafo']
-    if e.papel == 'capitulo':
+    if e.papel in ('capitulo', 'titulo'):
         return p['capitulo_titulo']
     if e.papel == 'vineta':
         return p['vineta%d' % max(e.nivel, 1)]

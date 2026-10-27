@@ -1,9 +1,11 @@
 // Piezas comunes de las reglas ortotipográficas (publicaciones/ortotipografia.toml): las usan
 // ortotipografia.jsx (simular / aplicar todo) y revisar_correcciones.jsx (una a una).
 
+// «Grupo/Subgrupo/Estilo»; la barra del propio nombre va con «\» («Ladillo Resumen\/Abstract»).
 function rutaEstilo(est) {
-    var r = est.name, p = est.parent;
-    while (p && p.constructor && p.constructor.name == "ParagraphStyleGroup") { r = p.name + "/" + r; p = p.parent; }
+    function n(x) { return x.name.replace(/\//g, "\\/"); }
+    var r = n(est), p = est.parent;
+    while (p && p.constructor && p.constructor.name == "ParagraphStyleGroup") { r = n(p) + "/" + r; p = p.parent; }
     return r;
 }
 

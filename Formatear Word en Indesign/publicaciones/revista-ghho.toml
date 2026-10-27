@@ -1,0 +1,117 @@
+# Configuración de «Revista GHHO», creada el 2026-10-27 a partir de su último maquetado:
+#   /Volumes/MACLINE SERVER/GRUPO HISTORIA Y HUMANIDADES/REVISTA/REVISTA 7/Revista GHHO N7.indd
+# Revisa las líneas con «⚠». Para rehacer la maqueta desde un número más reciente:
+#   python3 nueva_publicacion.py <último .indd> --nombre "Revista GHHO"
+# Los estilos dentro de grupos se escriben «Grupo/Estilo», como en el panel de InDesign.
+
+maqueta   = "publicaciones/maquetas/Revista GHHO.indd"
+maquetado = "/Volumes/MACLINE SERVER/GRUPO HISTORIA Y HUMANIDADES/REVISTA/REVISTA 7/Revista GHHO N7.indd"
+
+[parrafo]
+# Galerada: la cabecera del artículo (título, autores, resumen…) va al principio del texto.
+capitulo_titulo     = "Portadilla/Titulo ESP"
+autores             = "Portadilla/Autores"
+ladillo1            = "Ladillos/Ladillo 1"
+ladillo2            = "Ladillos/Ladillo 2"
+ladillo3            = "Ladillos/Ladillo 2"   # no hay estilo propio: el de ladillo2
+texto               = "Texto base"
+texto_vineta        = "Texto base"   # no hay estilo propio: el de texto
+vineta1             = "Viñeta 1 (•)"
+vineta2             = "Viñeta 1 (•)"   # no hay estilo propio: el de vineta1
+vineta3             = "Viñeta 1 (•)"   # no hay estilo propio: el de vineta2
+vineta4             = "Viñeta 1 (•)"   # no hay estilo propio: el de vineta3
+# Las listas numeradas de Word van con el estilo de viñeta de su nivel y numeración local.
+titulo_ideas        = "Ladillos/Ladillo 2"   # no hay estilo propio: el de ladillo2
+texto_ideas         = "Texto base"   # no hay estilo propio: el de texto
+titulo_bibliografia = "Ladillos/Ladillo 1"
+bibliografia        = "Bibliografia"
+titulo_tabla        = "Pie figura"   # no hay estilo propio: el de pie_figura
+pie_tabla           = "Texto base"   # no hay estilo propio: el de texto
+pie_figura          = "Pie figura"
+celda_cabecera      = "Texto base"   # no hay estilo propio: el de texto
+celda               = "Texto base"   # no hay estilo propio: el de texto
+# Cabecera del artículo (título en inglés, centro, resumen, abstract…).
+titulo_ing          = "Portadilla/Titulo ING"   # título en inglés
+centro              = "Portadilla/Centro"   # centro de trabajo de los autores y autor para la correspondencia
+comunicacion        = "Portadilla/Resumen/Comunicacion presentadaa"   # «El presente trabajo se corresponde a una comunicación…»
+titulo_resumen      = "Portadilla/Resumen/Ladillo Resumen\\/Abstract"   # «RESUMEN» / «ABSTRACT»
+resumen             = "Portadilla/Resumen/Resumen ESP"
+abstract            = "Portadilla/Resumen/Abstract ING"
+palabras_clave      = "Portadilla/Resumen/Palabras clave\\/Keywords"   # «Palabras clave: …» / «Keywords: …»
+primer_texto        = "Portadilla/Resumen/1ª Texto base (despues resumen)"   # primer párrafo del texto, detrás del resumen
+
+[caracter]
+negrita         = "Bold"
+cursiva         = "Italic"
+negrita_cursiva = "Bold italic"
+superindice     = "Super"
+no_partir       = ""   # no hay estilo en la maqueta: no se aplica
+etiqueta_figura = "Figura"   # «Figura 1.» al principio del pie
+simbolos        = "→←↔⇒"       # caracteres que la fuente del texto no tiene
+estilo_simbolos = ""   # no hay estilo en la maqueta: no se aplica
+simbolos_superindice = "™®℠℗"   # al importar van con el estilo de superíndice (Super); © no, va a tamaño normal
+
+# Estilos de párrafo cuya fuente no es la del texto: sus equivalentes de negrita y cursiva
+# (por grupo de estilos o nombre de estilo sin grupo). "" = no aplicar ese formato.
+[caracter_por_grupo]
+# Los grupos de estilos con otra fuente que necesiten su negrita y cursiva propias.
+
+[tabla]
+estilo         = ""   # no hay estilo en la maqueta: no se aplica
+celda_titulo   = ""   # no hay estilo en la maqueta: no se aplica
+celda_cabecera = ""   # no hay estilo en la maqueta: no se aplica
+celda          = ""   # no hay estilo en la maqueta: no se aplica
+celda_pie      = ""   # no hay estilo en la maqueta: no se aplica
+ancho          = 150      # mm: el ancho de la caja de texto
+
+[figuras]
+estilo_objeto = ""   # no hay estilo de objeto: no se aplica
+ancho         = 150       # mm: el ancho de una columna
+filete        = 0.5       # pt: filete blanco entre las imágenes de una figura compuesta
+
+[resaltar]
+# Al importar se resaltan estas palabras con la condición indicada, para ver dónde se cita cada
+# figura, tabla, algoritmo… al colocarlos. Palabra entera y sin distinguir mayúsculas.
+# Para repetirlo en los documentos abiertos tras cambiar la lista: python3 resaltar.py
+condicion = "Risk word"           # la maqueta ya la trae; si no, se crea con este color
+color     = "GREEN"               # UIColors de InDesign
+palabras  = [
+    "Tabla",
+    "Figura",
+    "Fig.",
+    "Figs.",
+    "Vídeo",
+    "Video",
+    "Tablas",
+    "Figuras",
+    "Figure",
+    "Table",
+    "Algoritmo",
+    "Cuadro",
+    "Grafico",
+    "Gráfico",
+    "Graficos",
+    "gráficos",
+    "Tables",
+    "Cuadros",
+    "Imagen",
+    "Imágenes"
+]
+
+[dudas]
+notas = false     # además del texto condicional, una nota de InDesign con el motivo
+
+[citas]
+rango_minimo = 3      # 3,4,5 → 3-5 ; 3,4 → 3,4
+guion        = "–"    # raya corta (norma para todas las publicaciones)
+
+[reglas]
+# Negritas cortas que en Word llevan viñeta: "auto" decide por capítulo (ladillo si
+# detrás suele ir texto corrido, viñeta en negrita si detrás suelen ir viñetas);
+# "ladillo" o "vineta" lo fuerzan para toda la publicación.
+negritas_con_vineta = "auto"
+# Artículos de revista: al principio, título, título en inglés, autores, centro, resumen,
+# abstract y palabras clave, con los estilos de la cabecera de [parrafo].
+cabecera = "articulo"
+# Ladillos escritos en mayúsculas sin negrita («INTRODUCCIÓN»).
+ladillos_mayusculas = true

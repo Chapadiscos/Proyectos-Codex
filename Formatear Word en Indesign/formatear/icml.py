@@ -32,12 +32,24 @@ def condicion(motivo):
 
 # Lo que no va en el texto corrido: se coloca en la mesa de trabajo o se omite.
 FUERA_DEL_TEXTO = ('pie_figura', 'imagen', 'rotulo_material', 'etiqueta_imagen', 'titulo_tabla', 'tabla', 'pie_tabla')
-SIN_CITAS = ('bibliografia', 'titulo_tabla', 'pie_figura', 'capitulo', 'autores')
+SIN_CITAS = ('bibliografia', 'titulo_tabla', 'pie_figura', 'capitulo', 'autores',
+             'titulo', 'titulo_ing', 'centro', 'comunicacion', 'titulo_resumen', 'palabras_clave')
+# Papel → clave de [parrafo] cuando no se llaman igual.
+ESTILO_DE = {'titulo': 'capitulo_titulo'}
+# En ladillos y títulos la negrita la pone el estilo.
+SIN_NEGRITA = ('ladillo1', 'ladillo2', 'ladillo3', 'titulo_bibliografia', 'titulo_ideas', 'autores',
+               'titulo', 'titulo_ing', 'titulo_resumen', 'centro', 'comunicacion')
+
+
+def partes_estilo(nombre):
+    """'Grupo/Subgrupo/Estilo' → ['Grupo', 'Subgrupo', 'Estilo']. Una barra del propio nombre
+    va escrita «\\/» («Portadilla/Resumen/Ladillo Resumen\\/Abstract»)."""
+    return [p.replace('\0', '/') for p in nombre.replace('\\/', '\0').split('/')]
 
 
 def ref_estilo(tipo, nombre):
     """'Ladillos/Ladillo 1' → 'ParagraphStyle/Ladillos%3aLadillo 1'"""
-    return '%s/%s' % (tipo, nombre.replace('/', '%3a'))
+    return '%s/%s' % (tipo, '%3a'.join(partes_estilo(nombre)))
 
 
 def ref_condicion(nombre):
@@ -62,7 +74,7 @@ class Generador:
         # Los estilos de párrafo con otra fuente (Avenir, BC Civitas) tienen sus propios
         # estilos de negrita y cursiva; un valor vacío deja ese formato sin aplicar.
         car = dict(self.caracter)
-        grupo = self.estilo_actual.rpartition('/')[0] or self.estilo_actual
+        grupo = partes_estilo(self.estilo_actual)[0]
         car.update(self.conf.get('caracter_por_grupo', {}).get(grupo, {}))
         if t.b and t.i:
             return car.get('negrita_cursiva') or car.get('negrita') or None
@@ -175,9 +187,8 @@ class Generador:
                 estilo = self.parrafo['capitulo_titulo']
                 trozos = [replace(e.trozos[0], texto='%s. %s' % (e.datos['numero'], e.datos['titulo']), b=False, i=False)]
             else:
-                estilo = self.parrafo[e.papel]
-            # En ladillos y títulos la negrita la pone el estilo.
-            quitar = e.papel in ('ladillo1', 'ladillo2', 'ladillo3', 'titulo_bibliografia', 'titulo_ideas', 'autores')
+                estilo = self.parrafo[ESTILO_DE.get(e.papel, e.papel)]
+            quitar = e.papel in SIN_NEGRITA
             partes.append(self.parrafo_xml(estilo, trozos, e.dudas, attrs, ultimo=k == len(visibles) - 1,
                                            quitar_negrita=quitar))
             anterior = e
@@ -218,17 +229,17 @@ class Generador:
         return self.documento(xml)
 
     def tabla(self, titulo, tabla, pies, ancho_mm):
-        """Título, tabla y notas al pie de la tabla. Celdas combinadas de Word respetadas."""
+        """Tabla con su título y sus notas al pie. Celdas combinadas de Word respetadas."""
         t = self.conf.get('tabla', {})
-        partes = []
-        if titulo is not None:
-            partes.append(self.parrafo_xml(self.parrafo['titulo_tabla'], titulo.trozos, titulo.dudas,
-                                           quitar_negrita=True))
-        partes.append(self.tabla_xml(tabla, ancho_mm, t, pies))
-        return self.documento(''.join(partes))
+        if titulo is not None and not t.get('celda_titulo'):
+            # Sin estilo de celda para el título: va encima de la tabla, como párrafo.
+            return self.documento(self.parrafo_xml(self.parrafo['titulo_tabla'], titulo.trozos, titulo.dudas,
+                                                   quitar_negrita=True) + self.tabla_xml(tabla, ancho_mm, t, pies))
+        return self.documento(self.tabla_xml(tabla, ancho_mm, t, pies, titulo))
 
-    def tabla_xml(self, tabla, ancho_mm, t, pies=()):
-        """La tabla; las notas que van debajo en el Word, en una fila de pie dentro de ella."""
+    def tabla_xml(self, tabla, ancho_mm, t, pies=(), titulo=None):
+        """La tabla; el título, en una primera fila de una sola celda (estilo «celda_titulo»), y
+        las notas que van debajo en el Word, en una fila de pie dentro de ella."""
         ident = 'tb%d' % tabla.indice
         ncol = len(tabla.anchos) or max(sum(c[0] for c in fila) for fila in tabla.combinadas)
         total = sum(tabla.anchos) or ncol
@@ -257,15 +268,22 @@ class Generador:
                 col += span
         nfilas = len(tabla.filas)
         npie = 1 if pies else 0
+        ntit = 1 if titulo is not None else 0     # el título, fila 0; la tabla de Word, debajo
         est_tabla = t.get('estilo', '')
-        xml = ['<CharacterStyleRange AppliedCharacterStyle="%s"><Table Self="%s" HeaderRowCount="1" FooterRowCount="%d" '
+        xml = ['<CharacterStyleRange AppliedCharacterStyle="%s"><Table Self="%s" HeaderRowCount="%d" FooterRowCount="%d" '
                'BodyRowCount="%d" ColumnCount="%d"%s TableDirection="LeftToRightDirection">' % (
-                   SIN_ESTILO, ident, npie, max(nfilas - 1, 0), ncol,
+                   SIN_ESTILO, ident, 1 + ntit, npie, max(nfilas - 1, 0), ncol,
                    (' AppliedTableStyle=%s' % quoteattr(ref_estilo('TableStyle', est_tabla))) if est_tabla else '')]
-        for r in range(nfilas + npie):
+        for r in range(nfilas + npie + ntit):
             xml.append('<Row Self="%sRow%d" Name="%d" AutoGrow="true"/>' % (ident, r, r))
         for c in range(ncol):
             xml.append('<Column Self="%sColumn%d" Name="%d" SingleColumnWidth="%.3f"/>' % (ident, c, c, anchos_pt[c]))
+        if ntit:
+            est_celda = t['celda_titulo']
+            contenido = self.parrafo_xml(self.parrafo['titulo_tabla'], titulo.trozos, titulo.dudas, ultimo=True,
+                                         quitar_negrita=True)
+            xml.append('<Cell Self="%si0i0" Name="0:0" RowSpan="1" ColumnSpan="%d" AppliedCellStyle=%s>%s</Cell>' % (
+                ident, ncol, quoteattr(ref_estilo('CellStyle', est_celda)), contenido))
         for r, col, rowspan, span, parrafos in celdas:
             cab = r == 0
             est_celda = t.get('celda_cabecera' if cab else 'celda', '')
@@ -277,7 +295,7 @@ class Generador:
                 self.parrafo_xml(est_par, _limpios(p.trozos), ultimo=k == len(ps) - 1, quitar_negrita=cab)
                 for k, p in enumerate(ps))
             xml.append('<Cell Self="%si%di%d" Name="%d:%d" RowSpan="%d" ColumnSpan="%d"%s>%s</Cell>' % (
-                ident, col, r, col, r, rowspan, span,
+                ident, col, r + ntit, col, r + ntit, rowspan, span,
                 (' AppliedCellStyle=%s' % quoteattr(ref_estilo('CellStyle', est_celda))) if est_celda else '',
                 contenido))
         if pies:
@@ -285,7 +303,7 @@ class Generador:
             contenido = ''.join(self.parrafo_xml(self.parrafo['pie_tabla'], _limpios(p.trozos), p.dudas,
                                                  ultimo=k == len(pies) - 1) for k, p in enumerate(pies))
             xml.append('<Cell Self="%si0i%d" Name="0:%d" RowSpan="1" ColumnSpan="%d"%s>%s</Cell>' % (
-                ident, nfilas, nfilas, ncol,
+                ident, nfilas + ntit, nfilas + ntit, ncol,
                 (' AppliedCellStyle=%s' % quoteattr(ref_estilo('CellStyle', est_celda))) if est_celda else '',
                 contenido))
         xml.append('</Table></CharacterStyleRange>')
@@ -307,20 +325,26 @@ class Generador:
 
     # ---- envoltorio ---------------------------------------------------------
     def documento(self, cuerpo):
-        grupos = {}
+        # Árbol de grupos (pueden ir unos dentro de otros) con los estilos usados.
+        arbol = {}
         for nombre in sorted(self.usados_p):
-            grupo, _, hoja = nombre.rpartition('/')
-            grupos.setdefault(grupo, []).append(nombre)
-        defs_p = []
-        for grupo, nombres in grupos.items():
-            estilos = ''.join('<ParagraphStyle Self=%s Name=%s/>' % (
-                quoteattr(ref_estilo('ParagraphStyle', n)), quoteattr(n.replace('/', ':'))) for n in nombres)
-            if grupo:
-                # Solo un nivel de grupo, como en la maqueta.
-                defs_p.append('<ParagraphStyleGroup Self=%s Name=%s>%s</ParagraphStyleGroup>' % (
-                    quoteattr('ParagraphStyleGroup/' + grupo), quoteattr(grupo), estilos))
-            else:
-                defs_p.append(estilos)
+            nodo, ps = arbol, partes_estilo(nombre)
+            for g in ps[:-1]:
+                nodo = nodo.setdefault(g, {})
+            nodo[(ps[-1],)] = nombre
+
+        def defs(nodo, camino):
+            res = []
+            for clave, v in nodo.items():
+                if isinstance(clave, tuple):
+                    res.append('<ParagraphStyle Self=%s Name=%s/>' % (
+                        quoteattr(ref_estilo('ParagraphStyle', v)), quoteattr(':'.join(partes_estilo(v)))))
+                else:
+                    res.append('<ParagraphStyleGroup Self=%s Name=%s>%s</ParagraphStyleGroup>' % (
+                        quoteattr('ParagraphStyleGroup/' + '%3a'.join(camino + [clave])), quoteattr(clave),
+                        ''.join(defs(v, camino + [clave]))))
+            return res
+        defs_p = defs(arbol, [])
         # Solo las condiciones que lleva algún texto: las demás saldrían vacías en el panel.
         defs_cond = ''.join(
             '<Condition Self=%s Name=%s IndicatorColor="%s" IndicatorMethod="UseHighlight" '

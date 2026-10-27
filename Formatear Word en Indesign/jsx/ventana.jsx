@@ -103,6 +103,47 @@
     w.alignChildren = ["fill", "top"];
     w.spacing = 8;
 
+    // ---- publicación: publicaciones/*.toml (menos las reglas) --------------------------------
+    var PREFS = File(Folder.userData.fsName + "/formatear_word_publicacion.txt");
+    function publicaciones() {
+        var fs = Folder(RAIZ + "/publicaciones").getFiles("*.toml"), res = [];
+        for (var i = 0; i < fs.length; i++) {
+            if (/^ortotipografia\.toml$/.test(decodeURI(fs[i].name))) continue;
+            var cab = leer(fs[i]).substr(0, 300), m = cab.match(/Configuraci\u00f3n de \u00ab([^\u00bb]+)\u00bb/);
+            var nombre = m ? m[1] : (/^maqueta-base/.test(decodeURI(fs[i].name)) ? "Ponencias (maqueta base)" : decodeURI(fs[i].name));
+            res.push({ nombre: nombre, ruta: fs[i].fsName });
+        }
+        res.sort(function (a, b) { return a.nombre < b.nombre ? -1 : 1; });
+        return res;
+    }
+    function rellenarPublicaciones(elegir) {
+        F.pubs = publicaciones();
+        publicacion.removeAll();
+        var sel = 0;
+        if (!elegir) { try { PREFS.open("r"); elegir = PREFS.read(); PREFS.close(); } catch (e) {} }
+        for (var i = 0; i < F.pubs.length; i++) {
+            publicacion.add("item", F.pubs[i].nombre);
+            if (F.pubs[i].ruta == elegir || (!elegir && /maqueta-base/.test(F.pubs[i].ruta))) sel = i;
+        }
+        publicacion.selection = sel;
+    }
+    function rutaPublicacion() { return F.pubs[publicacion.selection.index].ruta; }
+
+    var gPub = w.add("group");
+    gPub.add("statictext", undefined, "Publicación:");
+    var publicacion = gPub.add("dropdownlist", undefined, []);
+    publicacion.helpTip = "Estilos y maqueta con los que se importa y se corrige (publicaciones/*.toml)";
+    var bNueva = gPub.add("button", undefined, "Nueva publicación…");
+    bNueva.helpTip = "Elige el último InDesign maquetado de la publicación: se saca de él la maqueta y la " +
+                     "configuración de estilos (revisa luego las líneas con ⚠ de su .toml)";
+    publicacion.onChange = function () {
+        if (!publicacion.selection) return;
+        $.global.formatearWordPublicacion = rutaPublicacion();
+        try { PREFS.open("w"); PREFS.write(rutaPublicacion()); PREFS.close(); } catch (e) {}
+    };
+    rellenarPublicaciones();
+    publicacion.onChange();
+
     var gAmb = w.add("group");
     gAmb.add("statictext", undefined, "Trabajar en:");
     var ambito = gAmb.add("dropdownlist", undefined, ["Documento activo", "Todos los capítulos abiertos"]);
@@ -113,8 +154,9 @@
     pImp.alignChildren = ["fill", "top"];
     var gImp = pImp.add("group");
     var bImportar = gImp.add("button", undefined, "Importar Word…");
-    bImportar.helpTip = "Elige la carpeta del capítulo (con su .docx y sus figuras), monta la galerada en la maqueta base " +
-                        "y resalta Tabla, Figura, Algoritmo… («Risk word»)";
+    bImportar.helpTip = "Elige el Word del capítulo (o varios, si las tablas o las figuras vienen en otro Word; con Cmd), " +
+                        "monta la galerada en la maqueta de la publicación y resalta Tabla, Figura, Algoritmo… («Risk word»). " +
+                        "Las figuras se buscan en la carpeta de los Word, que da nombre al capítulo";
     var bMarcas = gImp.add("button", undefined, "Recorrer marcas…");
     bMarcas.helpTip = "Recorre en orden el texto condicional del documento activo (Duda…, Revisar…) " +
                       "con el motivo de cada marca";
@@ -154,36 +196,63 @@
     salida.alignment = ["fill", "fill"];
 
     function botones(libres) {
-        bImportar.enabled = bSimular.enabled = bAplicar.enabled = bDudas.enabled =
+        bImportar.enabled = bNueva.enabled = bSimular.enabled = bAplicar.enabled = bDudas.enabled =
             bSimCierre.enabled = bCierre.enabled = libres;
         bDetener.enabled = !libres;
     }
 
     // ---- acciones ----------------------------------------------------------------------------
+    // Uno o varios Word (con Cmd): el de texto y, si vienen aparte, los de tablas y figuras.
     bImportar.onClick = function () {
-        var inicio = Folder(RAIZ + "/Documentos Word");
-        var carpeta = (inicio.exists ? inicio : Folder(RAIZ)).selectDlg("Carpeta del capítulo (con su .docx)");
-        if (!carpeta) return;
-        var abierto = app.documents.itemByName(decodeURI(carpeta.name) + ".indd");
+        var inicio = F.ultimaCarpeta && F.ultimaCarpeta.exists ? F.ultimaCarpeta : Folder(RAIZ + "/Documentos Word");
+        if (!inicio.exists) inicio = Folder(RAIZ);
+        var elegidos = File(inicio.fsName + "/ ").openDlg("Elige el Word del capítulo (varios con Cmd si las tablas o figuras vienen aparte). Las imágenes no hace falta elegirlas: se cogen de la misma carpeta",
+            function (f) { return f instanceof Folder || /\.docx?$/i.test(f.name); }, true);
+        if (!elegidos) return;
+        if (!(elegidos instanceof Array)) elegidos = [elegidos];
+        var carpeta = elegidos[0].parent, rutas = [];
+        for (var i = 0; i < elegidos.length; i++) {
+            if (elegidos[i].parent.fsName != carpeta.fsName) { alert("Los Word de un capítulo tienen que estar en la misma carpeta."); return; }
+            if (/^~\$/.test(decodeURI(elegidos[i].name))) continue;      // archivo temporal de Word abierto
+            rutas.push(elegidos[i].fsName);
+        }
+        if (!rutas.length) return;
+        F.ultimaCarpeta = carpeta.parent;
+        var nombre = decodeURI(carpeta.name), abierto = app.documents.itemByName(nombre + ".indd");
         if (abierto.isValid) { alert("«" + abierto.name + "» está abierto: ciérralo antes de volver a importarlo."); return; }
-        lanzar("Importando «" + decodeURI(carpeta.name) + "»", "importar.py", [carpeta.fsName]);
+        lanzar("Importando «" + nombre + "»" + (rutas.length > 1 ? " (" + rutas.length + " Word)" : ""), "importar.py",
+               rutas.concat(["--publicacion", rutaPublicacion()]));
+    };
+    bNueva.onClick = function () {
+        var f = File.openDialog("Elige el último InDesign maquetado de la publicación (no se modifica: se trabaja con una copia)",
+            function (f) { return f instanceof Folder || /\.indd$/i.test(f.name); }, false);
+        if (!f) return;
+        var nombre = prompt("Nombre de la publicación:", decodeURI(f.name).replace(/\.indd$/i, "").replace(/\s*N\.?\s*\d+$/i, ""));
+        if (!nombre) return;
+        F.alTerminar = function () {
+            var slug = nombre.toLowerCase().replace(/[\u00e1\u00e0]/g, "a").replace(/[\u00e9\u00e8]/g, "e").replace(/[\u00ed]/g, "i")
+                .replace(/[\u00f3]/g, "o").replace(/[\u00fa\u00fc]/g, "u").replace(/\u00f1/g, "n").replace(/[^0-9a-z]+/g, "-").replace(/^-|-$/g, "");
+            rellenarPublicaciones(File(RAIZ + "/publicaciones/" + slug + ".toml").fsName);
+            publicacion.onChange();
+        };
+        lanzar("Creando la publicación «" + nombre + "»", "nueva_publicacion.py", [f.fsName, "--nombre", nombre]);
     };
     bSimular.onClick = function () {
         var a = argsDocumento();
         if (!a) return;
         if (ambito.selection.index == 0) $.evalFile(File(RAIZ + "/jsx/revisar_correcciones.jsx"));    // una a una
-        else lanzar("Simulando correcciones en " + nombreAmbito(), "ortotipografia.py", a);
+        else lanzar("Simulando correcciones en " + nombreAmbito(), "ortotipografia.py", a.concat(["--maqueta", rutaPublicacion()]));
     };
     bAplicar.onClick = function () {
         var a = argsDocumento();
         if (!a || !confirm("¿Aplicar las correcciones seguras en " + nombreAmbito() + "?\nCada documento se deshace con un Cmd+Z.")) return;
-        lanzar("Aplicando correcciones en " + nombreAmbito(), "ortotipografia.py", a.concat(["--aplicar"]));
+        lanzar("Aplicando correcciones en " + nombreAmbito(), "ortotipografia.py", a.concat(["--aplicar", "--maqueta", rutaPublicacion()]));
     };
     bDudas.onClick = function () {
         var a = argsDocumento();
         if (!a) return;
         if (!confirm("¿Buscar dudas en " + nombreAmbito() + "?\nSe vuelven a marcar todas: lo que no hayas revisado de una pasada anterior vuelve a aparecer.")) return;
-        a = a.concat(["--marcar"]);
+        a = a.concat(["--marcar", "--maqueta", rutaPublicacion()]);
         if (conClaude.value) a.push("--claude");
         // Al terminar, si la ventana de revisión está abierta, que relea las dudas.
         F.alTerminar = function () { if ($.global.revisorDudas && $.global.revisorDudas.cargar) $.global.revisorDudas.cargar(); };
@@ -191,11 +260,11 @@
     };
     bSimCierre.onClick = function () {
         var a = argsDocumento();
-        if (a) lanzar("Simulando el cierre de " + nombreAmbito(), "finalizar.py", a);
+        if (a) lanzar("Simulando el cierre de " + nombreAmbito(), "finalizar.py", a.concat(["--publicacion", rutaPublicacion()]));
     };
     bCierre.onClick = function () {
         var a = argsDocumento();
-        if (a) lanzar("Finalizando " + nombreAmbito(), "finalizar.py", a.concat(["--aplicar"]));
+        if (a) lanzar("Finalizando " + nombreAmbito(), "finalizar.py", a.concat(["--aplicar", "--publicacion", rutaPublicacion()]));
     };
     bRevisar.onClick = function () { $.evalFile(File(RAIZ + "/jsx/revisar_dudas.jsx")); };
     bMarcas.onClick = function () { $.evalFile(File(RAIZ + "/jsx/recorrer_marcas.jsx")); };
@@ -217,10 +286,10 @@
 
     w.onResizing = w.onResize = function () { this.layout.resize(); };
     // Para probar desde fuera (#targetengine "formatear_word").
-    F.botones = { importar: bImportar, simular: bSimular, aplicar: bAplicar, dudas: bDudas,
+    F.botones = { importar: bImportar, nueva: bNueva, simular: bSimular, aplicar: bAplicar, dudas: bDudas,
                   simCierre: bSimCierre, cierre: bCierre,
                   revisar: bRevisar, marcas: bMarcas, detener: bDetener };
-    F.campos = { ambito: ambito, conClaude: conClaude, estado: estado, salida: salida };
+    F.campos = { publicacion: publicacion, ambito: ambito, conClaude: conClaude, estado: estado, salida: salida };
     F.lanzar = lanzar;
     F.comprobar = comprobar;
     F.destruir = function () {

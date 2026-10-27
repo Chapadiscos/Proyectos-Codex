@@ -187,13 +187,15 @@ ejemplo  = "x + y = 1 → y en cursiva"
 
 [[regla]]
 nombre   = "Punto final del párrafo"
-descripcion = "Los párrafos de texto terminan en punto. No se toca el que acaba en «:» (presenta una lista), «;», «,», «?», «!» o «…»"
+descripcion = "Los párrafos de texto terminan en punto. No se toca el que acaba en «:» (presenta una lista), «;», «,», «?», «!», «…» o en una unidad («1 %»)"
 buscar   = '(?<![.!?…])([[:alnum:]%)\]»])$'
 cambiar  = '$1.'
 solo     = ["Texto base", "Texto base - Viñeta", "Viñetas", "Ideas basicas/Texto Ideas", "Pie Figura", "Tabla/Pie tabla"]   # la bibliografía, no
 # Fuera: DOI o dirección web al final; el aviso «Imagen sin pie»; y «texto. (Figura 10)», que
 # acabaría en «. (Figura 10).»: la puntuación tiene que pasar antes detrás del paréntesis.
-excluir_texto = ['(?:doi|DOI|https?:|www\.)\S*$', '^Imagen sin pie$', '[.,;:]\s*\([^()]*\)$']
+# Tampoco si acaba en una unidad («Voriconazol 1 %», «hasta 2 mm»).
+excluir_texto = ['(?:doi|DOI|https?:|www\.)\S*$', '^Imagen sin pie$', '[.,;:]\s*\([^()]*\)$',
+                 '\d[ \u00A0\u2009\u202F]?(?:%|mm|cm|µm|μm|nm|km|m|mg|µg|μg|ng|kg|g|ml|mL|dl|dL|l|L|h|min|s|mmHg|UI|°C|ºC|Hz)$']
 ejemplo  = "Episcleritis nodular → Episcleritis nodular."
 
 [[regla]]

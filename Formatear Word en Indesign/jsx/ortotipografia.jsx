@@ -67,7 +67,12 @@ function procesar(d, reglas, aplicar) {
                 var p = hs[i].t.paragraphs[0], cont = p.parent.toSpecifier(), clave = cont + ":" + p.index;
                 if (!vistos[clave]) { vistos[clave] = 1; pars.push({ p: p, cont: cont, i: p.index }); }
             }
-            pars.sort(function (a, b) { return a.cont < b.cont ? -1 : a.cont > b.cont ? 1 : b.i - a.i; });
+            // Sin ternarios encadenados: ExtendScript evalúa mal «a ? x : b ? y : z».
+            pars.sort(function (a, b) {
+                if (a.cont < b.cont) return -1;
+                if (a.cont > b.cont) return 1;
+                return b.i - a.i;
+            });
             opcionesGrep();
             app.findGrepPreferences = NothingEnum.NOTHING;
             app.changeGrepPreferences = NothingEnum.NOTHING;

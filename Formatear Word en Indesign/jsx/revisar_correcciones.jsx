@@ -43,7 +43,8 @@
     // Reglas al día desde el .toml (por si han cambiado desde la última vez).
     function leerReglas() {
         var f = File(Folder.temp.fsName + "/formatear_word_reglas.json");
-        var orden = "cd " + q(RAIZ.fsName) + " && " + q(PYTHON) + " -I ortotipografia.py --exportar " + q(f.fsName) + " 2>&1";
+        var orden = "cd " + q(RAIZ.fsName) + " && " + q(PYTHON) + " -I ortotipografia.py --exportar " + q(f.fsName) +
+            ($.global.formatearWordPublicacion ? " --maqueta " + q($.global.formatearWordPublicacion) : "") + " 2>&1";
         app.doScript('do shell script "' + orden.replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"', ScriptLanguage.APPLESCRIPT_LANGUAGE);
         return leerJSON(f);
     }

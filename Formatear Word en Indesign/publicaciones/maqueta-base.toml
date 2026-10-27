@@ -51,6 +51,7 @@ simbolos_superindice = "™®℠℗"   # al importar van con el estilo de super�
 
 [tabla]
 estilo         = "Ponencias 2026"
+celda_titulo   = "Encabezado"  # el título de la tabla, en una primera fila de una sola celda
 celda_cabecera = "Cabecera"
 celda          = "Celda Izquierda"
 celda_pie      = "Pie tabla"   # fila de pie: las notas que en el Word van debajo de la tabla

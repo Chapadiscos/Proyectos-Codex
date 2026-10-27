@@ -40,7 +40,9 @@ def main():
         for docx in docx_de(ruta):
             carpeta = os.path.dirname(os.path.abspath(docx))
             nombre = os.path.basename(carpeta) if os.path.isdir(ruta) else os.path.splitext(os.path.basename(docx))[0]
-            elementos, modo = clasificar(Documento(docx), conf.get('reglas', {}).get('negritas_con_vineta', 'auto'))
+            r = conf.get('reglas', {})
+            elementos, modo = clasificar(Documento(docx), r.get('negritas_con_vineta', 'auto'), r.get('cabecera', ''),
+                                         r.get('ladillos_mayusculas', False))
             figs, sobrantes = figuras.inventario(elementos, carpeta)
             destino = os.path.join(args.salida, nombre + '.html')
             with open(destino, 'w', encoding='utf-8') as f:
