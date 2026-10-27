@@ -12,11 +12,22 @@
 
 Si la publicación ya existe, solo rehace la maqueta (para partir de un número más reciente)
 y avisa de los estilos de su configuración que ya no están en ella.
+
+Actualizar una publicación desde un número más reciente (botón «Actualizar publicación…»),
+en dos pasos para ver antes qué cambia:
+
+    python3 nueva_publicacion.py "…/Revista GHHO N8.indd" --actualizar publicaciones/revista-ghho.toml
+    python3 nueva_publicacion.py --confirmar publicaciones/revista-ghho.toml     (o --descartar)
+
+El primero prepara la maqueta nueva junto a la actual («… (nueva).indd») y la compara con ella;
+el segundo la pone en su lugar, guarda la anterior en publicaciones/maquetas/anteriores/ y
+anota el maquetado nuevo en la configuración, que por lo demás no cambia.
 """
 import argparse
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -136,6 +147,15 @@ def cadena(v):
 
 def crear_maqueta(maquetado, destino):
     """Lanza jsx/crear_maqueta.jsx y devuelve la información de la maqueta (estilos, página)."""
+    return _crear_maqueta_jsx(maquetado, destino)
+
+
+def leer_maqueta(maqueta):
+    """Estilos, maestras y medidas de una maqueta, sin cambiarla."""
+    return _crear_maqueta_jsx(maqueta, '')
+
+
+def _crear_maqueta_jsx(maquetado, destino):
     with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as f:
         info_json = f.name
     jsx = os.path.join(AQUI, 'jsx', 'crear_maqueta.jsx')
@@ -269,7 +289,154 @@ def comprobar(conf, info):
         for k, v in conf.get(seccion, {}).items():
             if isinstance(v, str) and v and k not in ('simbolos', 'simbolos_superindice') and v not in lista:
                 falta.append('%s.%s = %s' % (seccion, k, v))
+    for k, v in conf.get('tabla', {}).items():
+        if isinstance(v, str) and v and v not in (info['tabla'] if k == 'estilo' else info['celda']):
+            falta.append('tabla.%s = %s' % (k, v))
+    v = conf.get('figuras', {}).get('estilo_objeto')
+    if v and v not in info['objeto']:
+        falta.append('figuras.estilo_objeto = %s' % v)
     return falta
+
+
+# ---- actualizar una publicación ------------------------------------------------------------
+def pendiente_de(conf):
+    """Rutas de la actualización: maqueta actual, la nueva provisional y su informe."""
+    maqueta = os.path.join(AQUI, conf['maqueta'])
+    base = os.path.splitext(maqueta)[0]
+    return maqueta, base + ' (nueva).indd', base + ' (nueva).json'
+
+
+def copia_anterior(maqueta):
+    carpeta = os.path.join(AQUI, 'publicaciones', 'maquetas', 'anteriores')
+    base = '%s %s' % (os.path.splitext(os.path.basename(maqueta))[0], date.today().isoformat())
+    ruta, n = os.path.join(carpeta, base + '.indd'), 2
+    while os.path.exists(ruta):
+        ruta, n = os.path.join(carpeta, '%s-%d.indd' % (base, n)), n + 1
+    return ruta
+
+
+def mm(x):
+    return '%g' % round(x, 1)
+
+
+def comparar(conf, antes, info):
+    """Líneas del informe: qué cambia de la maqueta actual a la nueva."""
+    res, avisos = [], []
+    pa, pn = (antes or {}).get('pagina'), info['pagina']
+    desc = lambda p: '%s × %s mm; %d %s de %s mm; caja de texto de %s mm' % (
+        mm(p['ancho']), mm(p['alto']), p['columnas'], 'columna' if p['columnas'] == 1 else 'columnas',
+        mm(p['ancho_columna']), mm(p['ancho_texto']))
+    if not antes:
+        res.append('Página: ' + desc(pn) + '   (no había maqueta con la que comparar)')
+    elif desc(pa) == desc(pn):
+        res.append('Página: sin cambios (%s)' % desc(pn))
+    else:
+        res.append('Página: CAMBIA\n    antes: %s\n    ahora: %s' % (desc(pa), desc(pn)))
+    ma = (antes or {}).get('maestra_inicio'), (antes or {}).get('maestra_interior')
+    mn = info['maestra_inicio'], info['maestra_interior']
+    txt = 'inicio «%s», interior «%s»' % mn
+    if antes and ma != mn:
+        res.append('Maestras: CAMBIAN\n    antes: inicio «%s», interior «%s»\n    ahora: %s' % (ma + (txt,)))
+    else:
+        res.append('Maestras: %s%s' % ('sin cambios (' if antes else '', txt + (')' if antes else '')))
+    res.append('Estilos:')
+    for clave, nombre in (('parrafo', 'de párrafo'), ('caracter', 'de carácter'), ('objeto', 'de objeto'),
+                          ('tabla', 'de tabla'), ('celda', 'de celda')):
+        if not antes:
+            res.append('    %s: %d' % (nombre, len(info[clave])))
+            continue
+        nuevos = [e for e in info[clave] if e not in antes[clave]]
+        fuera = [e for e in antes[clave] if e not in info[clave]]
+        if not nuevos and not fuera:
+            res.append('    %s: sin cambios (%d)' % (nombre, len(info[clave])))
+            continue
+        res.append('    %s: %d (antes %d)' % (nombre, len(info[clave]), len(antes[clave])))
+        for etiqueta, lista in (('nuevos', nuevos), ('ya no están', fuera)):
+            if lista:
+                res.append('        %s: %s' % (etiqueta, ', '.join('«%s»' % e for e in lista[:15]) +
+                                                 (' y %d más' % (len(lista) - 15) if len(lista) > 15 else '')))
+    falta = comprobar(conf, info)
+    if falta:
+        avisos.append('Estilos de la configuración que no están en la maqueta nueva (al importar, InDesign '
+                      'los crearía vacíos; hay que corregir esas líneas del .toml):\n    ' + '\n    '.join(falta))
+    for seccion, clave, medida, que in (('figuras', 'ancho', 'ancho_columna', 'una columna'),
+                                        ('tabla', 'ancho', 'ancho_texto', 'la caja de texto')):
+        v = conf.get(seccion, {}).get(clave)
+        if isinstance(v, (int, float)) and abs(v - pn[medida]) > 1:
+            avisos.append('El ancho de %s en la configuración es %s mm y %s de la maqueta nueva mide %s mm '
+                          '(no se cambia solo: dime si hay que ajustarlo).' % (
+                              'las figuras' if seccion == 'figuras' else 'las tablas', mm(v), que, mm(pn[medida])))
+    return res, avisos
+
+
+def actualizar(toml_ruta, maquetado):
+    with open(toml_ruta, 'rb') as f:
+        conf = tomllib.load(f)
+    maqueta, nueva, pendiente = pendiente_de(conf)
+    antes = leer_maqueta(maqueta) if os.path.exists(maqueta) else None
+    info = crear_maqueta(maquetado, nueva)
+    res, avisos = comparar(conf, antes, info)
+    anterior = copia_anterior(maqueta) if antes else ''
+    toml_rel = os.path.relpath(toml_ruta, AQUI)
+    cab = ['Maquetado de partida: %s' % maquetado]
+    if conf.get('maquetado'):
+        cab.append('    (el anterior: %s)' % conf['maquetado'])
+    cab.append('De sus %d páginas se toman la primera y una de interior.' % info['paginas_maquetado'])
+    implica = ['Al guardar:',
+               '  · La maqueta nueva sustituye a la actual en:\n      %s' % maqueta]
+    if anterior:
+        implica.append('  · La actual se guarda como copia en:\n      %s' % anterior)
+    implica += ['  · La configuración (%s) no cambia: solo se anota el maquetado nuevo.' % toml_rel,
+                '  · Las galeradas ya montadas no cambian: la maqueta nueva se usa desde la próxima importación.']
+    informe = '\n'.join(cab + [''] + res + ([''] + ['⚠ ' + a for a in avisos] if avisos else []) + [''] + implica)
+    with open(pendiente, 'w', encoding='utf-8') as f:
+        json.dump({'toml': toml_ruta, 'maqueta': maqueta, 'nueva': nueva, 'anterior': anterior,
+                   'maquetado': maquetado, 'avisos': len(avisos), 'informe': informe}, f, ensure_ascii=False, indent=1)
+    print(informe)
+
+
+def poner_maquetado(toml_ruta, maquetado):
+    """Anota el maquetado de partida en la configuración (tras «maqueta = …» si no estaba)."""
+    with open(toml_ruta, encoding='utf-8') as f:
+        lineas = f.read().split('\n')
+    linea = 'maquetado = %s' % cadena(maquetado)
+    i = next((n for n, ln in enumerate(lineas) if re.match(r'maquetado\s*=', ln)), None)
+    if i is not None:
+        lineas[i] = linea
+    else:
+        i = next(n for n, ln in enumerate(lineas) if re.match(r'maqueta\s*=', ln))
+        lineas.insert(i + 1, linea)
+    texto = '\n'.join(lineas)
+    tomllib.loads(texto)
+    with open(toml_ruta, 'w', encoding='utf-8') as f:
+        f.write(texto)
+
+
+def confirmar(toml_ruta):
+    with open(toml_ruta, 'rb') as f:
+        maqueta, nueva, pendiente = pendiente_de(tomllib.load(f))
+    if not os.path.exists(pendiente) or not os.path.exists(nueva):
+        sys.exit('No hay ninguna actualización preparada para %s' % os.path.relpath(toml_ruta, AQUI))
+    with open(pendiente, encoding='utf-8') as f:
+        p = json.load(f)
+    if os.path.exists(maqueta):
+        anterior = p['anterior'] or copia_anterior(maqueta)
+        os.makedirs(os.path.dirname(anterior), exist_ok=True)
+        shutil.move(maqueta, anterior)
+        print('Maqueta anterior guardada en:\n  %s' % anterior)
+    os.replace(nueva, maqueta)
+    poner_maquetado(toml_ruta, p['maquetado'])
+    os.unlink(pendiente)
+    print('Maqueta actualizada:\n  %s\nMaquetado de partida anotado en %s' % (maqueta, os.path.relpath(toml_ruta, AQUI)))
+
+
+def descartar(toml_ruta):
+    with open(toml_ruta, 'rb') as f:
+        _, nueva, pendiente = pendiente_de(tomllib.load(f))
+    for r in (nueva, pendiente):
+        if os.path.exists(r):
+            os.unlink(r)
+    print('Actualización descartada: la maqueta no ha cambiado.')
 
 
 def nombre_archivo(nombre):
@@ -280,13 +447,24 @@ def nombre_archivo(nombre):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('maquetado', help='el último .indd maquetado de la publicación')
-    ap.add_argument('--nombre', required=True, help='nombre de la publicación («Revista GHHO»)')
+    ap.add_argument('maquetado', nargs='?', help='el último .indd maquetado de la publicación')
+    ap.add_argument('--nombre', help='nombre de la publicación nueva («Revista GHHO»)')
+    ap.add_argument('--actualizar', metavar='TOML', help='prepara la maqueta de esa publicación desde el maquetado')
+    ap.add_argument('--confirmar', metavar='TOML', help='pone en su lugar la maqueta preparada con --actualizar')
+    ap.add_argument('--descartar', metavar='TOML', help='borra la maqueta preparada con --actualizar')
     args = ap.parse_args()
+    if args.confirmar:
+        return confirmar(os.path.abspath(args.confirmar))
+    if args.descartar:
+        return descartar(os.path.abspath(args.descartar))
+    if not args.maquetado or not (args.nombre or args.actualizar):
+        ap.error('hace falta el .indd maquetado y --nombre (o --actualizar)')
 
     maquetado = os.path.abspath(args.maquetado)
     if not maquetado.lower().endswith('.indd') or not os.path.isfile(maquetado):
         sys.exit('No es un .indd: %s' % maquetado)
+    if args.actualizar:
+        return actualizar(os.path.abspath(args.actualizar), maquetado)
     slug = nombre_archivo(args.nombre)
     if not slug or slug in ('maqueta-base', 'ortotipografia'):
         sys.exit('Elige otro nombre')

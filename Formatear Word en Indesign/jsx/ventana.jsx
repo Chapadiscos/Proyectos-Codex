@@ -136,6 +136,9 @@
     var bNueva = gPub.add("button", undefined, "Nueva publicación…");
     bNueva.helpTip = "Elige el último InDesign maquetado de la publicación: se saca de él la maqueta y la " +
                      "configuración de estilos (revisa luego las líneas con ⚠ de su .toml)";
+    var bActualizar = gPub.add("button", undefined, "Actualizar publicación…");
+    bActualizar.helpTip = "Rehace la maqueta de una publicación desde un número más reciente; antes de guardar " +
+                          "enseña qué cambia y dónde se guarda (la configuración no cambia)";
     publicacion.onChange = function () {
         if (!publicacion.selection) return;
         $.global.formatearWordPublicacion = rutaPublicacion();
@@ -196,7 +199,7 @@
     salida.alignment = ["fill", "fill"];
 
     function botones(libres) {
-        bImportar.enabled = bNueva.enabled = bSimular.enabled = bAplicar.enabled = bDudas.enabled =
+        bImportar.enabled = bNueva.enabled = bActualizar.enabled = bSimular.enabled = bAplicar.enabled = bDudas.enabled =
             bSimCierre.enabled = bCierre.enabled = libres;
         bDetener.enabled = !libres;
     }
@@ -237,6 +240,70 @@
         };
         lanzar("Creando la publicación «" + nombre + "»", "nueva_publicacion.py", [f.fsName, "--nombre", nombre]);
     };
+    // Actualizar: se elige la publicación y el maquetado nuevo; nueva_publicacion.py prepara la
+    // maqueta aparte y la compara con la actual, y solo se guarda si se acepta lo que implica.
+    function datosPublicacion(toml) {
+        var t = leer(File(toml)), m = t.match(/^maqueta\s*=\s*"([^"]*)"/m), d = t.match(/^maquetado\s*=\s*"([^"]*)"/m);
+        var maqueta = m ? File(RAIZ + "/" + m[1].replace(/\\(.)/g, "$1")) : null;
+        return { maqueta: maqueta, maquetado: d ? d[1].replace(/\\(.)/g, "$1") : "",
+                 nueva: maqueta ? File(maqueta.fsName.replace(/\.indd$/i, "") + " (nueva).indd") : null,
+                 pendiente: maqueta ? File(maqueta.fsName.replace(/\.indd$/i, "") + " (nueva).json") : null };
+    }
+    function abiertoEnInDesign(f) {
+        for (var i = 0; i < app.documents.length; i++)
+            try { if (app.documents[i].fullName.fsName == f.fsName) return app.documents[i]; } catch (e) {}
+        return null;
+    }
+    bActualizar.onClick = function () {
+        var dlg = new Window("dialog", "Actualizar publicación");
+        dlg.alignChildren = ["fill", "top"];
+        var g = dlg.add("group");
+        g.add("statictext", undefined, "Publicación:");
+        var lista = g.add("dropdownlist", undefined, []);
+        for (var i = 0; i < F.pubs.length; i++) lista.add("item", F.pubs[i].nombre);
+        var info = dlg.add("statictext", undefined, "", { multiline: true });
+        info.preferredSize = [560, 70];
+        var gb = dlg.add("group");
+        gb.alignment = "right";
+        gb.add("button", undefined, "Cancelar", { name: "cancel" });
+        var bOk = gb.add("button", undefined, "Elegir el InDesign nuevo…", { name: "ok" });
+        lista.onChange = function () {
+            var d = datosPublicacion(F.pubs[lista.selection.index].ruta);
+            info.text = "Maqueta actual: " + (d.maqueta ? d.maqueta.fsName : "(no tiene)") +
+                        "\nÚltimo maquetado: " + (d.maquetado || "(no consta)");
+            bOk.enabled = !!d.maqueta;
+        };
+        lista.selection = publicacion.selection.index;
+        if (dlg.show() != 1) return;
+
+        var pub = F.pubs[lista.selection.index], d = datosPublicacion(pub.ruta);
+        var abierto = abiertoEnInDesign(d.maqueta) || abiertoEnInDesign(d.nueva);
+        if (abierto) { alert("«" + abierto.name + "» está abierto: ciérralo antes de actualizar la maqueta."); return; }
+        var inicio = d.maquetado ? File(d.maquetado).parent.parent : null;     // la carpeta de los números
+        if (!inicio || !inicio.exists) inicio = Folder(RAIZ);
+        var f = File(inicio.fsName + "/ ").openDlg("Elige el InDesign maquetado más reciente de «" + pub.nombre +
+            "» (no se modifica: se trabaja con una copia)", function (f) { return f instanceof Folder || /\.indd$/i.test(f.name); }, false);
+        if (!f) return;
+        F.alTerminar = function () { revisarActualizacion(pub, d); };
+        lanzar("Preparando la maqueta nueva de «" + pub.nombre + "»", "nueva_publicacion.py", [f.fsName, "--actualizar", pub.ruta]);
+    };
+    function revisarActualizacion(pub, d) {
+        if (!d.pendiente.exists) return;            // ha fallado: el motivo está en la salida
+        var p = eval("(" + leer(d.pendiente) + ")");
+        var dlg = new Window("dialog", "Actualizar «" + pub.nombre + "»: ¿guardar la maqueta nueva?");
+        dlg.alignChildren = ["fill", "top"];
+        dlg.add("statictext", undefined, p.avisos ? "Revisa los avisos (⚠) antes de guardar:" : "Esto es lo que cambia:");
+        var t = dlg.add("edittext", undefined, p.informe, { multiline: true, readonly: true, scrolling: true });
+        t.preferredSize = [720, 380];
+        var gb = dlg.add("group");
+        gb.alignment = "right";
+        gb.add("button", undefined, "Descartar", { name: "cancel" });
+        gb.add("button", undefined, "Guardar", { name: "ok" });
+        if (dlg.show() == 1)
+            lanzar("Guardando la maqueta nueva de «" + pub.nombre + "»", "nueva_publicacion.py", ["--confirmar", pub.ruta]);
+        else
+            lanzar("Descartando la maqueta nueva de «" + pub.nombre + "»", "nueva_publicacion.py", ["--descartar", pub.ruta]);
+    }
     bSimular.onClick = function () {
         var a = argsDocumento();
         if (!a) return;

@@ -1,5 +1,7 @@
 // Maqueta de una publicación a partir de su último InDesign maquetado (nueva_publicacion.py).
 // Argumentos: [maquetado.indd, maqueta.indd de destino, estilos.json de salida].
+// Sin destino solo lee la maqueta (para compararla con una nueva al actualizar la publicación):
+// no la cambia y, si está abierta, no la cierra.
 // La copia se queda con dos páginas vacías: la primera (maestra de inicio de capítulo o
 // artículo) y una de interior, con un marco de texto por columna dentro de los márgenes y
 // todos enlazados; importar.jsx coloca ahí el texto y repite la de interior lo que haga falta.
@@ -44,6 +46,23 @@ function nombres(col) {
     var a = [];
     for (var i = 0; i < col.length; i++) a.push(ruta(col[i]));
     return a;
+}
+
+// Medidas de la página: la caja de texto y sus columnas.
+function medidas(pg) {
+    var b = pg.bounds, mp = pg.marginPreferences, n = Math.max(1, mp.columnCount);
+    var texto = b[3] - b[1] - mp.left - mp.right;
+    return { ancho: b[3] - b[1], alto: b[2] - b[0], columnas: mp.columnCount, medianil: mp.columnGutter,
+             ancho_columna: (texto - (n - 1) * mp.columnGutter) / n, ancho_texto: texto };
+}
+
+function estilos(d, info) {
+    info.parrafo = nombres(d.allParagraphStyles);
+    info.caracter = nombres(d.allCharacterStyles);
+    info.objeto = nombres(d.allObjectStyles);
+    info.tabla = nombres(d.allTableStyles);
+    info.celda = nombres(d.allCellStyles);
+    info.condiciones = nombres(d.conditions);
 }
 
 // Marcos de las columnas de la página, dentro de los márgenes (en páginas enfrentadas, el
@@ -98,16 +117,8 @@ function crear(origen, destino) {
         var marcos = marcosColumnas(d.pages[0]).concat(marcosColumnas(d.pages[1]));
         for (var k = 1; k < marcos.length; k++) marcos[k - 1].nextTextFrame = marcos[k];
 
-        var pg = d.pages[1], mp = pg.marginPreferences, b = pg.bounds;
-        info.pagina = { ancho: b[3] - b[1], alto: b[2] - b[0], columnas: mp.columnCount, medianil: mp.columnGutter,
-                        ancho_columna: marcos[marcos.length - 1].geometricBounds[3] - marcos[marcos.length - 1].geometricBounds[1],
-                        ancho_texto: b[3] - b[1] - mp.left - mp.right };
-        info.parrafo = nombres(d.allParagraphStyles);
-        info.caracter = nombres(d.allCharacterStyles);
-        info.objeto = nombres(d.allObjectStyles);
-        info.tabla = nombres(d.allTableStyles);
-        info.celda = nombres(d.allCellStyles);
-        info.condiciones = nombres(d.conditions);
+        info.pagina = medidas(d.pages[1]);
+        estilos(d, info);
         d.save(destino);
     } catch (e) {
         d.close(SaveOptions.NO);
@@ -117,7 +128,36 @@ function crear(origen, destino) {
     return info;
 }
 
-var res = crear(File(ARGS[0]), File(ARGS[1]));
+// La maqueta actual, tal cual: maestras de sus dos primeras páginas, medidas y estilos.
+function leerMaqueta(f) {
+    if (!f.exists) return "ERROR: no existe " + f.fsName;
+    var d = null;
+    for (var i = 0; i < app.documents.length; i++)
+        try { if (app.documents[i].fullName.fsName == f.fsName) d = app.documents[i]; } catch (e) {}
+    var cerrar = !d;
+    if (cerrar) {
+        app.scriptPreferences.userInteractionLevel = UserInteractionLevels.NEVER_INTERACT;
+        try { d = app.open(f, false); }
+        finally { app.scriptPreferences.userInteractionLevel = UserInteractionLevels.INTERACT_WITH_ALL; }
+    }
+    var info = {};
+    try {
+        app.scriptPreferences.measurementUnit = MeasurementUnits.MILLIMETERS;
+        var p0 = d.pages[0], pi = d.pages.length > 1 ? d.pages[1] : p0;
+        info.paginas_maquetado = d.pages.length;
+        info.maestra_inicio = p0.appliedMaster ? p0.appliedMaster.name : "";
+        info.maestra_interior = pi.appliedMaster ? pi.appliedMaster.name : "";
+        info.pagina = medidas(pi);
+        estilos(d, info);
+    } catch (e) {
+        info = "ERROR: " + e + " (línea " + e.line + ")";
+    }
+    app.scriptPreferences.measurementUnit = AutoEnum.AUTO_VALUE;
+    if (cerrar) d.close(SaveOptions.NO);
+    return info;
+}
+
+var res = ARGS[1] ? crear(File(ARGS[0]), File(ARGS[1])) : leerMaqueta(File(ARGS[0]));
 if (typeof res == "string") res;
 else {
     var f = File(ARGS[2]);
