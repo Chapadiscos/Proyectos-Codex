@@ -13,7 +13,7 @@ No corrige nada: los marca con texto condicional («Revisar tilde», «Revisar c
 Se revisan juntos todos los documentos abiertos que empiezan por «Capitulo» (o el indicado):
 una palabra desconocida que se repite en el conjunto se da por término correcto.
 Las palabras que no son errores van a publicaciones/diccionario.txt.
-Cada documento deja su lista en informes/<documento>-dudas.json, que lee la ventana
+Al marcar, cada documento deja su lista en informes/<documento>-dudas.json, que lee la ventana
 «Revisar dudas» de InDesign (jsx/revisar_dudas.jsx).
 """
 import argparse
@@ -80,13 +80,17 @@ def main():
     ap.add_argument('--maqueta', default=os.path.join(AQUI, 'publicaciones', 'maqueta-base.toml'))
     args = ap.parse_args()
 
-    nombres = [args.documento] if args.documento else [n for n in documentos_abiertos() if n.startswith('Capitulo')]
+    capitulos = [n for n in documentos_abiertos() if n.startswith('Capitulo')]
+    nombres = [args.documento] if args.documento else capitulos
+    # Las palabras desconocidas que se repiten se cuentan siempre con todos los capítulos
+    # abiertos, aunque solo se revise uno: si no, un término de otro capítulo pasa por error.
+    para_contar = nombres + [n for n in capitulos if n not in nombres]
     if not nombres:
         print('No hay documentos «Capitulo…» abiertos en InDesign.')
         return
     tmp = tempfile.mkdtemp()
     textos = {}
-    for n in nombres:
+    for n in para_contar:
         ruta = os.path.join(tmp, n + '.json')
         r = indesign('exportar_texto.jsx', ruta, n)
         if r.startswith('ERROR'):
@@ -108,7 +112,7 @@ def main():
         tipos = [t.strip() for t in args.tipos.split(',') if t.strip()]
         analisis = {n: [d for d in mod_dudas.analizar(ps, lt, diccionario=dic, frecuentes=frecuentes)
                         if not tipos or d.tipo in tipos]
-                    for n, ps in sorted(textos.items())}
+                    for n, ps in sorted(textos.items()) if n in nombres}
         listas = {n: [dict(asdict(d), id=k, propuesta=None,
                            **{'estilo_' + c: estilo_caracter(maqueta, d.estilo, c)
                               for c in ('cursiva', 'negrita', 'negrita_cursiva', 'no_partir')})
@@ -133,6 +137,8 @@ def main():
                         if d['tipo'] not in AUTOMATICAS:
                             d['propuesta'] = props.get(d['id'])
         for n, dudas in analisis.items():
+            if not args.marcar:
+                break           # al simular no se toca la lista: se perderían las propuestas de Claude
             ruta = os.path.join(AQUI, 'informes', n.replace('.indd', '') + '-dudas.json')
             todas = listas[n]
             if tipos and os.path.exists(ruta):

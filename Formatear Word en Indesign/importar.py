@@ -141,6 +141,21 @@ def preparar(docx, conf, destino_dir, nombre):
             'avisos': [] if titulo else ['Tabla sin título en el Word'],
         })
 
+    # Motivo de cada duda, para la ventana «Recorrer marcas» de InDesign.
+    marca_fig = icml.condicion('figura').replace('-', ' ')
+    marcas = list(gen.registro)
+    for f in salida_fig:
+        if f['avisos']:
+            marcas.append({'condicion': marca_fig, 'texto': f['nombre'], 'motivo': ' · '.join(f['avisos'])})
+    for t in salida_tab:
+        if t['avisos']:
+            marcas.append({'condicion': marca_fig, 'texto': t['nombre'], 'motivo': ' · '.join(t['avisos'])})
+    for su in sueltas:
+        marcas.append({'condicion': marca_fig, 'texto': 'Imagen sin pie', 'motivo': ' · '.join(su['avisos'])})
+    os.makedirs(os.path.join(AQUI, 'informes'), exist_ok=True)
+    with open(os.path.join(AQUI, 'informes', nombre + '-marcas.json'), 'w', encoding='utf-8') as f:
+        json.dump({'documento': nombre + '.indd', 'marcas': marcas}, f, ensure_ascii=False, indent=1)
+
     nombre_indd = os.path.join(destino_dir, nombre + '.indd')
     manifiesto = {
         'maqueta': os.path.join(AQUI, conf['maqueta']),

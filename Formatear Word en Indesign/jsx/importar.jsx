@@ -266,7 +266,17 @@ function importar(m) {
             var gt = tf.geometricBounds, altoT = 20;
             while (tf.overflows && altoT < 600) { altoT += 10; tf.geometricBounds = [gt[0], gt[1], gt[0] + altoT, gt[3]]; }
             if (tf.overflows) avisos.push("La tabla no cabe en el marco");
-            if (avisos.length) marcarDuda(d, tf.parentStory, avisos.join(" · "), m.condicion_figuras, m.notas);
+            if (avisos.length) {
+                // En una tabla la condición no se ve en la historia (queda en un tramo vacío tras
+                // la tabla): va en la primera celda con texto.
+                var marcado = tf.parentStory;
+                if (tablas.length) {
+                    for (var c = 0; c < tablas[0].cells.length; c++) {
+                        if (tablas[0].cells[c].texts[0].length) { marcado = tablas[0].cells[c].texts[0]; break; }
+                    }
+                }
+                marcarDuda(d, marcado, avisos.join(" · "), m.condicion_figuras, m.notas);
+            }
             acomodar(tf, pagina, ancho);
         }
 

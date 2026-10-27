@@ -5,6 +5,8 @@
     python3 ortotipografia.py --detalle            # simula enseñando todos los casos
     python3 ortotipografia.py --aplicar            # aplica (un Cmd+Z por documento lo deshace)
     python3 ortotipografia.py --documento "Capitulo 5.indd" --aplicar
+    python3 ortotipografia.py --exportar reglas.json   # solo escribe las reglas (para la ventana
+                                                       # «Revisar correcciones» de InDesign)
 
 Las reglas están en publicaciones/ortotipografia.toml.
 """
@@ -31,6 +33,7 @@ def main():
     ap.add_argument('--documento', default='', help='nombre del documento abierto (por defecto, todos)')
     ap.add_argument('--aplicar', action='store_true', help='hace los cambios (sin esto solo simula)')
     ap.add_argument('--detalle', action='store_true', help='al simular, enseña todos los casos de cada regla')
+    ap.add_argument('--exportar', default='', help='escribe las reglas y los estilos en este JSON y termina')
     args = ap.parse_args()
 
     with open(args.reglas, 'rb') as f:
@@ -38,6 +41,10 @@ def main():
     with open(args.maqueta, 'rb') as f:
         maqueta = tomllib.load(f)
     estilos = {'caracter': maqueta.get('caracter', {}), 'por_grupo': maqueta.get('caracter_por_grupo', {})}
+    if args.exportar:
+        with open(args.exportar, 'w', encoding='utf-8') as f:
+            json.dump({'reglas': reglas, 'estilos': estilos}, f, ensure_ascii=False)
+        return
     with tempfile.NamedTemporaryFile('w', suffix='.json', delete=False, encoding='utf-8') as f:
         json.dump({'reglas': reglas, 'estilos': estilos}, f, ensure_ascii=False)
         ruta = f.name

@@ -15,7 +15,7 @@
 
 [[regla]]
 nombre   = "Cifra y unidad"
-descripcion = "Espacio de no separación entre la cifra y su unidad (10 %, 4 mm, 16 h). Si ya lo tiene, no la encuentra."
+descripcion = "Espacio de no separación entre la cifra y su unidad (10 %, 4 mm, 16 h). Si ya lo tiene, no la encuentra. (la importación ya lo hace: solo sale si algo se ha escapado)"
 buscar   = '(?<=\d)[ ~<]?(%|mm|cm|µm|μm|nm|km|m|mg|µg|μg|ng|kg|g|ml|mL|dl|dL|l|L|h|min|s|mmHg|UI|°C|ºC|Hz)(?![[:alpha:]\d])'
 cambiar  = '~S$1'
 ejemplo  = "10% → 10 %   ·   4mm → 4 mm   ·   16 h → 16 h (no separable)"
@@ -35,6 +35,13 @@ buscar   = '(?<=[\d)]):(?=[^\s/])'
 cambiar  = ': '
 solo     = ["Bibliografia"]
 ejemplo  = "5(3):240-50 → 5(3): 240-50   ·   2012;130:143 → 2012; 130: 143"
+
+[[regla]]
+nombre   = "Marcas en superíndice"
+descripcion = "™ ® ℠ ℗ con el estilo de superíndice (© no: va a tamaño normal) (la importación ya lo hace; esto sirve para galeradas anteriores)"
+buscar   = '[™®℠℗]'
+estilo   = "superindice"
+ejemplo  = "IRIS® → IRIS con ® volado"
 
 [[regla]]
 nombre   = "Comillas latinas"
@@ -100,21 +107,21 @@ ejemplo  = "... → …"
 
 [[regla]]
 nombre   = "Espacios dobles"
-descripcion = "Dos o más espacios seguidos → uno"
+descripcion = "Dos o más espacios seguidos → uno (la importación ya lo hace: solo sale si algo se ha escapado)"
 buscar   = ' {2,}'
 cambiar  = ' '
 ejemplo  = "paracetamol ±  desketoprofen → paracetamol ± desketoprofen"
 
 [[regla]]
 nombre   = "Espacio antes de puntuación"
-descripcion = "Fuera el espacio antes de . , ; : ) ]"
+descripcion = "Fuera el espacio antes de . , ; : ) ] (la importación ya lo hace: solo sale si algo se ha escapado)"
 buscar   = ' +(?=[.,;:)\]])'
 cambiar  = ''
 ejemplo  = "( 3,4 ) → ( 3,4)   ·   visión ,  → visión,"
 
 [[regla]]
 nombre   = "Espacio tras paréntesis de apertura"
-descripcion = "Fuera el espacio después de ( y ["
+descripcion = "Fuera el espacio después de ( y [ (la importación ya lo hace: solo sale si algo se ha escapado)"
 buscar   = '(?<=[(\[]) +'
 cambiar  = ''
 ejemplo  = "( 3,4) → (3,4)"
@@ -183,7 +190,7 @@ nombre   = "Punto final del párrafo"
 descripcion = "Los párrafos de texto terminan en punto. No se toca el que acaba en «:» (presenta una lista), «;», «,», «?», «!» o «…»"
 buscar   = '(?<![.!?…])([[:alnum:]%)\]»])$'
 cambiar  = '$1.'
-solo     = ["Texto base", "Texto base - Viñeta", "Viñetas", "Ideas basicas/Texto Ideas", "Bibliografia", "Pie Figura", "Tabla/Pie tabla"]
+solo     = ["Texto base", "Texto base - Viñeta", "Viñetas", "Ideas basicas/Texto Ideas", "Pie Figura", "Tabla/Pie tabla"]   # la bibliografía, no
 # Fuera: DOI o dirección web al final; el aviso «Imagen sin pie»; y «texto. (Figura 10)», que
 # acabaría en «. (Figura 10).»: la puntuación tiene que pasar antes detrás del paréntesis.
 excluir_texto = ['(?:doi|DOI|https?:|www\.)\S*$', '^Imagen sin pie$', '[.,;:]\s*\([^()]*\)$']

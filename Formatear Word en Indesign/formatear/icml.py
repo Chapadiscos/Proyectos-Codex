@@ -54,6 +54,7 @@ class Generador:
         self.usados_p, self.usados_c = set(), set()
         self.estilo_actual = ''
         self.n_dudas = 0
+        self.registro = []      # cada duda con su texto y su motivo (informes/<capítulo>-marcas.json)
         self.con_notas = conf.get('dudas', {}).get('notas', False)
 
     # ---- piezas -------------------------------------------------------------
@@ -83,15 +84,22 @@ class Generador:
             # Ladillos, títulos y cabeceras: el formato lo pone el estilo de párrafo.
             t = replace(t, b=False, i=False)
         simbolos = self.caracter.get('simbolos', '')
-        if simbolos and any(c in simbolos for c in t.texto) and len(t.texto) > 1:
-            # Los símbolos van en su propio rango con el estilo que tiene el glifo.
-            trozos = re.split('([%s])' % re.escape(simbolos), t.texto)
+        volados = self.caracter.get('simbolos_superindice', '')
+        aparte = simbolos + volados
+        if aparte and any(c in aparte for c in t.texto) and len(t.texto) > 1:
+            # Los símbolos van en su propio rango: con el estilo que tiene el glifo (→) o en
+            # superíndice (™ ®).
+            trozos = re.split('([%s])' % re.escape(aparte), t.texto)
             return ''.join(self.rango(replace(t, texto=x, duda=t.duda if k == 0 else ''), False, duda_extra)
                            for k, x in enumerate(trozos) if x)
+        if volados and t.texto and all(c in volados for c in t.texto):
+            t = replace(t, pos='sup', b=False, i=False)    # → estilo de superíndice (Super)
         if simbolos and t.texto and all(c in simbolos for c in t.texto):
             estilo = self.caracter['estilo_simbolos']
             self.usados_c.add(estilo)
             duda = t.duda or duda_extra
+            if t.duda:
+                self.anotar(t.duda, t.texto)
             return '<CharacterStyleRange AppliedCharacterStyle=%s%s><Content>%s</Content></CharacterStyleRange>' % (
                 quoteattr(ref_estilo('CharacterStyle', estilo)),
                 (' AppliedConditions=%s' % quoteattr(ref_condicion(condicion(duda)))) if duda else '',
@@ -107,7 +115,14 @@ class Generador:
             attrs += ' AppliedConditions=%s' % quoteattr(ref_condicion(condicion(duda)))
         nota = self.nota(t.duda) if t.duda else ''
         texto = t.texto.replace('\n', ' ')
+        if t.duda:
+            self.anotar(t.duda, texto)
         return '<CharacterStyleRange%s>%s<Content>%s</Content></CharacterStyleRange>' % (attrs, nota, escape(texto))
+
+    def anotar(self, motivo, texto):
+        """Apunta una duda para la ventana «Recorrer marcas» (el nombre de la condición, ya con
+        espacio, como queda en InDesign)."""
+        self.registro.append({'condicion': condicion(motivo).replace('-', ' '), 'texto': texto, 'motivo': motivo})
 
     def nota(self, texto):
         self.n_dudas += 1
@@ -117,11 +132,13 @@ class Generador:
                 '</CharacterStyleRange></ParagraphStyleRange></Note>') % escape(texto)
 
     def parrafo_xml(self, estilo, trozos, dudas=(), attrs='', ultimo=False, quitar_negrita=False):
+        trozos = espacios(trozos)
         self.usados_p.add(estilo)
         self.estilo_actual = estilo
         cuerpo = []
         duda_parrafo = ' · '.join(dudas)
         if duda_parrafo:
+            self.anotar(duda_parrafo, ''.join(t.texto for t in trozos).replace('\n', ' '))
             nota = self.nota(duda_parrafo)
             if nota:
                 cuerpo.append('<CharacterStyleRange AppliedCharacterStyle="%s" AppliedConditions=%s>%s'
@@ -169,8 +186,8 @@ class Generador:
     # ---- piezas sueltas -----------------------------------------------------
     def pie_figura(self, e):
         """Pie con «Figura N.» en el estilo de carácter de la etiqueta."""
-        trozos = list(e.trozos)
-        m = re.match(r'^\s*(Fig(?:ura|s)?\.?\s*\d+\s*[A-Za-z]?\s*[.:]?)', e.texto)
+        trozos = espacios(list(e.trozos))       # antes de separar la etiqueta («Figura 1B .»)
+        m = re.match(r'^\s*(Fig(?:ura|s)?\.?\s*\d+\s*[A-Za-z]?\s*[.:]?)', ''.join(t.texto for t in trozos))
         etiqueta = self.caracter.get('etiqueta_figura')
         if m and etiqueta:
             from dataclasses import replace
@@ -340,6 +357,52 @@ def _caracter_raro(c):
 
 # Llamadas a tabla o figura entre paréntesis: «(Tabla 4)», «(ver Figuras 5A y 5B)», «(Fig. 2)».
 RE_REFERENCIA = re.compile(r'\((?:[^()]*?\s)?(?:Tablas?|Figuras?|Figs?\.)\s*\d[^()]*\)')
+
+
+# Limpiezas de espacios que se hacen siempre al importar (antes eran reglas de
+# ortotipografia.toml; allí siguen para las galeradas anteriores y por si algo se escapa).
+UNIDADES = r'%|mm|cm|µm|μm|nm|km|m|mg|µg|μg|ng|kg|g|ml|mL|dl|dL|l|L|h|min|s|mmHg|UI|°C|ºC|Hz'
+RE_CIFRA_UNIDAD = re.compile(r'(?<=\d)([  ]?)(?:%s)(?![^\W_])' % UNIDADES)
+
+
+def espacios(trozos):
+    """Dos o más espacios → uno; sin espacio antes de . , ; : ) ] ni después de ( [; y espacio
+    de no separación entre la cifra y su unidad («10%», «4 mm» → «10 %», «4 mm»)."""
+    from dataclasses import replace
+    texto = ''.join(t.texto for t in trozos)
+    if not re.search(r' {2}| [.,;:)\]]|[(\[] |\d[  ]?(?:%s)' % UNIDADES, texto):
+        return trozos
+    # Carácter a carácter, cada uno con su trozo; luego se vuelven a juntar.
+    chars = [(c, t) for t in trozos for c in t.texto]
+
+    def cambiar(patron, nuevo):
+        """nuevo(m, chars) → [(inicio, fin, [(carácter, trozo)…])], de atrás adelante."""
+        txt = ''.join(c for c, _ in chars)
+        for m in reversed(list(patron.finditer(txt))):
+            for ini, fin, pon in nuevo(m):
+                chars[ini:fin] = pon
+
+    cambiar(re.compile(r' {2,}'), lambda m: [(m.start() + 1, m.end(), [])])
+    cambiar(re.compile(r' +(?=[.,;:)\]])'), lambda m: [(m.start(), m.end(), [])])
+    cambiar(re.compile(r'(?<=[(\[]) +'), lambda m: [(m.start(), m.end(), [])])
+
+    def cifra(m):
+        cifra_t, unidad_t = chars[m.start() - 1][1], chars[m.end(1)][1]
+        # No en una llamada volada («visión² m…») ni con la unidad en superíndice.
+        if cifra_t.pos or unidad_t.pos or cifra_t.nota:
+            return []
+        if m.group(1) == ' ':
+            return []
+        return [(m.start(1), m.end(1), [(' ', chars[m.start(1)][1] if m.group(1) else unidad_t)])]
+    cambiar(RE_CIFRA_UNIDAD, cifra)
+
+    res = []
+    for c, t in chars:
+        if res and res[-1][1] is t:
+            res[-1][0].append(c)
+        else:
+            res.append(([c], t))
+    return [replace(t, texto=''.join(cs)) for cs, t in res]
 
 
 def puntuacion_tras_referencias(trozos):

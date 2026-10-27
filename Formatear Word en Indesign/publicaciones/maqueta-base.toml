@@ -38,6 +38,7 @@ no_partir       = "noPartir"   # palabras compuestas con guion que no se deben p
 etiqueta_figura = "Figura X"   # «Figura 1.» al principio del pie
 simbolos        = "→←↔⇒"       # caracteres que la fuente del texto no tiene
 estilo_simbolos = "Symbol"
+simbolos_superindice = "™®℠℗"   # al importar van con el estilo de superíndice (Super); © no, va a tamaño normal
 
 # Estilos de párrafo cuya fuente no es la del texto: sus equivalentes de negrita y cursiva
 # (por grupo de estilos o nombre de estilo sin grupo). "" = no aplicar ese formato.
