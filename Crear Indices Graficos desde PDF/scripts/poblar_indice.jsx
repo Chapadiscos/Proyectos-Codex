@@ -5,8 +5,7 @@
 //
 // Variables que debe definir el script lanzador antes de #include/evalFile:
 //   TEMPLATE_PATH, JSON_PATH (archivo .jsx con INDICE_DATA), OUTPUT_PATH, LOG_PATH
-
-app.scriptPreferences.userInteractionLevel = UserInteractionLevels.NEVER_INTERACT;
+// y, opcional, PDF_PATH (si se define, exporta ahí un PDF para revisar).
 
 var CATEGORIAS_ORDEN = [
     "Cuadro", "Gráfico", "Esquema", "Recuadro",
@@ -30,6 +29,7 @@ function log(msg) { _log.push(msg); }
 function flushLog() {
     var f = new File(LOG_PATH);
     f.encoding = "UTF8";
+    f.lineFeed = "Unix"; // en Mac ExtendScript escribe \r por defecto
     f.open("w");
     f.write(_log.join("\n"));
     f.close();
@@ -59,13 +59,39 @@ function clasificarColumnas(page) {
     return res;
 }
 
+// Si la plantilla ya está abierta, app.open() devolvería ese mismo documento
+// y el script lo vaciaría y lo cerraría; mejor parar y avisar.
+function comprobarNoAbierto(ruta) {
+    var buscado = new File(ruta).fsName;
+    for (var i = 0; i < app.documents.length; i++) {
+        var d = app.documents[i];
+        if (d.saved && d.fullName.fsName === buscado) {
+            throw new Error("Cierra en InDesign el documento " + d.name + " y vuelve a lanzarlo");
+        }
+    }
+}
+
+function exportarPDF(doc, ruta) {
+    var prefs = app.pdfExportPreferences;
+    var rangoAnterior = prefs.pageRange;
+    prefs.pageRange = PageRange.ALL_PAGES;
+    try {
+        doc.exportFile(ExportFormat.PDF_TYPE, new File(ruta), false);
+    } finally {
+        prefs.pageRange = rangoAnterior;
+    }
+}
+
 function main() {
     $.evalFile(JSON_PATH);
     var datos = INDICE_DATA;
 
     var plantilla = new File(TEMPLATE_PATH);
     if (!plantilla.exists) throw new Error("No existe la plantilla: " + TEMPLATE_PATH);
+    comprobarNoAbierto(TEMPLATE_PATH);
+    comprobarNoAbierto(OUTPUT_PATH);
     var doc = app.open(plantilla, false);
+    _docPlantilla = doc;
     log("Plantilla abierta: " + TEMPLATE_PATH);
 
     var estiloEntrada = doc.paragraphStyles.item("Indice Varios");
@@ -180,13 +206,26 @@ function main() {
     doc.saveACopy(outFile);
     log("Copia guardada en: " + OUTPUT_PATH);
 
+    if (typeof PDF_PATH !== "undefined" && PDF_PATH) {
+        exportarPDF(doc, PDF_PATH);
+        log("PDF de revisión exportado en: " + PDF_PATH);
+    }
+
     doc.close(SaveOptions.NO);
+    _docPlantilla = null;
     log("Documento cerrado sin guardar cambios en la plantilla original");
 }
 
+// Copia de la plantilla abierta (sin ventana) por este script; si algo falla
+// a medias se cierra sin guardar para no dejarla abierta e invisible.
+var _docPlantilla = null;
+var _interaccionAnterior = app.scriptPreferences.userInteractionLevel;
+app.scriptPreferences.userInteractionLevel = UserInteractionLevels.NEVER_INTERACT;
 try {
     main();
 } catch (e) {
     log("ERROR: " + e.toString() + " (line " + e.line + ")");
+    if (_docPlantilla !== null && _docPlantilla.isValid) _docPlantilla.close(SaveOptions.NO);
 }
+app.scriptPreferences.userInteractionLevel = _interaccionAnterior;
 flushLog();
