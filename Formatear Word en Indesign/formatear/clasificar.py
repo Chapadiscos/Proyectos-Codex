@@ -254,6 +254,18 @@ def _papel(el, b, texto, zona, hubo_capitulo, antes_de_tabla, previos, ladillos_
         el.papel = 'pie_figura'
         el.dudas.append('parece continuación del pie anterior')
         return
+    # Pie sin «Figura N» (revistas): la línea corta justo debajo de una imagen y, si va pegada
+    # y también es corta, la siguiente («Mario Esteban de Antonio» + «(Sevilla, 1928…)»).
+    if zona == 'texto' and corto and not RE_FIGURA.match(texto) and not texto.isupper() and ult:
+        if ult.papel == 'imagen' and 0 <= el.origen - ult.origen <= 3 and ult.procedencia == el.procedencia:
+            el.papel = 'pie_figura'
+            el.datos['sin_numero'] = True
+            return
+        if ult.papel == 'pie_figura' and ult.datos.get('sin_numero') and 0 <= el.origen - ult.origen <= 1 \
+                and previos[-2].papel == 'imagen':
+            el.papel = 'pie_figura'
+            el.dudas.append('parece continuación del pie anterior')
+            return
     if zona == 'bibliografia':
         if not (corto and neg > 0.9):
             el.papel = 'bibliografia'

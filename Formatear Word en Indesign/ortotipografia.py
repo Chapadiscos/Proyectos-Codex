@@ -41,6 +41,14 @@ def main():
     with open(args.maqueta, 'rb') as f:
         maqueta = tomllib.load(f)
     estilos = {'caracter': maqueta.get('caracter', {}), 'por_grupo': maqueta.get('caracter_por_grupo', {})}
+    # «@papel» en solo / excluir: el estilo de ese papel en la publicación. Si no lo tiene, la
+    # regla con «solo» no se aplica en ningún párrafo.
+    for rg in reglas:
+        for clave in ('solo', 'excluir'):
+            if clave not in rg:
+                continue
+            lista = [maqueta.get('parrafo', {}).get(e[1:], '') if e.startswith('@') else e for e in rg[clave]]
+            rg[clave] = [e for e in lista if e] or (['\x00 sin estilo'] if clave == 'solo' else [])
     if args.exportar:
         with open(args.exportar, 'w', encoding='utf-8') as f:
             json.dump({'reglas': reglas, 'estilos': estilos}, f, ensure_ascii=False)

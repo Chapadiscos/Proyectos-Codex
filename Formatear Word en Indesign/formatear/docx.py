@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 W = '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'
 R = '{http://schemas.openxmlformats.org/officeDocument/2006/relationships}'
 A = '{http://schemas.openxmlformats.org/drawingml/2006/main}'
+V = '{urn:schemas-microsoft-com:vml}'
 REL = '{http://schemas.openxmlformats.org/package/2006/relationships}'
 
 
@@ -283,10 +284,16 @@ class Documento:
                 num = self.notas_finales.setdefault(nid, len(self.notas_finales) + 1)
                 par.trozos.append(Trozo(str(num), nota=num, **f))
             elif x.tag in (W + 'drawing', W + 'pict', '{http://schemas.openxmlformats.org/markup-compatibility/2006}AlternateContent'):
-                for blip in x.iter(A + 'blip'):
+                blips = list(x.iter(A + 'blip'))
+                for blip in blips:
                     destino = rels.get(blip.get(R + 'embed'))
                     if destino:
                         par.imagenes.append(destino)
+                # Imágenes VML (Word guardado desde un .doc; en AlternateContent, solo si no
+                # hay la otra). Sin r:id la imagen se perdió al convertir: queda su sitio («»),
+                # para buscarle un archivo suelto.
+                for img in ([] if blips else x.iter(V + 'imagedata')):
+                    par.imagenes.append(rels.get(img.get(R + 'id')) or '')
         if texto:
             par.trozos.append(Trozo(''.join(texto), **f))
 

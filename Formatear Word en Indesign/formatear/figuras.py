@@ -2,6 +2,7 @@
 sueltos de la carpeta del capítulo (se prefieren a los incrustados en el .docx)."""
 import os
 import re
+import unicodedata
 
 EXTENSIONES = ('.jpg', '.jpeg', '.png', '.tif', '.tiff', '.psd', '.eps', '.ai', '.pdf')
 RE_ARCHIVO = re.compile(r'fig(?:ura)?\s*\.?\s*(\d+)\s*([a-z])?(?![a-z])', re.I)
@@ -45,6 +46,48 @@ def buscar_archivos(fid, texto_pie, por_id):
     elif len(encontrados) > 1:
         aviso = aviso or '%d archivos para una figura: ¿compuesta o hay que elegir?' % len(encontrados)
     return encontrados, aviso
+
+
+# Palabras del nombre de archivo que no sirven para reconocerlo en el texto.
+VACIAS = {'figura', 'fig', 'imagen', 'img', 'foto', 'jpg', 'del', 'las', 'los', 'con', 'por', 'para'}
+
+
+def _palabras(texto):
+    s = unicodedata.normalize('NFD', texto)
+    s = ''.join(c for c in s if not unicodedata.combining(c)).lower()
+    return re.findall(r'[a-z]+', s)
+
+
+def _serie(nombre):
+    """«Ventana 2.jpg» → «ventana»: archivos numerados de una misma figura."""
+    base = os.path.splitext(nombre)[0]
+    return re.sub(r'[\s_-]*\d+$', '', base).lower() if re.search(r'\d+$', base) else None
+
+
+def por_nombre(libres, textos):
+    """Archivos sueltos sin «Figura N» en el nombre para una imagen sin número: el primero de
+    los textos (el pie, el párrafo de antes, el de después) en el que salga alguna palabra del
+    nombre («Mario Padre.jpg» ↔ «Mario padre y Mario hijo»; «Ventana 1.jpg» ↔ «ventanal»).
+    Gana el nombre con más palabras encontradas y, a igualdad, el que sale antes en el texto.
+    Si es de una serie («Ventana 1», «Ventana 2»…), van todos. Devuelve (archivos, empate)."""
+    for texto in textos:
+        palabras = _palabras(texto or '')
+        puntos = []
+        for f in libres:
+            nombre = [w for w in _palabras(os.path.splitext(f)[0]) if len(w) >= 3 and w not in VACIAS]
+            pos = [next((i for i, p in enumerate(palabras) if p.startswith(w)), None) for w in nombre]
+            hechas = [i for i in pos if i is not None]
+            if hechas:
+                puntos.append(((len(hechas) / len(nombre), len(hechas), -min(hechas)), f))
+        if not puntos:
+            continue
+        mejor = max(c for c, _ in puntos)
+        elegidos = [f for c, f in puntos if c == mejor]
+        serie = _serie(elegidos[0])
+        if serie:
+            return sorted((f for f in libres if _serie(f) == serie), key=lambda f: int(re.search(r'(\d+)\.\w+$', f).group(1))), False
+        return elegidos[:1], len(elegidos) > 1
+    return [], False
 
 
 def inventario(elementos, carpeta):

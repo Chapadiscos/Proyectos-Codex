@@ -285,9 +285,20 @@ function importar(m) {
             acomodar(tf, pagina, ancho);
         }
 
+        // Página de un párrafo por su comienzo (figuras sin número e imágenes sin pie).
+        function paginaDeTexto(texto) {
+            var pag = d.pages[d.pages.length - 1];
+            if (!texto) return pag;
+            app.findTextPreferences = NothingEnum.NOTHING;
+            app.findTextPreferences.findWhat = texto.substr(0, 30);
+            var r = historia.findText();
+            app.findTextPreferences = NothingEnum.NOTHING;
+            if (r.length && r[0].parentTextFrames.length) pag = r[0].parentTextFrames[0].parentPage;
+            return pag;
+        }
         for (var i = 0; i < m.figuras.length; i++) {
             var fg = m.figuras[i];
-            var pag = paginaDeCita("(?i)\\bfig(?:ura|s)?\\.?\\s*" + fg.buscar + "(?!\\d)");
+            var pag = fg.buscar ? paginaDeCita("(?i)\\bfig(?:ura|s)?\\.?\\s*" + fg.buscar + "(?!\\d)") : paginaDeTexto(fg.buscar_texto);
             if (fg.archivos.length) colocarFigura(pag, fg.archivos, fg.pie, "", fg.avisos.slice(0));
             else colocarTabla(pag, fg.pie, fg.avisos.slice(0), m.figura.ancho);   // pie solo, sin imagen
         }
@@ -297,15 +308,8 @@ function importar(m) {
             colocarTabla(pag, tb.icml, tb.avisos.slice(0), 0, tb.titulo);
         }
         for (var i = 0; i < m.sueltas.length; i++) {
-            var su = m.sueltas[i], pag = d.pages[d.pages.length - 1];
-            if (su.buscar_texto) {
-                app.findTextPreferences = NothingEnum.NOTHING;
-                app.findTextPreferences.findWhat = su.buscar_texto.substr(0, 30);
-                var r = historia.findText();
-                app.findTextPreferences = NothingEnum.NOTHING;
-                if (r.length && r[0].parentTextFrames.length) pag = r[0].parentTextFrames[0].parentPage;
-            }
-            colocarFigura(pag, [su.archivos[0]], "", "Imagen sin pie", su.avisos.slice(0));
+            var su = m.sueltas[i];
+            colocarFigura(paginaDeTexto(su.buscar_texto), su.archivos, "", "Imagen sin pie", su.avisos.slice(0));
         }
         res.push("Figuras: " + m.figuras.length + " · Tablas: " + m.tablas.length + " · Imágenes sin pie: " + m.sueltas.length);
 

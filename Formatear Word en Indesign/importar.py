@@ -61,6 +61,16 @@ def leer_words(docxs, conf):
     return elementos, leidos[0][4], origen, [x[1] for x in leidos]
 
 
+def docx_gemelo(doc):
+    """El .docx con el mismo nombre que el .doc, en su carpeta (sin contar espacios al final:
+    «Artículo    .doc» y «Artículo.docx»)."""
+    base = os.path.splitext(os.path.basename(doc))[0].strip()
+    carpeta = os.path.dirname(os.path.abspath(doc))
+    return next((os.path.join(carpeta, f) for f in sorted(os.listdir(carpeta))
+                 if f.lower().endswith('.docx') and not f.startswith(('~$', '.'))
+                 and os.path.splitext(f)[0].strip() == base), None)
+
+
 def convertir_doc(doc, destino_dir):
     """Un .doc (Word 97-2003) pasado a .docx con textutil, de macOS (Word no: se quedaría
     esperando con un diálogo mientras se trabaja en él). textutil escribe los hipervínculos
@@ -74,6 +84,15 @@ def convertir_doc(doc, destino_dir):
     with zipfile.ZipFile(destino) as z:
         partes = {n: z.read(n) for n in z.namelist()}
     xml = partes['word/document.xml'].decode('utf-8')
+    # Algunos .doc (grandes, con muchas imágenes…) textutil no los entiende y los vuelca como
+    # texto: la cabecera binaria del archivo («ÐÏà¡±á» leída como Mac Roman, «–œ‡°±·») al
+    # principio y los acentos cambiados («ReuniÛn»).
+    texto = ''.join(re.findall(r'<w:t[^>]*>([^<]*)', xml[:200000]))
+    if '‡°±' in texto[:2000] or len(re.findall(r'[a-z][ÛÒÌÈ˙·][a-z]', texto)) > 20:
+        os.unlink(destino)
+        sys.exit('No se puede convertir «%s»: macOS no entiende este .doc y saldría sin formato y con los '
+                 'acentos cambiados. Ábrelo en Word, guárdalo como .docx (Archivo > Guardar como > '
+                 'Documento de Word .docx) e importa ese.' % os.path.basename(doc))
     xml = re.sub(r'(<w:t[^>]*>)\s*HYPERLINK\s+"[^"]*"(?:\s*\\\w\s*"[^"]*")*\s*(</w:t>)', r'\1\2', xml)
     partes['word/document.xml'] = xml.encode('utf-8')
     with zipfile.ZipFile(destino, 'w', zipfile.ZIP_DEFLATED) as z:
@@ -87,6 +106,11 @@ def preparar(docxs, conf, destino_dir, nombre):
     enlaces = os.path.join(destino_dir, 'Enlaces')
     carpeta = os.path.dirname(os.path.abspath(docxs[0]))      # la de los Word originales: figuras
     convertidos = {}
+    for k, d in enumerate(docxs):
+        gemelo = d.lower().endswith('.doc') and docx_gemelo(d)
+        if gemelo:
+            print('Hay un .docx con el mismo nombre: se importa ese, no el .doc (%s)' % os.path.basename(gemelo))
+            docxs[k] = gemelo
     for d in docxs:
         if d.lower().endswith('.doc'):
             convertidos[convertir_doc(d, destino_dir)] = d
@@ -106,6 +130,8 @@ def preparar(docxs, conf, destino_dir, nombre):
         os.makedirs(enlaces, exist_ok=True)
         doc, res = origen[id(e)], []
         for k, r in enumerate(e.imagenes):
+            if not r:                   # imagen perdida al convertir el .doc
+                continue
             ext = os.path.splitext(r)[1] or '.png'
             destino = os.path.join(enlaces, '%s_%d%s' % (prefijo, k + 1, ext))
             while os.path.exists(destino) and destino in usados:      # dos Word con el mismo párrafo
@@ -117,6 +143,32 @@ def preparar(docxs, conf, destino_dir, nombre):
         return res
 
     usados = set()
+
+    # Archivos sueltos sin «Figura N» en el nombre: se reparten por su nombre entre las figuras
+    # sin número y las imágenes sin pie (figuras.por_nombre), cada uno una sola vez.
+    # (Sin el PDF del propio Word, que suele venir en la carpeta.)
+    propios = [os.path.splitext(os.path.basename(d))[0].strip() for d in docxs]
+    libres = [a for a in por_id.get(None, []) if os.path.splitext(a)[0].strip() not in propios]
+
+    def texto_vecino(k, paso):
+        """El párrafo de texto anterior (paso -1) o siguiente (+1) al elemento k."""
+        k += paso
+        while 0 <= k < len(elementos):
+            if elementos[k].papel not in icml.FUERA_DEL_TEXTO and elementos[k].texto.strip():
+                return elementos[k].texto.strip()
+            k += paso
+        return ''
+
+    def por_nombre(textos):
+        archivos, empate = figuras.por_nombre(libres, textos)
+        for a in archivos:
+            libres.remove(a)
+        if not archivos:
+            return [], []
+        aviso = 'Archivo elegido por su nombre (%s): compruébalo' % ', '.join(archivos)
+        if empate:
+            aviso += '; había otros con la misma coincidencia'
+        return [os.path.join(carpeta, a) for a in archivos], [aviso]
     historia = escribir('historia.icml', gen.historia(elementos))
 
     cap = next((e for e in elementos if e.papel == 'capitulo'), None)
@@ -127,15 +179,20 @@ def preparar(docxs, conf, destino_dir, nombre):
     for k, e in enumerate(elementos):
         if e.papel != 'pie_figura':
             continue
-        if 'figuras' not in e.datos and ultimo is not None:
+        if 'figuras' not in e.datos and not e.datos.get('sin_numero') and ultimo is not None:
             ultimo['extra'].append(e)
             continue
         ultimo = {'pie': e, 'extra': [], 'k': k}
         lista_fig.append(ultimo)
     salida_fig = []
     for n, f in enumerate(lista_fig):
-        e, ids = f['pie'], f['pie'].datos['figuras']
+        e, ids = f['pie'], f['pie'].datos.get('figuras', [])
         archivos, avisos = [], []
+        if not ids:
+            # Pie sin número: el archivo suelto por el nombre (en el pie o, si no, en el texto de
+            # alrededor de la imagen).
+            pie_entero = ' '.join([e.texto] + [x.texto for x in f['extra']])
+            archivos, avisos = por_nombre([pie_entero, texto_vecino(f['k'] - 1, -1), texto_vecino(f['k'], 1)])
         for fid in ids:
             encontrados, aviso = figuras.buscar_archivos(fid, e.texto, por_id)
             archivos += [os.path.join(carpeta, a) for a in encontrados if os.path.join(carpeta, a) not in archivos]
@@ -147,7 +204,8 @@ def preparar(docxs, conf, destino_dir, nombre):
             # Imagen incrustada junto al pie (delante o detrás).
             vecinas = [x for x in elementos[max(f['k'] - 1, 0):f['k'] + 2] if x.papel == 'imagen']
             if vecinas:
-                archivos = extraer(vecinas[0], 'figura_%s' % ids[0])
+                archivos = extraer(vecinas[0], 'figura_%s' % (ids[0] if ids else 'p%d' % e.origen))
+            if archivos:
                 avisos.append('Sin archivo suelto: imagen sacada del Word (puede tener poca resolución)')
             else:
                 avisos.append('No se ha encontrado ninguna imagen para esta figura')
@@ -159,8 +217,10 @@ def preparar(docxs, conf, destino_dir, nombre):
                 trozos += [replace(x.trozos[0], texto=' ')] + list(x.trozos)
             pie = replace(e, trozos=trozos)
         salida_fig.append({
-            'buscar': re.match(r'\d+', ids[0]).group(0),
-            'nombre': 'Figura ' + ', '.join(ids),
+            'buscar': re.match(r'\d+', ids[0]).group(0) if ids else '',
+            # Sin número no hay cita «Figura N»: va a la página del párrafo de antes de la imagen.
+            'buscar_texto': '' if ids else texto_vecino(f['k'] - 1, -1)[:40],
+            'nombre': 'Figura ' + ', '.join(ids) if ids else 'Figura sin número (párrafo %d)' % e.origen,
             'archivos': archivos,
             'pie': escribir('figura_%02d.icml' % (n + 1), gen.pie_figura(pie)),
             'avisos': avisos + e.dudas,
@@ -175,14 +235,20 @@ def preparar(docxs, conf, destino_dir, nombre):
         if 'pie_figura' in vecinos or 'etiqueta_imagen' in vecinos:
             continue
         siguiente = next((x for x in elementos[k + 1:] if x.texto.strip() and x.papel not in icml.FUERA_DEL_TEXTO), None)
-        sobrantes = [os.path.join(carpeta, a) for a in figuras.inventario(elementos, carpeta)[1]]
-        aviso = 'Imagen del Word sin pie (párrafo %d)' % e.origen
-        if sobrantes:
-            aviso += '. Archivos de la carpeta sin pie: ' + ', '.join(os.path.basename(a) for a in sobrantes)
+        avisos = ['Imagen del Word sin pie (párrafo %d)' % e.origen]
+        archivos, aviso = por_nombre([texto_vecino(k, -1), texto_vecino(k, 1)])
+        avisos += aviso
+        if not archivos:
+            archivos = extraer(e, 'imagen_parrafo_%d' % e.origen)
+            if libres:
+                avisos.append('Archivos de la carpeta sin usar: ' + ', '.join(libres))
+        if not archivos:
+            print('⚠ Imagen del Word perdida al convertir el .doc y sin archivo suelto (párrafo %d)' % e.origen)
+            continue
         sueltas.append({
-            'archivos': extraer(e, 'imagen_parrafo_%d' % e.origen),
+            'archivos': archivos,
             'buscar_texto': siguiente.texto.strip()[:40] if siguiente else '',
-            'avisos': [aviso],
+            'avisos': avisos,
         })
 
     # Tablas: título + tabla + notas.
@@ -287,7 +353,7 @@ def main():
         carpeta = args.rutas[0]
         docs = sorted(d for d in glob.glob(os.path.join(carpeta, '*.doc')) + glob.glob(os.path.join(carpeta, '*.docx'))
                       if not os.path.basename(d).startswith('~$'))
-        docs = [d for d in docs if not (d.lower().endswith('.doc') and os.path.exists(d + 'x'))]   # mejor el .docx
+        docs = [d for d in docs if not (d.lower().endswith('.doc') and docx_gemelo(d))]   # mejor el .docx
         if len(docs) != 1:
             sys.exit('En %s hay %d Word: elige cuáles importar (%s)' % (
                 carpeta, len(docs), ', '.join(os.path.basename(d) for d in docs)))

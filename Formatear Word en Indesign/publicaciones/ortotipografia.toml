@@ -4,7 +4,9 @@
 #
 # solo    = estilos de párrafo donde se aplica (si falta, en todos).
 # excluir = estilos de párrafo donde no se aplica.
-#   En las dos listas vale «Grupo/Estilo», el nombre solo o un grupo entero («Tabla»).
+#   En las dos listas vale «Grupo/Estilo», el nombre solo o un grupo entero («Tabla»), o
+#   «@papel»: el estilo que ese papel tiene en la configuración de la publicación
+#   («@pie_figura» es «Pie Figura» en Ponencias y «Pie figura» en la revista).
 # excluir_texto = expresiones regulares (de JavaScript) sobre el texto del párrafo: si encaja
 #   alguna, no se toca. Una por patrón: unirlas con «|» falla en InDesign.
 # tipo = "ladillos_seguidos": regla especial que no es Buscar/Cambiar (ver abajo).
@@ -190,13 +192,22 @@ nombre   = "Punto final del párrafo"
 descripcion = "Los párrafos de texto terminan en punto. No se toca el que acaba en «:» (presenta una lista), «;», «,», «?», «!», «…» o en una unidad («1 %»)"
 buscar   = '(?<![.!?…])([[:alnum:]%)\]»])$'
 cambiar  = '$1.'
-solo     = ["Texto base", "Texto base - Viñeta", "Viñetas", "Ideas basicas/Texto Ideas", "Pie Figura", "Tabla/Pie tabla"]   # la bibliografía, no
+solo     = ["Texto base", "Texto base - Viñeta", "Viñetas", "Ideas basicas/Texto Ideas", "Tabla/Pie tabla"]   # la bibliografía, no; los pies, en la regla siguiente
 # Fuera: DOI o dirección web al final; el aviso «Imagen sin pie»; y «texto. (Figura 10)», que
 # acabaría en «. (Figura 10).»: la puntuación tiene que pasar antes detrás del paréntesis.
 # Tampoco si acaba en una unidad («Voriconazol 1 %», «hasta 2 mm»).
 excluir_texto = ['(?:doi|DOI|https?:|www\.)\S*$', '^Imagen sin pie$', '[.,;:]\s*\([^()]*\)$',
                  '\d[ \u00A0\u2009\u202F]?(?:%|mm|cm|µm|μm|nm|km|m|mg|µg|μg|ng|kg|g|ml|mL|dl|dL|l|L|h|min|s|mmHg|UI|°C|ºC|Hz)$']
 ejemplo  = "Episcleritis nodular → Episcleritis nodular."
+
+[[regla]]
+nombre   = "Punto final en los pies de figura"
+descripcion = "Los pies de las ilustraciones terminan siempre en punto, también tras una cifra, una unidad o un paréntesis. No se toca el que ya acaba en «.», «?», «!» o «…», ni el que acaba en «:», «;» o «,» (eso es mejor verlo)"
+buscar   = '([^.!?…:;,\s])$'
+cambiar  = '$1.'
+solo     = ["@pie_figura"]
+excluir_texto = ['^Imagen sin pie$']
+ejemplo  = "Mario padre y Mario hijo → Mario padre y Mario hijo."
 
 [[regla]]
 nombre   = "Sin punto final en ladillos y tablas"
