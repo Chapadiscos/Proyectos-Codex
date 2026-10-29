@@ -42,7 +42,7 @@ cambian los scripts, no. El icono se genera con `app/icono/generar_icono.sh`.
 Hace lo mismo que la app. Requiere Python 3 con PyMuPDF (`pip install pymupdf`) e InDesign 2026.
 
 ```bash
-cd "/Volumes/DATOS/Proyectos Codex/Crear Indices Graficos desde PDF"
+cd "/Volumes/DATOS/Proyectos Codex/Extraer Indices PDF BdE + Hipervinculos"
 
 # Todo de una vez: extrae, maqueta y abre el PDF de revisión
 scripts/generar_indice.sh entrada/MiInforme.pdf

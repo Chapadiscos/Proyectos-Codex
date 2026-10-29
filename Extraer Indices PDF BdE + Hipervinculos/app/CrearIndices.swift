@@ -19,7 +19,7 @@ let proyecto: URL = {
     if FileManager.default.fileExists(atPath: junto.appendingPathComponent("scripts/generar_indice.sh").path) {
         return junto
     }
-    return URL(fileURLWithPath: "/Volumes/DATOS/Proyectos Codex/Crear Indices Graficos desde PDF")
+    return URL(fileURLWithPath: "/Volumes/DATOS/Proyectos Codex/Extraer Indices PDF BdE + Hipervinculos")
 }()
 let indesign = "Adobe InDesign 2026"
 
