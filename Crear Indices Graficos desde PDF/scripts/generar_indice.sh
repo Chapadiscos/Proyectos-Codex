@@ -15,8 +15,16 @@
 #
 # Requiere InDesign abierto (se abre solo si no lo está) y Python 3 con
 # PyMuPDF instalado. Otra versión de InDesign: INDESIGN_APP="Adobe InDesign 2027"
+# Con DESDE_APP=1 (lo pone la app «Crear índices gráficos») no abre el PDF
+# ni da las instrucciones de la línea de órdenes.
 
 set -euo pipefail
+
+# Las apps abiertas desde el Finder no heredan el PATH del Terminal: sin esto
+# no se encuentra el python3 que tiene PyMuPDF.
+export PATH="/Library/Frameworks/Python.framework/Versions/Current/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+export PYTHONUNBUFFERED=1
+DESDE_APP="${DESDE_APP:-0}"
 
 PASO_EXTRAER=1
 PASO_MAQUETAR=1
@@ -59,6 +67,7 @@ if [ "$PASO_EXTRAER" = 1 ]; then
 fi
 
 if [ "$PASO_MAQUETAR" = 0 ]; then
+    [ "$DESDE_APP" = 1 ] && exit 0
     echo
     echo "Revisa y retoca si hace falta: $JSON_PATH"
     echo "Luego: $0 --solo-maquetar \"$PDF_PATH\""
@@ -103,6 +112,6 @@ if grep -q "^ERROR" "$LOG_PATH"; then
     exit 1
 fi
 echo "Listo: $SALIDA_INDD"
-if [ -f "$SALIDA_PDF" ]; then
+if [ -f "$SALIDA_PDF" ] && [ "$DESDE_APP" = 0 ]; then
     open "$SALIDA_PDF"
 fi

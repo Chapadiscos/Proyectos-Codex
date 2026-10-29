@@ -8,7 +8,7 @@
 // y, opcional, PDF_PATH (si se define, exporta ahí un PDF para revisar).
 
 var CATEGORIAS_ORDEN = [
-    "Cuadro", "Gráfico", "Esquema", "Recuadro",
+    "Cuadro", "Gráfico", "Esquema", "Figura", "Recuadro",
     "Table", "Chart", "Figure", "Box"
 ];
 // Título completo de cada categoría (el estilo de párrafo lo pone en
@@ -17,6 +17,7 @@ var TITULO_INDICE = {
     "Cuadro": "índice de cuadros",
     "Gráfico": "índice de gráficos",
     "Esquema": "índice de esquemas",
+    "Figura": "índice de figuras",
     "Recuadro": "índice de recuadros",
     "Table": "index of tables",
     "Chart": "index of charts",
@@ -82,6 +83,26 @@ function exportarPDF(doc, ruta) {
     }
 }
 
+// Quita del título las marcas <i>…</i> de las cursivas del PDF y apunta en
+// `cursivas` dónde quedan en la historia, como [inicio, fin) contando desde
+// `inicio` (posición del título en la historia).
+function quitarMarcasCursiva(titulo, inicio, cursivas) {
+    var marca = /<\/?i>/g, m, limpio = "", ultimo = 0, desde = -1;
+    while ((m = marca.exec(titulo)) !== null) {
+        limpio += titulo.substring(ultimo, m.index);
+        ultimo = marca.lastIndex;
+        if (m[0] === "<i>") {
+            desde = inicio + limpio.length;
+        } else if (desde >= 0) {
+            cursivas.push([desde, inicio + limpio.length]);
+            desde = -1;
+        }
+    }
+    limpio += titulo.substring(ultimo);
+    if (desde >= 0) cursivas.push([desde, inicio + limpio.length]);
+    return limpio;
+}
+
 function main() {
     $.evalFile(JSON_PATH);
     var datos = INDICE_DATA;
@@ -98,6 +119,8 @@ function main() {
     var estiloTitulo = doc.paragraphStyles.item("Indice titulo cap");
     if (!estiloEntrada.isValid) throw new Error("No existe el estilo 'Indice Varios'");
     if (!estiloTitulo.isValid) throw new Error("No existe el estilo 'Indice titulo cap'");
+    var estiloCursiva = doc.characterStyles.item("Light Italic");
+    if (!estiloCursiva.isValid) log("ADVERTENCIA: no existe el estilo de carácter 'Light Italic'; las cursivas quedan en redonda");
 
     // Usamos la página 1 como plantilla pristina de columna (banner + L + R).
     while (doc.pages.length > 1) doc.pages[doc.pages.length - 1].remove();
@@ -108,56 +131,48 @@ function main() {
     }
     log("Columnas de plantilla identificadas en página 1");
 
-    var paginasTrabajo = [];
+    // Columnas de entradas en orden de lectura (izquierda y derecha de cada
+    // página), cada una con su marco de título encima.
+    var columnas = [];
 
     function nuevaPaginaDeTrabajo() {
-        var nueva = paginaPristina.duplicate(LocationOptions.AFTER, doc.pages.lastItem());
+        // Se duplica el pliego y no la página: una página duplicada «después
+        // de» otra se mete en su mismo pliego y acababan todas en uno solo.
+        var pliego = paginaPristina.parent.duplicate(LocationOptions.AT_END);
+        var nueva = pliego.pages[0];
         var cols = clasificarColumnas(nueva);
-        // Rompe cualquier enhebrado heredado de la plantilla (la propia
-        // "Indices limpio.indd" trae la columna L enhebrada a la R) para que
-        // cada columna nueva empiece como una story independiente; si no se
-        // rompe, el desbordamiento de una categoría se cuela silenciosamente
-        // en la columna de al lado sin que este script lo detecte.
+        // La plantilla trae la columna L enhebrada a la R: se rompe y se vacía
+        // todo; el enhebrado se rehace abajo, columna a columna.
         if (cols.Lentries.nextTextFrame !== null) cols.Lentries.nextTextFrame = null;
         if (cols.Rentries.nextTextFrame !== null) cols.Rentries.nextTextFrame = null;
         cols.Ltitle.contents = "";
         cols.Rtitle.contents = "";
         cols.Lentries.contents = "";
         cols.Rentries.contents = "";
-        paginasTrabajo.push(nueva);
+        columnas.push({ entradas: cols.Lentries, titulo: cols.Ltitle });
+        columnas.push({ entradas: cols.Rentries, titulo: cols.Rtitle });
         log("Nueva página de trabajo creada: " + nueva.name);
-        return { page: nueva, cols: cols };
     }
 
-    var actual = nuevaPaginaDeTrabajo();
-    var ladoActual = "L"; // columna donde toca escribir a continuación
-    var columnaUsada = false; // si la columna actual ya tiene contenido
-
-    function siguienteColumnaLibre() {
-        if (!columnaUsada) return; // la columna actual sigue libre
-        if (ladoActual === "L") {
-            ladoActual = "R";
-        } else {
-            actual = nuevaPaginaDeTrabajo();
-            ladoActual = "L";
+    function columnaDe(parrafo) {
+        var marco = parrafo.parentTextFrames[0];
+        for (var k = 0; k < columnas.length; k++) {
+            if (columnas[k].entradas.id === marco.id) return k;
         }
-        columnaUsada = false;
+        return -1;
     }
 
-    function frameTitulo() { return ladoActual === "L" ? actual.cols.Ltitle : actual.cols.Rtitle; }
-    function frameEntradas() { return ladoActual === "L" ? actual.cols.Lentries : actual.cols.Rentries; }
-
-    function agregarColumnaContinuacion() {
-        // Crea/usa la siguiente columna disponible y la enhebra a continuación
-        // de la última (salto de columna). No repite el título: cada índice
-        // lleva una única cabecera, en su primera columna.
-        var frameAnterior = frameEntradas();
-        siguienteColumnaLibre();
-        columnaUsada = true;
-        frameAnterior.nextTextFrame = frameEntradas();
-        return frameEntradas();
+    // Todas las entradas van en una sola historia enhebrada por todas las
+    // columnas; cada tipo de índice acaba en un salto de columna para que el
+    // siguiente empiece en columna nueva.
+    var lineas = [];
+    var posicion = 0; // caracteres de la historia antes de la línea actual
+    var cursivas = []; // tramos [inicio, fin) que van en «Light Italic»
+    function anadirLinea(texto) {
+        lineas.push(texto);
+        posicion += texto.length + 1; // + el retorno
     }
-
+    var indices = []; // tipos presentes: categoría, primer y último párrafo
     for (var c = 0; c < CATEGORIAS_ORDEN.length; c++) {
         var categoria = CATEGORIAS_ORDEN[c];
         var entradas = datos[categoria];
@@ -165,39 +180,62 @@ function main() {
             log(categoria + ": sin entradas, se omite");
             continue;
         }
-
-        siguienteColumnaLibre();
-        columnaUsada = true;
-
-        frameTitulo().contents = TITULO_INDICE[categoria];
-        frameTitulo().parentStory.paragraphs.everyItem().appliedParagraphStyle = estiloTitulo;
-
-        var lineas = [];
+        var indice = { categoria: categoria, primero: lineas.length, entradas: entradas.length };
         var capituloAnterior = null;
         for (var e = 0; e < entradas.length; e++) {
             var entry = entradas[e];
             var capitulo = entry.numero.split(".")[0];
             if (capituloAnterior !== null && capitulo !== capituloAnterior) {
-                lineas.push(""); // retorno de carro extra al cambiar de capítulo
+                anadirLinea(""); // retorno de carro extra al cambiar de capítulo
             }
             capituloAnterior = capitulo;
             // Espacio largo (Em space) entre el título y el número de página.
-            lineas.push(entry.numero + "\t" + entry.titulo + " " + entry.pagina);
+            var antes = entry.numero + "\t";
+            var tituloLimpio = quitarMarcasCursiva(entry.titulo, posicion + antes.length, cursivas);
+            anadirLinea(antes + tituloLimpio + " " + entry.pagina);
         }
+        indice.ultimo = lineas.length - 1;
+        indices.push(indice);
+    }
+    if (indices.length === 0) throw new Error("No hay ninguna entrada que maquetar");
 
-        var frameActualEntradas = frameEntradas();
-        frameActualEntradas.contents = lineas.join("\r");
-        frameActualEntradas.parentStory.paragraphs.everyItem().appliedParagraphStyle = estiloEntrada;
+    nuevaPaginaDeTrabajo();
+    columnas[0].entradas.nextTextFrame = columnas[1].entradas;
+    columnas[0].entradas.contents = lineas.join("\r");
+    var historia = columnas[0].entradas.parentStory;
+    historia.paragraphs.everyItem().appliedParagraphStyle = estiloEntrada;
+    for (var k = 0; k < indices.length - 1; k++) {
+        // El retorno final del último párrafo de cada tipo pasa a ser un salto de columna
+        historia.paragraphs[indices[k].ultimo].characters.lastItem().contents = SpecialCharacters.COLUMN_BREAK;
+    }
 
-        var vueltas = 0;
-        while (frameActualEntradas.overflows && vueltas < 200) {
-            frameActualEntradas = agregarColumnaContinuacion();
-            frameActualEntradas.parentStory.paragraphs.everyItem().appliedParagraphStyle = estiloEntrada;
-            vueltas++;
+    var vueltas = 0;
+    while (historia.textContainers[historia.textContainers.length - 1].overflows && vueltas < 100) {
+        var ultima = columnas[columnas.length - 1].entradas;
+        nuevaPaginaDeTrabajo();
+        ultima.nextTextFrame = columnas[columnas.length - 2].entradas;
+        columnas[columnas.length - 2].entradas.nextTextFrame = columnas[columnas.length - 1].entradas;
+        vueltas++;
+    }
+    if (vueltas >= 100) log("ADVERTENCIA: el texto sigue desbordando tras 100 páginas");
+    if (estiloCursiva.isValid) {
+        for (var k = 0; k < cursivas.length; k++) {
+            if (cursivas[k][1] <= cursivas[k][0]) continue;
+            historia.characters.itemByRange(cursivas[k][0], cursivas[k][1] - 1).appliedCharacterStyle = estiloCursiva;
         }
-        if (vueltas >= 200) log(categoria + ": ADVERTENCIA posible bucle infinito de desbordamiento");
+        if (cursivas.length) log("Cursivas: " + cursivas.length + " tramo(s) con el estilo 'Light Italic'");
+    }
+    historia.recompose();
 
-        log(categoria + ": " + entradas.length + " entradas insertadas en " + (vueltas + 1) + " columna(s)");
+    // Cada índice lleva una única cabecera, sobre la columna donde empieza.
+    for (var k = 0; k < indices.length; k++) {
+        var desde = columnaDe(historia.paragraphs[indices[k].primero]);
+        var hasta = columnaDe(historia.paragraphs[indices[k].ultimo]);
+        if (desde < 0) throw new Error(indices[k].categoria + ": no se encuentra la columna donde empieza");
+        var titulo = columnas[desde].titulo;
+        titulo.contents = TITULO_INDICE[indices[k].categoria];
+        titulo.parentStory.paragraphs.everyItem().appliedParagraphStyle = estiloTitulo;
+        log(indices[k].categoria + ": " + indices[k].entradas + " entradas insertadas en " + (hasta - desde + 1) + " columna(s)");
     }
 
     paginaPristina.remove();

@@ -1,2 +1,8 @@
 # Datos que generan los scripts (se rehacen desde el PDF)
 datos/
+
+# La app se compila con app/compilar_app.sh
+*.app/
+
+# Bloqueos de InDesign mientras un .indd está abierto
+*.idlk
