@@ -78,7 +78,9 @@ function openBook(file) {
 }
 
 function browseForBook() {
-  var file = File.openDialog('Selecciona el Libro de InDesign (.indb) con el documento final', '*.indb', false);
+  // En Windows el filtro va como «Descripción:*.ext»; en Mac se ignora.
+  var filtro = File.fs === 'Windows' ? 'Libro de InDesign:*.indb' : null;
+  var file = File.openDialog('Selecciona el Libro de InDesign (.indb) con el documento final', filtro, false);
   if (!file) {
     return null;
   }
