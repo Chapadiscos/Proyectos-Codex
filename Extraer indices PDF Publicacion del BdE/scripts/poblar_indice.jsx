@@ -227,14 +227,17 @@ function main() {
     }
     historia.recompose();
 
-    // Cada índice lleva una única cabecera, sobre la columna donde empieza.
+    // La cabecera de cada índice se repite, igual, sobre todas sus columnas.
     for (var k = 0; k < indices.length; k++) {
         var desde = columnaDe(historia.paragraphs[indices[k].primero]);
         var hasta = columnaDe(historia.paragraphs[indices[k].ultimo]);
         if (desde < 0) throw new Error(indices[k].categoria + ": no se encuentra la columna donde empieza");
-        var titulo = columnas[desde].titulo;
-        titulo.contents = TITULO_INDICE[indices[k].categoria];
-        titulo.parentStory.paragraphs.everyItem().appliedParagraphStyle = estiloTitulo;
+        if (hasta < desde) throw new Error(indices[k].categoria + ": no se encuentra la columna donde acaba");
+        for (var col = desde; col <= hasta; col++) {
+            var titulo = columnas[col].titulo;
+            titulo.contents = TITULO_INDICE[indices[k].categoria];
+            titulo.parentStory.paragraphs.everyItem().appliedParagraphStyle = estiloTitulo;
+        }
         log(indices[k].categoria + ": " + indices[k].entradas + " entradas insertadas en " + (hasta - desde + 1) + " columna(s)");
     }
 

@@ -76,7 +76,7 @@ script se para y lo avisa. Los demás documentos abiertos no se tocan.
   - `TITULO_INDICE`: textos de cabecera.
   - Estilos de párrafo `Indice Varios` (entradas) e `Indice titulo cap` (cabecera), que salen de la plantilla.
   - Línea en blanco entre capítulos y espacio eme antes del número de página.
-  - Cada página va en su propio pliego. Todas las columnas de entradas forman una sola historia enhebrada; los marcos de título van aparte. Cada tipo de índice termina con un salto de columna y lleva su cabecera solo sobre la columna donde empieza.
+  - Cada página va en su propio pliego. Todas las columnas de entradas forman una sola historia enhebrada; los marcos de título van aparte. Cada tipo de índice termina con un salto de columna y repite su cabecera, igual, sobre cada una de sus columnas.
 - **Cursivas**: el extractor marca en el título los tramos que en el PDF van en cursiva, así: `<i>Boletín Económico</i>`. Se pueden añadir o quitar a mano en el `.json`. Al maquetar, `poblar_indice.jsx` quita las marcas y aplica el estilo de carácter `Light Italic` de la plantilla.
 - **Espacios de no separación**: `PALABRAS_UNIDAS` en `scripts/extraer_indice.py`. Lista las palabras cortas (la, de, un, y…; en inglés the, of, and…) que no deben quedarse a final de línea. El espacio que las sigue se cambia por uno de no separación al pasar los datos a InDesign; el `.json` conserva los espacios normales.
 - **Columnas de la plantilla**: `clasificarColumnas()` las reconoce por posición. Columna izquierda en x≈19 mm; banda si el ancho es mayor de 150; título si el alto es menor de 30. Si se mueve algo en la plantilla, hay que ajustar estos valores.
