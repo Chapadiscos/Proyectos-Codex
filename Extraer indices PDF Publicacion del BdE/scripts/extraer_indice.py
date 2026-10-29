@@ -15,12 +15,16 @@ ella. Se trabaja línea a línea y en el sentido de lectura de cada una (tambié
 en páginas apaisadas con el texto girado), sin fiarse de cómo agrupa el PDF el
 texto en bloques: a veces junta título y etiqueta en el mismo bloque y con el
 título delante.
+
+Los títulos de los recuadros, que en el PDF van en mayúsculas, se pasan a
+minúsculas conservando nombres propios y siglas tal como los escribe el propio
+PDF en su texto corrido (ver pasar_a_minusculas).
 """
 
 import sys
 import json
 import re
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 import fitz  # PyMuPDF
 
@@ -294,6 +298,137 @@ def unir_palabras_cortas(titulo, idioma):
     return UNIR_RE[idioma].sub(r"\1" + ESPACIO_NO_SEPARACION, titulo)
 
 
+# Recuadros a minúsculas. Cada palabra se escribe como la escribe el texto
+# corrido del propio PDF: así «Banco de España», «Mecanismo Único de
+# Supervisión», «DANA» o «ES_DataLab» se conservan sin mantener listas a mano.
+CATEGORIAS_MINUSCULAS = {"Recuadro", "Box"}
+PALABRA_RE = re.compile(r"[^\W\d]+")  # letras y guion bajo, sin cifras
+TOKEN_TITULO_RE = re.compile(r"</?i>|[^\W\d]+|.", re.S)
+# Lo que hay justo antes de una palabra que empieza frase: ahí su mayúscula no
+# dice nada.
+INICIO_FRASE = set(".!?:;«“\"(•–—")
+# Palabras que van siempre en minúscula dentro del título.
+FUNCIONALES = set(" ".join(PALABRAS_UNIDAS.values()).split()) | {"its", "their", "s"}
+MAX_TRAMO = 6  # palabras del tramo más largo que se busca en el PDF
+UMBRAL_MAYUSCULA = 0.8  # proporción de apariciones que deben ir así
+
+
+def palabras_del_cuerpo(doc):
+    """Palabras del texto corrido del PDF como (forma, informativa): no es
+    informativa la que empieza frase o bloque ni la que va en una racha de
+    mayúsculas (títulos, cabeceras), porque su mayúscula no dice nada."""
+    palabras = []
+    for page in doc:
+        for b in page.get_text("blocks"):
+            texto = b[4].translate(LIGADURAS)
+            texto = re.sub(r"-\n(?=[a-záéíóúñ])", "", texto)  # guiones de partición
+            anterior = None  # último carácter no blanco
+            for linea in texto.split("\n"):
+                letras = [c for c in linea if c.isalpha()]
+                if len(letras) >= 4 and all(c.isupper() for c in letras):
+                    anterior = None
+                    continue
+                pos = 0
+                for m in PALABRA_RE.finditer(linea):
+                    hueco = linea[pos:m.start()].strip()
+                    if hueco:
+                        anterior = hueco[-1]
+                    palabras.append((m.group(), anterior is not None and anterior not in INICIO_FRASE))
+                    anterior = m.group()[-1]
+                    pos = m.end()
+                resto = linea[pos:].strip()
+                if resto:
+                    anterior = resto[-1]
+
+    def en_mayusculas(p):
+        return len(p) > 1 and p.isupper()
+    for i, (p, _) in enumerate(palabras):
+        if en_mayusculas(p) and ((i > 0 and en_mayusculas(palabras[i - 1][0])) or
+                                 (i + 1 < len(palabras) and en_mayusculas(palabras[i + 1][0]))):
+            palabras[i] = (p, False)
+    return palabras
+
+
+def indice_de_tramos(palabras):
+    """Posiciones de cada secuencia de 1 a MAX_TRAMO palabras (en minúsculas)."""
+    claves = [p.lower() for p, _ in palabras]
+    indice = defaultdict(list)
+    for i in range(len(claves)):
+        for n in range(1, min(MAX_TRAMO, len(claves) - i) + 1):
+            indice[tuple(claves[i:i + n])].append(i)
+    return indice
+
+
+def a_minusculas(titulo, palabras, indice):
+    """Pasa a minúsculas un título en mayúsculas, con mayúscula inicial, tras
+    punto y al abrir cursiva (título de obra). Las marcas <i></i> se
+    conservan, así que el estilo «Light Italic» se sigue aplicando igual."""
+    tokens = TOKEN_TITULO_RE.findall(titulo)
+    pos_palabras = [k for k, t in enumerate(tokens) if PALABRA_RE.fullmatch(t)]
+    claves = [tokens[k].lower() for k in pos_palabras]
+    formas = list(claves)
+    contenido = [len(c) > 1 and c not in FUNCIONALES for c in claves]
+
+    # Nombres propios de varias palabras: tramos del título que en el PDF
+    # llevan casi siempre en mayúscula todas sus palabras de contenido.
+    for n in range(MAX_TRAMO, 1, -1):
+        for ini in range(len(claves) - n + 1):
+            dentro = [ini + k for k in range(n) if contenido[ini + k]]
+            if len(dentro) < 2:
+                continue
+            total, propias = 0, Counter()
+            for j in indice.get(tuple(claves[ini:ini + n]), ()):
+                vistas = [palabras[j + i - ini][0] for i in dentro if palabras[j + i - ini][1]]
+                if not vistas:
+                    continue
+                total += 1
+                if all(f[:1].isupper() for f in vistas):
+                    propias[tuple(palabras[j + i - ini][0] for i in dentro)] += 1
+            if total and sum(propias.values()) >= UMBRAL_MAYUSCULA * total:
+                for i, forma in zip(dentro, propias.most_common(1)[0][0]):
+                    if formas[i] == claves[i]:
+                        formas[i] = forma
+
+    # Palabras sueltas que casi siempre van con mayúscula (España, DANA...).
+    for i, clave in enumerate(claves):
+        if not contenido[i] or formas[i] != clave:
+            continue
+        votos = Counter(palabras[j][0] for j in indice.get((clave,), ()) if palabras[j][1])
+        total = sum(votos.values())
+        if total >= 2:
+            forma, veces = votos.most_common(1)[0]
+            if forma != clave and veces >= UMBRAL_MAYUSCULA * total:
+                formas[i] = forma
+
+    for k, forma in zip(pos_palabras, formas):
+        tokens[k] = forma
+    inicio = True
+    for k, t in enumerate(tokens):
+        if PALABRA_RE.fullmatch(t):
+            if inicio:
+                tokens[k] = t[0].upper() + t[1:]
+            inicio = False
+        elif t in ".!?" or t == "<i>":
+            inicio = True
+    return "".join(tokens)
+
+
+def pasar_a_minusculas(resultado, pdf_path):
+    """Pasa a minúsculas los títulos de recuadros que vienen en mayúsculas.
+    Devuelve cuántos ha cambiado."""
+    pendientes = [
+        e for cat in CATEGORIAS_MINUSCULAS for e in resultado.get(cat, [])
+        if sin_marcas(e["titulo"]) == sin_marcas(e["titulo"]).upper()
+    ]
+    if not pendientes:
+        return 0
+    palabras = palabras_del_cuerpo(fitz.open(pdf_path))
+    indice = indice_de_tramos(palabras)
+    for e in pendientes:
+        e["titulo"] = a_minusculas(e["titulo"], palabras, indice)
+    return len(pendientes)
+
+
 def guardar_jsx(resultado, salida_jsx):
     # ExtendScript (el motor de scripts de InDesign) no tiene JSON.parse, así
     # que dejamos el mismo contenido como objeto literal .jsx listo para que
@@ -342,6 +477,7 @@ def main():
 
     resultado = {cat: entradas.get(cat, []) for cat in CATEGORIAS if entradas.get(cat)}
     revisar(resultado, avisos)
+    pasados = pasar_a_minusculas(resultado, pdf_path)
 
     with open(salida, "w", encoding="utf-8") as f:
         json.dump(resultado, f, ensure_ascii=False, indent=2)
@@ -353,6 +489,8 @@ def main():
         print("  !! No se ha encontrado ninguna etiqueta (Cuadro 1.1, Chart 1.1...)")
     for cat, lista in resultado.items():
         print(f"  {cat}: {len(lista)} entradas")
+    if pasados:
+        print(f"  Recuadros: {pasados} título(s) pasados a minúsculas; revisa nombres propios y siglas")
     if avisos:
         print(f"\nAvisos para revisar ({len(avisos)}):")
         for a in avisos:
