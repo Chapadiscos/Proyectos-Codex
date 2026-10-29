@@ -26,13 +26,13 @@ import fitz  # PyMuPDF
 
 CATEGORIAS = [
     "Cuadro", "Gráfico", "Esquema", "Figura", "Recuadro",
-    "Table", "Chart", "Figure", "Box",
+    "Table", "Chart", "Schema", "Figure", "Box",
 ]
-INGLES = {"Table", "Chart", "Figure", "Box"}
+INGLES = {"Table", "Chart", "Schema", "Figure", "Box"}
 
 # Línea con la etiqueta sola: "Cuadro 1.1", "Table A1.2", "Recuadro 3.2"...
 ETIQUETA_RE = re.compile(
-    r"^(Cuadro|Gr[aá]fico|Esquema|Figura|Recuadro|Table|Chart|Figure|Box)\s+([A-Za-z]?\d+\.\d+)$"
+    r"^(Cuadro|Gr[aá]fico|Esquema|Figura|Recuadro|Table|Chart|Schema|Figure|Box)\s+([A-Za-z]?\d+\.\d+)$"
 )
 
 # Los recuadros/boxes se repiten en cada página que ocupan añadiendo
@@ -56,7 +56,7 @@ NO_TITULO_RE = re.compile(
 # Cuando en un documento en un idioma aparece suelta alguna etiqueta en el
 # otro idioma (typo de maquetación), se fusiona con su categoría equivalente.
 SINONIMOS = {
-    "Cuadro": "Table", "Gráfico": "Chart", "Esquema": "Figure", "Figura": "Figure",
+    "Cuadro": "Table", "Gráfico": "Chart", "Esquema": "Schema", "Figura": "Figure",
     "Recuadro": "Box",
 }
 

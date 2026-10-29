@@ -1,7 +1,7 @@
 # Crear índices gráficos desde PDF
 
 Genera en InDesign los índices de Cuadros, Gráficos, Esquemas, Figuras y
-Recuadros (o Tables, Charts, Figures y Boxes) de un informe del Banco de España a partir
+Recuadros (o Tables, Charts, Schemas, Figures y Boxes) de un informe del Banco de España a partir
 de su PDF final.
 
 ## La app

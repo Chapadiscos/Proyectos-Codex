@@ -9,7 +9,7 @@
 
 var CATEGORIAS_ORDEN = [
     "Cuadro", "Gráfico", "Esquema", "Figura", "Recuadro",
-    "Table", "Chart", "Figure", "Box"
+    "Table", "Chart", "Schema", "Figure", "Box"
 ];
 // Título completo de cada categoría (el estilo de párrafo lo pone en
 // mayúsculas automáticamente, así que basta con escribirlo en minúsculas).
@@ -21,6 +21,7 @@ var TITULO_INDICE = {
     "Recuadro": "índice de recuadros",
     "Table": "index of tables",
     "Chart": "index of charts",
+    "Schema": "index of schemas",
     "Figure": "index of figures",
     "Box": "index of boxes"
 };
