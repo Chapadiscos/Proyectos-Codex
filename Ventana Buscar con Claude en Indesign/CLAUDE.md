@@ -1,4 +1,4 @@
-# InDesign MCP
+# Ventana Buscar con Claude en Indesign (InDesign MCP)
 
 Servidor MCP (Python, SDK `mcp` 2.x → `MCPServer`, no `FastMCP`) que deja a Claude leer y modificar en vivo el documento abierto en InDesign 2026, vía `osascript` + `do script` (ExtendScript).
 

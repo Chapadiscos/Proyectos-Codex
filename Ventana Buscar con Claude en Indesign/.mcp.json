@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "indesign": {
+      "command": "/Volumes/DATOS/Proyectos Codex/Ventana Buscar con Claude en Indesign/.venv/bin/python",
+      "args": ["/Volumes/DATOS/Proyectos Codex/Ventana Buscar con Claude en Indesign/servidor.py"],
+      "env": {"INDESIGN_APP": "Adobe InDesign 2026"}
+    }
+  }
+}
