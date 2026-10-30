@@ -1,0 +1,64 @@
+{
+  "type": "object",
+  "required": [
+    "resumen",
+    "resultados",
+    "cambio"
+  ],
+  "properties": {
+    "resumen": {
+      "type": "string"
+    },
+    "cambio": {
+      "type": "object",
+      "required": [
+        "descripcion",
+        "aplicar"
+      ],
+      "properties": {
+        "descripcion": {
+          "type": "string"
+        },
+        "aplicar": {
+          "type": "string"
+        }
+      }
+    },
+    "resultados": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "documento",
+          "pagina",
+          "texto",
+          "ref",
+          "dudoso"
+        ],
+        "properties": {
+          "documento": {
+            "type": "string"
+          },
+          "pagina": {
+            "type": "string"
+          },
+          "texto": {
+            "type": "string"
+          },
+          "ref": {
+            "type": "string"
+          },
+          "propuesta": {
+            "type": "string"
+          },
+          "dudoso": {
+            "type": "boolean"
+          },
+          "motivo": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}
