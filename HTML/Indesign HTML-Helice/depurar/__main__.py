@@ -1,4 +1,4 @@
-"""Uso: python -m depurar entrada/32/archivo.html [más archivos] [--libro ponencias2026 | --config archivo.yaml]"""
+"""Uso: python -m depurar ruta/al/capitulo.html [más archivos] [--libro ponencias2026 | --config archivo.yaml]"""
 
 import argparse
 import os

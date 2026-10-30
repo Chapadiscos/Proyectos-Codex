@@ -750,3 +750,45 @@ def test_css_libro_conserva_la_url_de_helice_si_falta_la_fuente_original(tmp_pat
     css_libro.actualizar(config, str(tmp_path / "cap" / "x.html"), informe)
     assert archivo.read_text(encoding="utf-8") == antes  # sigue apuntando a Hélice, no a file://
     assert not informe.avisos and not os.path.exists(css_libro.pendiente(str(archivo)))
+
+
+def test_libro_nuevo_y_estructura_desde_la_app(tmp_path, monkeypatch):
+    import shutil
+
+    from depurar import libro as L
+    from depurar import libros
+
+    assert L.numeros("1-3, 5") == [1, 2, 3, 5] and L.rango([1, 2, 3, 5]) == "1-3, 5"
+    assert L.seccion_de("https://panel.helice.app/panel/avpm/sections/238573/bloque-1") == 238573
+    assert L.seccion_de("238589") == 238589 and L.seccion_de("") is None
+    shutil.copy(os.path.join(libros.DIR_LIBROS, "ponencias2026.yaml"), tmp_path)
+    monkeypatch.setattr(libros, "DIR_LIBROS", str(tmp_path))
+    r = L.nuevo({
+        "nombre": "Libro Ñ 2027", "raiz": "/tmp/LIBRO", "nombre_archivos": "Libro 2027", "sufijo": "LI27",
+        "carpeta_ficheros": "Libro 2027",
+        "fuentes": {"tipo": "propias", "detalle": [
+            {"archivo": "/f/A-Light.otf", "familia": "Fam UX", "base": "Light", "peso": 300, "estilo": "normal"},
+            {"archivo": "/f/A-BoldIt.otf", "familia": "Fam UX", "base": "Bold", "peso": 700, "estilo": "italic"}]},
+        "bloques": [{"nombre": "Bloque 1", "seccion": "https://x/sections/111111/b", "temas": [
+            {"nombre": "Tema 1", "capitulos": "1-2", "seccion": "222222"}, {"nombre": "Tema 2", "capitulos": "3", "seccion": ""}]}],
+    })
+    assert r["id"] == "libron2027"
+    cfg = libros.Libro(r["config"]).config
+    assert cfg["libro"]["carpeta"] == "/tmp/LIBRO/Libro 2027 (APP)"
+    assert cfg["preparar"]["destino"] == "{carpeta}/{n:02d} Libro 2027 (APP)/{n:02d} Libro 2027 (APP).indd"
+    assert cfg["renombrar_clases"]["sufijo"] == "-LI27" and ".*-LI27" in cfg["renombrar_clases"]["excluir"]
+    assert cfg["estilos_capitulo"]["pesos_indesign"]["Fam UX"] == {"Bold": 700, "Light": 300}
+    assert cfg["css_libro"]["fuentes_web"]["archivos"][1] == ["Fam UX", 700, "italic", "/f/A-BoldIt.otf"]
+    assert cfg["ficheros"]["fuentes"] == ["Libro 2027", "Fuentes"]
+    temas = cfg["publicar"]["bloques"][0]["temas"]
+    assert cfg["publicar"]["bloques"][0]["seccion"] == 111111 and temas[0]["seccion"] == 222222 and "seccion" not in temas[1]
+    # La app rehace solo «ficheros» y «publicar»
+    L.estructura(r["id"], {"carpeta_ficheros": "Otra", "bloques": [{"nombre": "B", "seccion": "", "temas": [
+        {"nombre": "T", "capitulos": "1-3", "seccion": "333333"}]}]})
+    cfg2 = libros.Libro(r["config"]).config
+    assert cfg2["publicar"]["bloques"] == [{"nombre": "B", "temas": [{"nombre": "T", "capitulos": [1, 2, 3], "seccion": 333333}]}]
+    assert cfg2["ficheros"]["capitulo"][0] == "Otra" and cfg2["renombrar_clases"] == cfg["renombrar_clases"]
+    import pytest
+
+    with pytest.raises(ValueError):  # ya existe
+        L.nuevo({"nombre": "Libro Ñ 2027", "raiz": "/tmp/x", "sufijo": "X"})

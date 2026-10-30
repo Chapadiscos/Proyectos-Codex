@@ -1,0 +1,3 @@
+#!/bin/zsh
+# Datos de los libros para la app «InDesign a HTML» (./libro sin nada: ayuda)
+cd "${0:A:h}" && exec .venv/bin/python -m depurar.libro "$@"

@@ -45,12 +45,12 @@ def mezclar(base, cambios):
     return r
 
 
-def todos(directorio=DIR_LIBROS):
-    rutas = sorted(glob.glob(os.path.join(directorio, "*.yaml")))
+def todos(directorio=None):
+    rutas = sorted(glob.glob(os.path.join(directorio or DIR_LIBROS, "*.yaml")))
     return [Libro(r) for r in rutas if not os.path.basename(r).startswith("_")]
 
 
-def elegir(libro=None, ruta=None, directorio=DIR_LIBROS):
+def elegir(libro=None, ruta=None, directorio=None):
     """El libro indicado por nombre, el que contiene la ruta o, si solo hay uno, ese."""
     libros = todos(directorio)
     nombres = ", ".join(l.id for l in libros) or "ninguno"

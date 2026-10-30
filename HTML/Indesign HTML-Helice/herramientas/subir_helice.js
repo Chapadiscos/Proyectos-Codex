@@ -168,7 +168,9 @@ function subirHelice(desdeApp) {
       if (!b64) return;
       var bin = atob(b64), bytes = new Uint8Array(bin.length);
       for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-      porRuta[r] = new File([bytes], r.split("/").pop(), { type: /\.png$/i.test(r) ? "image/png" : "image/jpeg" });
+      var ext = (r.match(/\.(\w+)$/) || ["", ""])[1].toLowerCase();
+      var tipos = { png: "image/png", otf: "font/otf", ttf: "font/ttf", woff: "font/woff", woff2: "font/woff2" };
+      porRuta[r] = new File([bytes], r.split("/").pop(), { type: tipos[ext] || "image/jpeg" });
     });
     procesar(desdeApp, porRuta).then(function (urls) {
       estado.urls = urls;

@@ -11,6 +11,8 @@ Hace falta, una vez, permitir que el navegador ejecute JavaScript de otras apps:
 - Chrome: Ver › Desarrollador › «Permitir JavaScript desde eventos de Apple».
 
 Uso: ./subir "ruta/al/06 … .html"     (salida para la app: OK | ERROR y el detalle)
+     ./subir --fuentes --libro ponencias2025   las fuentes propias del libro, a la carpeta
+         ficheros.fuentes de Hélice; sus enlaces se guardan y la CSS del libro se rehace
 """
 
 import base64
@@ -112,18 +114,25 @@ def subir(ruta_html, espera=900, avisar=lambda t: None):
     if not os.path.exists(manifiesto):
         raise ErrorSubida(f"No hay helice_subida.json en {carpeta}")
     datos = json.load(open(manifiesto, encoding="utf-8"))
+    urls = subir_archivos(datos["ruta"], datos["archivos"], carpeta, espera, avisar)
+    guardar_urls(carpeta, urls)
+    return urls
+
+
+def subir_archivos(ruta, archivos, carpeta="", espera=900, avisar=lambda t: None):
+    """Sube los archivos (relativos a carpeta, o absolutos) a la ruta de Ficheros; devuelve sus URL."""
     pestana = Pestana()
     avisar(f"Pestaña del panel en {pestana.navegador}")
 
     pestana.ejecutar("window.__subidaArchivos = {}; 'ok'")
-    for rel in datos["archivos"]:
+    for rel in archivos:
         b64 = base64.b64encode(open(os.path.join(carpeta, rel), "rb").read()).decode()
         clave = json.dumps(rel)
         for i in range(0, len(b64), TROZO):
             pestana.ejecutar(f"window.__subidaArchivos[{clave}] = (window.__subidaArchivos[{clave}] || '') + "
                              f"{json.dumps(b64[i:i + TROZO])}; 'ok'")
     codigo = open(JS, encoding="utf-8").read()
-    pestana.ejecutar(f"{codigo}\nsubirHelice({json.dumps({'ruta': datos['ruta'], 'archivos': datos['archivos']})}); 'iniciado'")
+    pestana.ejecutar(f"{codigo}\nsubirHelice({json.dumps({'ruta': ruta, 'archivos': archivos})}); 'iniciado'")
 
     limite = time.time() + espera
     while time.time() < limite:
@@ -131,7 +140,6 @@ def subir(ruta_html, espera=900, avisar=lambda t: None):
         r = pestana.ejecutar("JSON.stringify(window.__subidaHelice || null)")
         estado = json.loads(r) if r else None
         if estado and estado["estado"] == "ok":
-            guardar_urls(carpeta, estado["urls"])
             return estado["urls"]
         if estado and estado["estado"] == "error":
             raise ErrorSubida("Hélice: " + estado["error"])
@@ -152,8 +160,47 @@ def guardar_urls(carpeta, urls):
         f.write("\n".join(dict.fromkeys(urls + previas)) + "\n")
 
 
+def subir_fuentes(libro_id, avisar=print):
+    """Sube las fuentes propias del libro a Hélice, guarda sus enlaces y rehace la CSS del libro."""
+    from . import css_libro
+    from .informe import Informe
+    from .libro import carpeta_fuentes
+
+    libro = libros.elegir(libro_id)
+    fuentes = ((libro.config.get("css_libro") or {}).get("fuentes_web") or {}).get("archivos") or []
+    if not fuentes:
+        raise ErrorSubida(f"El libro «{libro.nombre}» no tiene fuentes propias (css_libro.fuentes_web.archivos)")
+    ruta = carpeta_fuentes(libro.config)
+    if not ruta:
+        raise ErrorSubida("Falta la carpeta de Ficheros del libro (ficheros.capitulo o ficheros.fuentes)")
+    originales = [f[3] for f in fuentes]
+    faltan = [o for o in originales if not os.path.exists(o)]
+    if faltan:
+        raise ErrorSubida("No encuentro estas fuentes en el Mac: " + ", ".join(faltan))
+    urls = subir_archivos(ruta, originales, avisar=avisar)
+    archivo, _, txt_urls = css_libro.rutas(libro.config)
+    previas = open(txt_urls, encoding="utf-8").read().split() if os.path.exists(txt_urls) else []
+    os.makedirs(os.path.dirname(txt_urls), exist_ok=True)
+    with open(txt_urls, "w", encoding="utf-8") as f:
+        f.write("\n".join(dict.fromkeys(urls + previas)) + "\n")
+    informe = Informe()
+    css_libro.actualizar(libro.config, os.path.join(os.path.dirname(archivo), "-"), informe)
+    return urls, informe.avisos
+
+
 def main(argv=None):
     args = (argv if argv is not None else sys.argv[1:])
+    if args[:1] == ["--fuentes"]:
+        try:
+            if len(args) != 3 or args[1] != "--libro":
+                raise ErrorSubida("Uso: ./subir --fuentes --libro <libro>")
+            urls, avisos = subir_fuentes(args[2])
+            print(f"OK\n{len(urls)} fuentes en Hélice " + " / ".join(carpeta_de(args[2])) + "; CSS del libro rehecha")
+            for a in avisos:
+                print("⚠️ " + a)
+        except (ErrorSubida, ValueError, OSError) as e:
+            print(f"ERROR\n{e}")
+        return 0
     if len(args) != 1:
         print(__doc__)
         return 1
@@ -163,6 +210,12 @@ def main(argv=None):
     except (ErrorSubida, ValueError, OSError) as e:
         print(f"ERROR\n{e}")
     return 0
+
+
+def carpeta_de(libro_id):
+    from .libro import carpeta_fuentes
+
+    return carpeta_fuentes(libros.elegir(libro_id).config)
 
 
 if __name__ == "__main__":

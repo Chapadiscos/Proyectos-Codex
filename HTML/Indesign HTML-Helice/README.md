@@ -1,4 +1,4 @@
-# De InDesign a Hélice (Ponencias 2026 y otros libros)
+# Indesign HTML-Helice: de InDesign a Hélice, libro a libro
 
 Del capítulo maquetado para imprenta al HTML publicado en Hélice: preparar el .indd, exportarlo a HTML (heredado) y depurarlo.
 
@@ -66,23 +66,29 @@ El informe sale en pantalla y en `salida/<copia>.preparar.txt`; los avisos son l
 El texto alternativo no hace falta quitarlo en InDesign: el depurador pone `alt=""` a todas las imágenes.
 
 ## Uso: app «InDesign a HTML»
-La app está en `herramientas/InDesign a HTML.app`; arrástrala al Dock. Si cambias su código (`herramientas/InDesign a HTML.applescript`), vuelve a crearla con `herramientas/compilar_app.sh`. El icono está en `herramientas/icono/` (`icono.svg`; si cambias el diseño, `generar_icono.sh` vuelve a crear `icono.icns`).
+La app está en `herramientas/InDesign a HTML.app`; arrástrala al Dock. Es una app SwiftUI (`herramientas/app/InDesignAHTML.swift`, como «Crear índices gráficos»): si cambias su código, vuelve a crearla con `herramientas/app/compilar_app.sh`. El icono está en `herramientas/icono/`. También se puede soltar un `.indd` sobre su icono.
 
-1. **Abre la app** y elige el `.indd`: el de imprenta, el archivo de sección (te pregunta qué capítulo) o la versión ya preparada.
-   - Si no está preparado, la app lo prepara (paso previo de arriba) y muestra el informe: **Exportar a HTML** sigue; **Abrir en InDesign** abre la copia para revisar los avisos (luego vuelve a abrir la app y elige la copia).
-   - Si el capítulo ya tiene versión preparada, pregunta si usarla o prepararla de nuevo.
-2. **InDesign lo exporta** a HTML (heredado) en su misma carpeta, con los ajustes HTML del propio documento (`herramientas/exportar_html.jsx`), sin abrirlo en el navegador. El capítulo se pone en primer plano para exportar, porque InDesign exporta el documento activo.
-3. **Pausa:** la app indica la carpeta `…-web-resources/image` con las imágenes que hay que subir.
-   - Sube esas imágenes a la carpeta del capítulo en Hélice (no los .jpg sueltos de la carpeta del capítulo).
-   - Abre esa carpeta en Hélice y pulsa el marcador **«Enlaces Hélice»**: copia las URL al portapapeles y las muestra en un recuadro que se cierra solo. Para instalarlo, abre `herramientas/instalar_marcador.html` y arrastra el botón a la barra de marcadores (el código está en `herramientas/enlaces_helice.js`).
-   - Vuelve a la app y pulsa **Continuar**.
-   - **Si las imágenes ocupan varias páginas en Hélice**, la app dice cuáles faltan: pasa a la siguiente página, pulsa otra vez el marcador y **Continuar**. Los enlaces se van sumando en el `.txt` del capítulo. «Seguir sin ellas» genera el HTML con las que haya.
-4. **Depuración:** se genera `… - Helice.html` en la carpeta del capítulo. La vista previa y el informe van a `salida/` del proyecto.
-   - **Sin avisos:** el HTML queda copiado en el portapapeles. Pégalo en Hélice con ⌘V.
-   - **Con avisos:** se muestran y puedes ver la vista previa o copiarlo igualmente.
-   - El enlace leído del QR de la cabecera se muestra como información, no como aviso.
+Una sola ventana, sin diálogos encadenados:
+- **Izquierda, el libro:** elige el libro y verás sus capítulos con su estado (preparado, imágenes en Hélice, depurado, publicado), si faltan fuentes en Hélice (botón **Subir**) y si hay CSS nueva por añadir en Hélice (botón **Copiar**). En ⋯: **Nuevo libro…**, **Editar la estructura en Hélice…**, abrir su `.yaml` y copiar la CSS entera.
+- **Centro, el paso actual** con sus botones, los **avisos** destacados en naranja y el registro de todo lo que se ha hecho.
+- **Derecha, la vista previa** del HTML depurado.
 
-La primera vez, macOS pedirá permiso para que la app controle InDesign y el Finder.
+Antes de empezar, deja abierta en Safari o Chrome una pestaña del panel de Hélice con la sesión iniciada.
+
+1. **Elige el capítulo** en la lista (si ya tiene versión preparada se usa; si no, pide el original) o con **Elegir un .indd…**: el de imprenta, el archivo de sección (pregunta qué capítulo) o la versión ya preparada.
+   - Si no está preparado, la app lo prepara (paso previo de arriba) y enseña el informe y los avisos. **Abrir en InDesign** abre la copia para revisarla; después, sin cerrar la app, **Exportar a HTML** (se exporta tal como esté en InDesign).
+   - Si ya tiene versión preparada, pregunta si usarla o prepararla de nuevo.
+2. **InDesign lo exporta** a HTML (heredado) en su misma carpeta (`./libro exportar`, con `herramientas/exportar_html.jsx`).
+3. **Imágenes a Hélice:** se suben solas a su carpeta de Ficheros desde la pestaña del panel (`./subir`). Si no se puede, la app explica cómo hacerlo con el marcador «Subir a Hélice» (o «Enlaces Hélice») y **Continuar**.
+4. **Depuración:** se genera `… - Helice.html` en la carpeta del capítulo y se enseña la vista previa. Si el capítulo trae CSS nueva, **Copiar la CSS nueva** y añádela al final de la CSS del libro en Hélice.
+5. **Publicar en Hélice:** crea la sección «Capítulo NN» en su tema con el HTML (`./publicar`). Si el libro no tiene la publicación configurada, **Copiar el HTML** y pégalo a mano.
+
+La primera vez, macOS pedirá permiso para que la app acceda al disco del proyecto y controle InDesign y el navegador.
+
+### Libro nuevo
+En ⋯ › **Nuevo libro…**: nombre, carpeta de los originales, nombre de los archivos (`NN Libro 2027 (APP)`), sufijo de las clases (distinto en cada libro), fuentes (propias: se eligen los `.otf`; o el kit de Adobe Fonts) y, en Hélice, la carpeta de Ficheros y los bloques y temas: créalos a mano en el panel como **Menú** y pega sus enlaces (se pueden añadir más tarde con **Editar la estructura en Hélice…**). La app crea `config/libros/<libro>.yaml` como el de Ponencias 2025, que hereda de Ponencias 2026; lo que cambie la maquetación (pies, cuadros, cabecera…) se ajusta después en ese `.yaml`. Con fuentes propias, **Subir** las lleva a `<carpeta de Ficheros>/Fuentes` y rehace la CSS del libro con sus enlaces.
+
+Lo mismo desde el Terminal: `./libro` (listar, estado, datos, nuevo, estructura, fuentes, exportar; salida en JSON) y `./subir --fuentes --libro <libro>`.
 
 ### Desde el Terminal
 ```sh
