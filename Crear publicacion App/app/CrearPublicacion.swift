@@ -118,6 +118,13 @@ struct Pregunta: Identifiable {
     let hacer: () -> Void
 }
 
+/// Word elegidos o arrastrados, a la espera de confirmar la publicación
+struct Importacion: Identifiable {
+    let id = UUID()
+    let nombre: String
+    let words: [URL]
+}
+
 struct NuevaPublicacion: Identifiable {
     let id = UUID()
     let maquetado: URL
@@ -237,6 +244,7 @@ final class Taller: ObservableObject {
     @Published var nuevaPublicacion: NuevaPublicacion?
     @Published var actualizando: Publicacion?
     @Published var informe: InformeActualizacion?
+    @Published var importacion: Importacion?
 
     private var proceso: Process?
     private var detenido = false
@@ -680,10 +688,16 @@ final class Taller: ObservableObject {
             return
         }
         UserDefaults.standard.set(carpeta.deletingLastPathComponent().path, forKey: "carpetaWord")
-        let titulo = "Importando «\(nombre)»" + (words.count > 1 ? " (\(words.count) Word)" : "")
-        ejecutar(.galerada, titulo, accion: "Galerada montada", documento: nombre + ".indd",
-                 programa: "importar.py", args: words.map(\.path) + ["--publicacion", publicacion]) { [weak self] ok in
-            if ok { self?.destino = .documento(nombre + ".indd") }
+        // Antes de importar, confirmar con qué publicación (se puede cambiar en la hoja)
+        importacion = Importacion(nombre: nombre, words: words)
+    }
+
+    func confirmarImportacion(_ i: Importacion) {
+        let titulo = "Importando «\(i.nombre)»" + (i.words.count > 1 ? " (\(i.words.count) Word)" : "") +
+            " con «\(publicacionActual?.nombre ?? "")»"
+        ejecutar(.galerada, titulo, accion: "Galerada montada", documento: i.nombre + ".indd",
+                 programa: "importar.py", args: i.words.map(\.path) + ["--publicacion", publicacion]) { [weak self] ok in
+            if ok { self?.destino = .documento(i.nombre + ".indd") }
         }
     }
 
@@ -792,6 +806,9 @@ struct Ventana: View {
         }
         .sheet(item: $taller.informe) { i in
             HojaInforme(taller: taller, informe: i)
+        }
+        .sheet(item: $taller.importacion) { i in
+            HojaImportar(taller: taller, importacion: i)
         }
     }
 }
@@ -1063,6 +1080,12 @@ struct TarjetaSeccion: View {
                         Text("Haz clic o arrastra aquí el Word del capítulo (varios si las tablas o figuras vienen aparte)")
                             .font(.system(size: 11)).foregroundStyle(.secondary).multilineTextAlignment(.center)
                             .fixedSize(horizontal: false, vertical: true)
+                        Label("Publicación: \(taller.publicacionActual?.nombre ?? "ninguna")", systemImage: "books.vertical")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(color)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(Capsule().fill(color.opacity(0.12)))
                     }
                     .padding(14)
                     .frame(maxWidth: .infinity)
@@ -1389,6 +1412,68 @@ struct HojaActualizar: View {
         }
         .padding(22)
         .frame(width: 560)
+    }
+}
+
+struct HojaImportar: View {
+    @ObservedObject var taller: Taller
+    let importacion: Importacion
+    @Environment(\.dismiss) private var cerrar
+
+    var body: some View {
+        let color = Seccion.galerada.color
+        let maqueta = taller.publicacionActual.flatMap { taller.datos($0).maqueta }
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10).fill(color.gradient)
+                    Image(systemName: "doc.richtext").font(.system(size: 18, weight: .semibold)).foregroundStyle(.white)
+                }
+                .frame(width: 40, height: 40)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Importar «\(importacion.nombre)»").font(.title3.bold())
+                    Text("Se crea «\(importacion.nombre).indd» con la maqueta de la publicación")
+                        .font(.callout).foregroundStyle(.secondary)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Rotulo(importacion.words.count > 1 ? "Word (\(importacion.words.count))" : "Word")
+                ForEach(importacion.words, id: \.self) { w in
+                    Label(w.lastPathComponent, systemImage: "doc.text").font(.system(size: 12)).lineLimit(1).truncationMode(.middle)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Rotulo("Publicación")
+                Picker("", selection: $taller.publicacion) {
+                    ForEach(taller.publicaciones) { p in Text(p.nombre).tag(p.ruta) }
+                }
+                .labelsHidden()
+                .frame(maxWidth: 320)
+                Label(maqueta.map { "Maqueta: " + $0.lastPathComponent } ?? "Esta publicación no tiene maqueta",
+                      systemImage: maqueta == nil ? "exclamationmark.triangle.fill" : "rectangle.split.2x1")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(maqueta == nil ? Color.orange : Color.secondary)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 10).fill(color.opacity(0.08)))
+            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(color.opacity(0.35)))
+
+            HStack {
+                Spacer()
+                Button("Cancelar", role: .cancel) { cerrar() }.keyboardShortcut(.cancelAction)
+                Button("Importar con «\(taller.publicacionActual?.nombre ?? "")»") {
+                    taller.confirmarImportacion(importacion)
+                    cerrar()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(taller.publicacionActual == nil)
+            }
+        }
+        .padding(22)
+        .frame(width: 520)
     }
 }
 
