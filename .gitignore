@@ -26,3 +26,7 @@ tmp/
 *_debug.txt
 *-inspect.txt
 .FsSyncLocks/
+
+# Conversaciones exportadas de Claude y Codex (privadas)
+Conversaciones/Claude/
+Conversaciones/Codex/
