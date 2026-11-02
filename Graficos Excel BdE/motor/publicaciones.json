@@ -1,0 +1,23 @@
+{
+  "reticula": {
+    "archivo": "SdE_Reticulas_Publicaciones_ImagenNueva2024_Roboto.xlsx",
+    "hoja": "Gráfico",
+    "grupo": "Grupo 240",
+    "pastilla_modelo": "Rectángulo 182",
+    "marco_grafico": "Rectángulo 67",
+    "marco_titulo": "Rectángulo 68"
+  },
+  "muestrario": [
+    {"nombre": "Publicaciones bianuales, trimestrales, boletín económico", "color": "F3CED3"},
+    {"nombre": "Publicaciones anuales", "color": "B3D9FF"},
+    {"nombre": "Documentos Ocasionales y de Trabajo", "color": "FFE0C9"},
+    {"nombre": "Research Update", "color": "CECDB7"},
+    {"nombre": "Notas Estadísticas", "color": "BAFFFC"},
+    {"nombre": "Informes internos y varios", "color": "D9D9D9"},
+    {"nombre": "Encuesta Competencias Financieras", "color": "F1F9FA"},
+    {"nombre": "Estudios de Historia Económica", "color": "F7E9E5"}
+  ],
+  "publicaciones": [
+    {"id": "documentos-ocasionales-y-de-trabajo", "nombre": "Documentos Ocasionales y de Trabajo", "color": "FFE0C9", "tema": "BdE_2026"}
+  ]
+}
