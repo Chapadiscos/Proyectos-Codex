@@ -3,7 +3,6 @@
 // tal como lo dibuja Excel en la versión elegida. El trabajo lo hace motor/maquetar_excel.py sobre una
 // copia, con una versión por paso; la app lanza los pasos, va adelante y atrás y habla con Excel.
 import AppKit
-import PDFKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -14,9 +13,12 @@ let motor: URL = {
     return Bundle.main.bundleURL.deletingLastPathComponent().appendingPathComponent("motor")
 }()
 let idExcel = "com.microsoft.Excel"
-/// Excel está aislado (sandbox): aquí abre y guarda sin pedir permiso. Se usa para la vista previa.
-let carpetaOffice = FileManager.default.homeDirectoryForCurrentUser
-    .appendingPathComponent("Library/Group Containers/UBF8T346G9.Office/Graficos Excel BdE")
+
+/// ¿Está activado el Organizador visual (Stage Manager)? Entonces Excel y la app van en grupos distintos
+/// y no se ven a la vez hasta que se juntan.
+var organizadorVisual: Bool {
+    (CFPreferencesCopyAppValue("GloballyEnabled" as CFString, "com.apple.WindowManager" as CFString) as? Bool) ?? false
+}
 
 // MARK: - Modelo
 
@@ -70,7 +72,7 @@ struct Respuesta: Decodable {
     let publicaciones: [Publicacion]?
     let muestrario: [Muestra]?
     let publicacion: String?
-    let vista: String?
+    let reticula_pt: [Double]?
     let paletas: [Paleta]?
     let carpeta: String?
 }
@@ -151,8 +153,33 @@ func ejecutar(_ programa: String, _ argumentos: [String], espera: TimeInterval) 
     }
 }
 
+/// Cola propia para los AppleScript: NSAppleScript no admite dos a la vez.
+let colaAppleScript = DispatchQueue(label: "es.estudioencuadre.graficos-excel.applescript")
+
+/// Ejecuta un AppleScript dentro de la app (NSAppleScript), no con `osascript` aparte: lanzar un programa en
+/// cada orden a Excel costaba segundos. Los argumentos llegan como `argv`, igual que con `osascript`.
 func osascript(_ guion: String, _ argumentos: [String] = [], espera: TimeInterval) async -> (ok: Bool, texto: String) {
-    await ejecutar("/usr/bin/osascript", ["-e", guion] + argumentos, espera: espera)
+    let lista = "{" + argumentos.map(cadenaAS).joined(separator: ", ") + "}"
+    let fuente = guion
+        .replacingOccurrences(of: "on run argv", with: "on run\nset argv to \(lista)\nwith timeout of \(Int(espera)) seconds")
+        .replacingOccurrences(of: "end run", with: "end timeout\nend run")
+    return await withCheckedContinuation { continuacion in
+        colaAppleScript.async {
+            var error: NSDictionary?
+            guard let script = NSAppleScript(source: fuente) else {
+                continuacion.resume(returning: (false, "AppleScript no válido"))
+                return
+            }
+            let r = script.executeAndReturnError(&error)
+            if let error {
+                let mensaje = error[NSAppleScript.errorMessage] as? String ?? "\(error)"
+                continuacion.resume(returning: (false, mensaje))
+                return
+            }
+            let texto = r.stringValue ?? (r.descriptorType == typeSInt32 ? String(r.int32Value) : "")
+            continuacion.resume(returning: (true, texto))
+        }
+    }
 }
 
 func colorHex(_ hex: String) -> Color {
@@ -189,10 +216,10 @@ final class Taller: ObservableObject {
     @Published var publicacion = UserDefaults.standard.string(forKey: "publicacion") ?? "documentos" {
         didSet { UserDefaults.standard.set(publicacion, forKey: "publicacion") }
     }
-    @Published var conReticula = UserDefaults.standard.object(forKey: "conReticula") as? Bool ?? true {
-        didSet { UserDefaults.standard.set(conReticula, forKey: "conReticula"); Task { await actualizarVista() } }
-    }
-    @Published var pdf: URL?
+    /// Ancho y alto de la retícula (pt): Excel se encuadra para que quepa entera
+    var reticula = (ancho: 471.4, alto: 702.3)
+    /// Zoom de Excel ya calculado para el sitio que ocupa (se calcula una vez, no en cada versión)
+    private var zoomExcel: (sitio: [Int], zoom: Int)?
     @Published var ejecuciones: [Ejecucion] = []
     @Published var vista: UUID?
     @Published var enCurso: UUID?
@@ -217,7 +244,11 @@ final class Taller: ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.excel = !NSRunningApplication.runningApplications(withBundleIdentifier: idExcel).isEmpty
-                if self.enCurso != nil { self.ahora = Date() }
+                // El contador solo corre con la ventana a la vista: cada redibujo con la ventana escondida (el
+                // Organizador visual) dejaba la app esperando a que macOS lo mostrara, y parada mientras tanto
+                if self.enCurso != nil, NSApp.windows.contains(where: { $0.isVisible && $0.occlusionState.contains(.visible) }) {
+                    self.ahora = Date()
+                }
             }
         }
         Task {
@@ -226,10 +257,11 @@ final class Taller: ObservableObject {
         }
     }
 
-    /// Lee otra vez las paletas de Excel (por si se ha instalado alguna mientras tanto)
-    func cargarPaletas() async {
+    /// Las paletas, de la copia que guarda el motor; con `actualizar`, leídas otra vez de Excel (por si se ha
+    /// instalado alguna). Esa carpeta es de Excel: macOS puede pedir permiso a la app para entrar.
+    func cargarPaletas(actualizar: Bool = false) async {
         let script = motor.appendingPathComponent("maquetar_excel.py").path
-        let r = await ejecutar("/usr/bin/python3", ["-I", script, "paletas"], espera: 30)
+        let r = await ejecutar("/usr/bin/python3", ["-I", script, "paletas"] + (actualizar ? ["actualizar"] : []), espera: 60)
         guard let datos = r.texto.data(using: .utf8), let respuesta = try? JSONDecoder().decode(Respuesta.self, from: datos),
               respuesta.ok else {
             errorPaletas = r.texto.isEmpty ? "El motor no ha respondido" : r.texto
@@ -270,9 +302,13 @@ final class Taller: ObservableObject {
     private func tarea(_ titulo: String, _ trabajo: @escaping (UUID) async -> Bool) {
         guard enCurso == nil else { return }
         let id = empezarEjecucion(titulo)
+        // Sin siesta (App Nap) mientras dure: con el Organizador visual la app queda fuera de la vista mientras
+        // Excel está delante, y macOS la frenaba (cada cambio esperaba a que se volviera a activar algo)
+        let actividad = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .latencyCritical], reason: titulo)
         Task {
             let ok = await trabajo(id)
             terminarEjecucion(id, ok: ok)
+            ProcessInfo.processInfo.endActivity(actividad)
         }
     }
 
@@ -298,6 +334,7 @@ final class Taller: ObservableObject {
         idioma = r.idioma ?? idioma
         actual = r.actual ?? actual
         pasos = r.pasos ?? pasos
+        if let m = r.reticula_pt, m.count == 2 { reticula = (m[0], m[1]) }
     }
 
     // MARK: Archivo
@@ -319,7 +356,10 @@ final class Taller: ObservableObject {
         let copia = base.hasSuffix(" maquetado") ? url
             : url.deletingLastPathComponent().appendingPathComponent(base + " maquetado.xlsx")
         let seguir = FileManager.default.fileExists(atPath: copia.deletingPathExtension().path + " (pasos)")
+        let anterior = trabajo
         tarea(seguir ? "Seguir con \(copia.lastPathComponent)" : "Empezar \(url.lastPathComponent)") { id in
+            // La ventana de Excel del trabajo anterior (o de este, si ya estaba abierto) se cierra: se abre de nuevo
+            for t in Set([anterior, copia].compactMap { $0 }) { await self.cerrarEnExcel(t) }
             guard let r = await self.llamarMotor(seguir ? ["estado", copia.path] : ["empezar", url.path], registro: id) else { return false }
             self.aplicar(r)
             self.anotar(id, seguir ? "Sigue la maquetación en el paso \(self.actual)." : "Copia exacta creada: \(copia.lastPathComponent)")
@@ -349,108 +389,199 @@ final class Taller: ObservableObject {
         }
     }
 
+    /// Ir a otra versión, como un deshacer: la copia de trabajo pasa a ser esa versión y Excel la recarga en la
+    /// misma ventana. Lo hace la app sin el motor (lanzar Python a veces costaba segundos).
     func ir(_ n: Int) {
-        guard let trabajo, pasos.indices.contains(n), n != actual else { return }
+        guard let trabajo, let carpeta = carpetaPasos, pasos.indices.contains(n), n != actual else { return }
         tarea("Ir a la versión \(n)") { id in
-            guard let r = await self.llamarMotor(["ir", trabajo.path, String(n)], registro: id) else { return false }
-            self.aplicar(r)
-            self.anotar(id, "Versión \(n): \(self.pasoActual?.titulo ?? "")")
+            self.actual = n
+            self.anotar(id, "Versión \(n): \(self.pasos[n].titulo)")
+            do {
+                let estadoURL = carpeta.appendingPathComponent("estado.json")
+                guard var estado = try JSONSerialization.jsonObject(with: Data(contentsOf: estadoURL)) as? [String: Any] else {
+                    throw CocoaError(.fileReadCorruptFile)
+                }
+                estado["actual"] = n
+                try JSONSerialization.data(withJSONObject: estado, options: [.prettyPrinted]).write(to: estadoURL)
+                // Se escriben los datos (no se copia el archivo): las versiones están en solo lectura y la copia no
+                try Data(contentsOf: carpeta.appendingPathComponent(self.pasos[n].archivo)).write(to: trabajo)
+            } catch {
+                self.anotar(id, "Error al guardar la versión elegida: \(error.localizedDescription)")
+                return false
+            }
             return await self.mostrar(id)
         }
     }
 
-    func pdfDe(_ paso: Paso) -> URL? {
-        carpetaPasos?.appendingPathComponent((paso.archivo as NSString).deletingPathExtension + (conReticula ? "" : " sin retícula") + ".pdf")
-    }
-
-    /// Tras cada cambio: vista previa de la versión actual y la copia abierta en Excel.
+    /// Tras cada cambio, la copia de trabajo recargada en Excel, a la derecha de la app y encuadrada en el gráfico.
     private func mostrar(_ id: UUID) async -> Bool {
-        let vistaOk = await generarVista(id)
-        let excelOk = await abrirEnExcel(id)
-        return vistaOk && excelOk
+        await mostrarEnExcel(id, recargar: true)
     }
 
-    func actualizarVista() async {
-        guard trabajo != nil, enCurso == nil else { return }
-        let id = empezarEjecucion("Vista previa")
-        let ok = await generarVista(id)
-        terminarEjecucion(id, ok: ok)
+    /// Pone la app a la izquierda de la pantalla y devuelve el sitio de Excel, a la derecha, como
+    /// {izquierda, arriba, derecha, abajo} en coordenadas de AppleScript (origen arriba a la izquierda).
+    private func colocarVentanas() -> [Int] {
+        let ventana = NSApp.windows.first { $0.isVisible && $0.styleMask.contains(.titled) }
+        guard let pantalla = ventana?.screen ?? NSScreen.main, let principal = NSScreen.screens.first else { return [] }
+        let zona = pantalla.visibleFrame
+        let anchoApp = min(max(980, zona.width * 0.42), zona.width - 640)
+        let marco = NSRect(x: zona.minX, y: zona.minY, width: anchoApp, height: zona.height)
+        if ventana?.frame != marco { ventana?.setFrame(marco, display: true) }
+        let alto = principal.frame.maxY
+        return [Int(zona.minX + anchoApp), Int(alto - zona.maxY), Int(zona.maxX), Int(alto - zona.minY)]
     }
 
-    /// PDF de la hoja «Gráfico» de la versión actual, hecho por Excel. Cada versión guarda el suyo.
-    private func generarVista(_ id: UUID) async -> Bool {
-        guard let trabajo, let paso = pasoActual, let destino = pdfDe(paso) else { return false }
-        if FileManager.default.fileExists(atPath: destino.path) {
-            pdf = destino
-            return true
-        }
-        anotar(id, "Vista previa: Excel exporta la hoja «Gráfico»…")
-        var args = ["vista", trabajo.path, String(paso.n)]
-        if !conReticula { args.append("sin_reticula") }
-        guard let r = await llamarMotor(args, registro: id), let vista = r.vista else { return false }
-        let fm = FileManager.default
-        try? fm.createDirectory(at: carpetaOffice, withIntermediateDirectories: true)
-        let libro = carpetaOffice.appendingPathComponent("vista.xlsx"), salida = carpetaOffice.appendingPathComponent("vista.pdf")
-        try? fm.removeItem(at: libro)
-        try? fm.removeItem(at: salida)
-        do { try fm.moveItem(at: URL(fileURLWithPath: vista), to: libro) } catch {
-            anotar(id, "Error: no se pudo preparar la vista previa (\(error.localizedDescription))")
-            return false
-        }
-        let guion = """
-        on run argv
-            set rutaLibro to item 1 of argv
-            set rutaSalida to item 2 of argv
-            tell application "Microsoft Excel"
-                repeat with wb in (every workbook)
-                    if full name of wb is rutaLibro then close wb saving no
-                end repeat
-                set wb to open workbook workbook file name rutaLibro update links do not update links
-                save as (worksheet "Gráfico" of wb) filename rutaSalida file format PDF file format
-                close wb saving no
-            end tell
-        end run
-        """
-        let e = await osascript(guion, [libro.path, salida.path], espera: 90)
-        try? fm.removeItem(at: libro)
-        guard e.ok, fm.fileExists(atPath: salida.path) else {
-            anotar(id, "Error: Excel no hizo la vista previa (\(e.texto))")
-            return false
-        }
-        try? fm.removeItem(at: destino)
-        try? fm.moveItem(at: salida, to: destino)
-        pdf = destino
-        anotar(id, "Vista previa lista: \(destino.lastPathComponent)")
-        return true
-    }
-
-    /// Cierra la copia en Excel sin guardar (la versión buena está en la carpeta de pasos) y la vuelve a
-    /// abrir sin actualizar vínculos externos.
-    private func abrirEnExcel(_ id: UUID) async -> Bool {
-        guard let trabajo else { return false }
+    /// Excel enseña siempre la copia de trabajo, en una sola ventana: tras cada cambio (`recargar`) se cierra sin
+    /// guardar y se vuelve a abrir en el mismo sitio, como un deshacer o rehacer. Sin actualizar vínculos, en la
+    /// hoja «Gráfico», a la derecha de la app y con el zoom justo para ver la retícula entera desde A1. Siempre el
+    /// mismo archivo: Excel (aislado) pide permiso por archivo, y con archivos nuevos en cada paso lo pedía cada vez
+    /// con una ventana «Abrir» que el Organizador visual escondía. Sin `recargar` solo coloca y encuadra.
+    private func mostrarEnExcel(_ id: UUID, recargar: Bool) async -> Bool {
+        guard let paso = pasoActual, let ruta = trabajo else { return false }
+        let sitio = colocarVentanas()
+        guard sitio.count == 4 else { return false }
+        if !recargar { zoomExcel = nil }
+        let zoom = zoomExcel.flatMap { $0.sitio == sitio ? $0.zoom : nil } ?? 0
+        // Un 4 % de margen alrededor de la retícula
+        let medidas = [Int(reticula.ancho * 1.04), Int(reticula.alto * 1.04)]
         let guion = """
         on run argv
             set ruta to item 1 of argv
+            set sitio to {(item 2 of argv) as integer, (item 3 of argv) as integer, (item 4 of argv) as integer, (item 5 of argv) as integer}
+            set anchoRet to (item 6 of argv) as integer
+            set altoRet to (item 7 of argv) as integer
+            set z to (item 8 of argv) as integer
+            set recargar to (item 9 of argv) is "si"
             tell application "Microsoft Excel"
-                repeat with wb in (every workbook)
-                    if full name of wb is ruta then close wb saving no
+                set wb to missing value
+                -- Por número: «repeat with … in every workbook» da error de parámetros
+                repeat with i from 1 to (count workbooks)
+                    if full name of workbook i is ruta then set wb to workbook i
                 end repeat
-                open workbook workbook file name ruta update links do not update links
+                if wb is not missing value and recargar then
+                    close wb saving no
+                    set wb to missing value
+                end if
+                if wb is missing value then
+                    set wb to open workbook workbook file name ruta update links do not update links
+                else
+                    activate object wb
+                end if
+                activate object worksheet "Gráfico" of wb
+                set w to active window
+                try
+                    set bounds of w to sitio
+                end try
+                if z is 0 then
+                    set zoom of w to 100
+                    set f to (width of visible range of w) / anchoRet
+                    if (height of visible range of w) / altoRet < f then set f to (height of visible range of w) / altoRet
+                    set z to round (100 * f) rounding down
+                    if z > 400 then set z to 400
+                    if z < 10 then set z to 10
+                end if
+                set zoom of w to z
+                set scroll row of w to 1
+                set scroll column of w to 1
+                select range "A1" of active sheet
+                return z
             end tell
         end run
         """
-        let r = await osascript(guion, [trabajo.path], espera: 40)
-        if r.ok {
-            anotar(id, "Abierta en Excel: \(trabajo.lastPathComponent)")
-        } else {
-            anotar(id, "⚠ Excel no abrió la copia (\(r.texto)).")
-            anotar(id, "⚠ Si Excel muestra una ventana «Abrir», es que pide permiso: elige la carpeta \(trabajo.deletingLastPathComponent().lastPathComponent) y pulsa «Conceder acceso». Solo hace falta una vez.")
+        // Si Excel tarda, casi seguro que pide permiso para la carpeta con su ventana «Abrir» (que el Organizador
+        // visual esconde): se trae Excel delante para verla.
+        let vigilante = Task { @MainActor in
+            do { try await Task.sleep(nanoseconds: 2_500_000_000) } catch { return }
+            NSRunningApplication.runningApplications(withBundleIdentifier: idExcel).first?.activate()
+            anotar(id, "Excel tarda: si muestra una ventana «Abrir», pide permiso para «\(ruta.lastPathComponent)». Pulsa «Conceder acceso»: solo hace falta una vez por trabajo.")
         }
-        return r.ok
+        let r = await osascript(guion, [ruta.path] + (sitio + medidas + [zoom]).map(String.init) + [recargar ? "si" : "no"], espera: 120)
+        vigilante.cancel()
+        // La app vuelve delante para seguir con ⌘← y ⌘→, y con el Organizador visual se trae a su grupo la ventana
+        // de Excel (que Excel crea en un grupo aparte, escondida en la tira de la izquierda)
+        NSApp.activate(ignoringOtherApps: true)
+        let juntas = organizadorVisual ? await juntarConExcel() : true
+        if !juntas && !avisadoOrganizador {
+            avisadoOrganizador = true
+            anotar(id, "Organizador visual activado: para ver Excel junto a la app, da permiso a «Gráficos Excel BdE» en Ajustes del Sistema → Privacidad y seguridad → Accesibilidad. Mientras tanto, arrastra la ventana de Excel desde la tira de la izquierda hasta la app.")
+        }
+        guard r.ok else {
+            anotar(id, "⚠ Excel no abrió la copia (\(r.texto)).")
+            return false
+        }
+        if let z = Int(r.texto) {
+            zoomExcel = (sitio, z)
+            anotar(id, "En Excel: versión \(paso.n) · hoja «Gráfico» al \(z) %")
+        } else {
+            anotar(id, "En Excel: versión \(paso.n)")
+        }
+        return true
+    }
+    private var avisadoOrganizador = false
+
+    /// Con el Organizador visual, mete en el grupo de la app la última ventana de Excel (la copia recién abierta),
+    /// como si se arrastrara desde la tira de la izquierda: la acción «AXAddToStage» de su miniatura. Necesita el
+    /// permiso de Accesibilidad (se pide la primera vez). Si la ventana ya está en el grupo, no hay miniatura.
+    private func juntarConExcel() async -> Bool {
+        let opciones = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary
+        guard AXIsProcessTrustedWithOptions(opciones),
+              let excel = NSRunningApplication.runningApplications(withBundleIdentifier: idExcel).first,
+              let organizador = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.WindowManager").first
+        else { return false }
+        // La ventana más nueva de Excel (número más alto) es la de la copia
+        let ventanas = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] ?? []
+        guard let ventana = ventanas
+            .filter({ ($0[kCGWindowOwnerPID as String] as? pid_t) == excel.processIdentifier && ($0[kCGWindowLayer as String] as? Int) == 0 })
+            .compactMap({ $0[kCGWindowNumber as String] as? Int }).max()
+        else { return false }
+        let tira = AXUIElementCreateApplication(organizador.processIdentifier)
+        for _ in 0..<5 {
+            if let miniatura = buscarMiniatura(de: ventana, en: tira) {
+                return AXUIElementPerformAction(miniatura, "AXAddToStage" as CFString) == .success
+            }
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+        return true
+    }
+
+    /// La miniatura de la tira del Organizador visual que contiene la ventana `numero` (atributo «AXWindowsIDs»).
+    private func buscarMiniatura(de numero: Int, en elemento: AXUIElement, nivel: Int = 0) -> AXUIElement? {
+        var valor: CFTypeRef?
+        if AXUIElementCopyAttributeValue(elemento, "AXWindowsIDs" as CFString, &valor) == .success,
+           let ids = valor as? [NSNumber], ids.contains(where: { $0.intValue == numero }) {
+            return elemento
+        }
+        guard nivel < 4, AXUIElementCopyAttributeValue(elemento, kAXChildrenAttribute as CFString, &valor) == .success,
+              let hijos = valor as? [AXUIElement] else { return nil }
+        for hijo in hijos {
+            if let encontrado = buscarMiniatura(de: numero, en: hijo, nivel: nivel + 1) { return encontrado }
+        }
+        return nil
+    }
+
+    /// Cierra en Excel (sin guardar) la copia de trabajo y lo que tenga abierto de su carpeta de pasos.
+    private func cerrarEnExcel(_ trabajo: URL) async {
+        guard excel else { return }
+        let carpeta = trabajo.deletingPathExtension().path + " (pasos)/"
+        let guion = """
+        on run argv
+            tell application "Microsoft Excel"
+                repeat with i from (count workbooks) to 1 by -1
+                    set ruta to full name of workbook i
+                    if ruta is item 1 of argv or ruta starts with item 2 of argv then close workbook i saving no
+                end repeat
+            end tell
+        end run
+        """
+        _ = await osascript(guion, [trabajo.path, carpeta], espera: 20)
     }
 
     func verEnExcel() {
-        tarea("Abrir en Excel") { id in await self.abrirEnExcel(id) }
+        tarea("Ver en Excel") { id in await self.mostrarEnExcel(id, recargar: false) }
+    }
+
+    func colocarExcel() {
+        tarea("Colocar Excel") { id in await self.mostrarEnExcel(id, recargar: false) }
     }
 
     // MARK: Publicaciones
@@ -485,7 +616,6 @@ final class Taller: ObservableObject {
 
 struct Ventana: View {
     @ObservedObject var taller: Taller
-    @Environment(\.openWindow) private var abrirVentana
 
     var body: some View {
         NavigationSplitView {
@@ -512,7 +642,6 @@ struct Ventana: View {
             .navigationTitle("")
             .background(Color(nsColor: .windowBackgroundColor))
         }
-        .onChange(of: taller.pdf) { if taller.pdf != nil { abrirVentana(id: "vista") } }
         .alert(taller.aviso?.titulo ?? "", isPresented: Binding(get: { taller.aviso != nil }, set: { if !$0 { taller.aviso = nil } }),
                presenting: taller.aviso) { _ in
             Button("Aceptar") {}
@@ -524,6 +653,12 @@ struct Ventana: View {
         } message: { p in Text(p.texto) }
         .sheet(item: $taller.editando) { p in
             HojaPublicacion(taller: taller, publicacion: p)
+        }
+        .onAppear {
+            // Un .xlsx pasado al arrancar (open -a … --args <ruta>) se abre directamente
+            if let ruta = CommandLine.arguments.dropFirst().first(where: { $0.lowercased().hasSuffix(".xlsx") }) {
+                taller.abrir(URL(fileURLWithPath: ruta))
+            }
         }
     }
 }
@@ -695,7 +830,8 @@ struct Cabecera: View {
             Spacer()
             if let e = taller.ejecucionEnCurso {
                 HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
+                    // Fijo, sin ruedecita: una animación continua bloqueaba la app con el Organizador visual
+                    Image(systemName: "hourglass").foregroundStyle(colorApp)
                     Text("\(e.titulo) · \(duracion(taller.segundos(e)))").font(.system(size: 12, weight: .medium)).monospacedDigit()
                 }
                 .padding(.horizontal, 12)
@@ -735,7 +871,6 @@ struct Tarjeta<Contenido: View>: View {
                 ZStack {
                     RoundedRectangle(cornerRadius: 11).fill(color.gradient)
                     Image(systemName: icono).font(.system(size: 19, weight: .semibold)).foregroundStyle(.white)
-                        .symbolEffect(.pulse, isActive: trabajando)
                 }
                 .frame(width: 42, height: 42)
                 VStack(alignment: .leading, spacing: 2) {
@@ -785,10 +920,9 @@ struct TarjetaMaquetar: View {
 
 struct TarjetaVersiones: View {
     @ObservedObject var taller: Taller
-    @Environment(\.openWindow) private var abrirVentana
 
     var body: some View {
-        Tarjeta(numero: "VERSIONES", titulo: "Adelante y atrás", lema: "Elige una versión para verla en la vista previa y en Excel",
+        Tarjeta(numero: "VERSIONES", titulo: "Adelante y atrás", lema: "Elige una versión para verla en Excel",
                 icono: "clock.arrow.circlepath", color: colorVersiones) {
             VStack(alignment: .leading, spacing: 3) {
                 if taller.pasos.isEmpty {
@@ -807,10 +941,9 @@ struct TarjetaVersiones: View {
                     .disabled(taller.actual + 1 >= taller.pasos.count)
                     .keyboardShortcut(.rightArrow, modifiers: .command)
                 Spacer()
-                Toggle("Retícula", isOn: $taller.conReticula).toggleStyle(.switch).controlSize(.mini)
-                    .help("Ver la retícula en la vista previa (en el PDF final no sale)")
-                Button { abrirVentana(id: "vista") } label: { Image(systemName: "macwindow") }
-                    .help("Mostrar la vista previa")
+                Button { taller.colocarExcel() } label: { Label("Colocar Excel", systemImage: "rectangle.split.2x1") }
+                    .controlSize(.small)
+                    .help("Pone Excel a la derecha de la app, en la hoja «Gráfico» y con el gráfico entero a la vista")
             }
             .disabled(taller.enCurso != nil || taller.pasos.isEmpty)
             if let p = taller.pasoActual, !p.detalle.isEmpty {
@@ -969,7 +1102,7 @@ struct Consola: View {
 
     @ViewBuilder func icono(_ e: Ejecucion) -> some View {
         if e.fin == nil {
-            ProgressView().controlSize(.small)
+            Image(systemName: "hourglass").foregroundStyle(colorApp)
         } else {
             Image(systemName: e.ok == true ? "checkmark.circle.fill" : "xmark.octagon.fill")
                 .foregroundStyle(e.ok == true ? colorApp : .red)
@@ -1134,7 +1267,7 @@ struct HojaPublicacion: View {
             HStack {
                 Rotulo("Paleta de colores")
                 Spacer()
-                Button { Task { await taller.cargarPaletas() } } label: { Image(systemName: "arrow.clockwise") }
+                Button { Task { await taller.cargarPaletas(actualizar: true) } } label: { Image(systemName: "arrow.clockwise") }
                     .buttonStyle(.borderless).help("Volver a leer las paletas de Excel")
             }
             Text("Las paletas (temas de color) que tiene instaladas Excel. La publicación usará la elegida en sus gráficos.")
@@ -1258,66 +1391,6 @@ struct TarjetaPaleta: View {
     }
 }
 
-// MARK: - Vista previa flotante
-
-struct VistaPDF: NSViewRepresentable {
-    let url: URL?
-
-    func makeNSView(context: Context) -> PDFView {
-        let v = PDFView()
-        v.autoScales = true
-        v.displayMode = .singlePage
-        v.displaysPageBreaks = false
-        v.backgroundColor = .windowBackgroundColor
-        return v
-    }
-
-    func updateNSView(_ v: PDFView, context: Context) {
-        guard v.document?.documentURL != url else { return }
-        v.document = url.flatMap { PDFDocument(url: $0) }
-        v.autoScales = true
-    }
-}
-
-/// Pone la ventana que lo contiene por encima de las demás (también de Excel)
-struct Flotante: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView {
-        let v = NSView()
-        DispatchQueue.main.async {
-            v.window?.level = .floating
-            v.window?.collectionBehavior.insert(.fullScreenAuxiliary)
-        }
-        return v
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {}
-}
-
-struct VentanaVista: View {
-    @ObservedObject var taller: Taller
-
-    var body: some View {
-        ZStack {
-            if taller.pdf != nil {
-                VistaPDF(url: taller.pdf)
-            } else {
-                VStack(spacing: 8) {
-                    Image(systemName: "chart.bar.doc.horizontal").font(.system(size: 30)).foregroundStyle(.tertiary)
-                    Text("Aquí se verá el gráfico").foregroundStyle(.secondary)
-                }
-            }
-            if taller.enCurso != nil {
-                ProgressView().controlSize(.small).padding(8)
-                    .background(.regularMaterial, in: Capsule())
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                    .padding(8)
-            }
-        }
-        .background(Flotante())
-        .navigationTitle(taller.pasoActual.map { String(format: "%02d  %@", $0.n, $0.titulo) } ?? "Vista previa")
-    }
-}
-
 // MARK: - App
 
 final class Delegado: NSObject, NSApplicationDelegate {
@@ -1337,18 +1410,14 @@ struct GraficosExcelApp: App {
                 .frame(minWidth: 960, minHeight: 640)
         }
         .defaultSize(width: 1080, height: 760)
+        // Siempre se abre al arrancar (sin restaurar cómo estaba al salir: a veces volvía cerrada)
+        .defaultLaunchBehavior(.presented)
+        .restorationBehavior(.disabled)
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("Elegir Excel…") { taller.elegir() }.keyboardShortcut("o")
                 Button("Nueva publicación…") { taller.nuevaPublicacion() }.keyboardShortcut("n")
             }
         }
-
-        Window("Vista previa", id: "vista") {
-            VentanaVista(taller: taller)
-                .frame(minWidth: 320, minHeight: 420)
-        }
-        .defaultSize(width: 520, height: 720)
-        .defaultPosition(.trailing)
     }
 }

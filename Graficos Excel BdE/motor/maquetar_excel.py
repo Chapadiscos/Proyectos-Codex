@@ -11,12 +11,11 @@ Uso (la salida es siempre JSON):
   maquetar_excel.py ir      <trabajo.xlsx> <n>
   maquetar_excel.py paso1   <trabajo.xlsx> <id_publicacion>
   maquetar_excel.py paso2   <trabajo.xlsx> [id_publicacion]
-  maquetar_excel.py vista   <trabajo.xlsx> <n> [sin_reticula]
   maquetar_excel.py info    <archivo.xlsx>
   maquetar_excel.py publicaciones
   maquetar_excel.py guardar_publicacion '<json>'
   maquetar_excel.py borrar_publicacion <id>
-  maquetar_excel.py paletas
+  maquetar_excel.py paletas [actualizar]
 """
 import html
 import json
@@ -79,6 +78,7 @@ def empezar(origen):
     pasos.mkdir()
     v0 = pasos / "00 Copia exacta.xlsx"
     shutil.copyfile(origen, v0)
+    solo_lectura(v0)
     shutil.copyfile(origen, trabajo)
     estado = {"origen": str(origen), "idioma": idioma(origen.name), "actual": 0,
               "pasos": [{"n": 0, "titulo": "Copia exacta del original", "archivo": v0.name, "detalle": []}]}
@@ -98,6 +98,11 @@ def ir(trabajo, n):
     return {"trabajo": str(trabajo), **estado}
 
 
+def solo_lectura(archivo):
+    """Las versiones se ven en Excel tal cual: en solo lectura, para que guardar desde Excel no las cambie."""
+    os.chmod(archivo, 0o444)
+
+
 def nuevo_paso(trabajo, titulo, cambios, detalle):
     """Aplica `cambios` (ruta interna → bytes) sobre la versión actual y la guarda como paso siguiente.
     Los pasos que hubiera por delante se descartan, como al deshacer y volver a hacer."""
@@ -109,11 +114,8 @@ def nuevo_paso(trabajo, titulo, cambios, detalle):
     del estado["pasos"][actual + 1:]
     n = actual + 1
     archivo = f"{n:02d} {titulo}.xlsx"
-    # Las vistas previas de los pasos descartados ya no valen (con y sin retícula)
-    for pdf in pasos.glob("*.pdf"):
-        if int(pdf.name[:2]) >= n:
-            pdf.unlink()
     reescribir_zip(pasos / estado["pasos"][actual]["archivo"], pasos / archivo, cambios)
+    solo_lectura(pasos / archivo)
     shutil.copyfile(pasos / archivo, trabajo)
     estado["pasos"].append({"n": n, "titulo": titulo, "archivo": archivo, "detalle": detalle})
     estado["actual"] = n
@@ -899,33 +901,20 @@ def maquetar_formas_grafico(xml):
     return xml, unidades, otros
 
 
-def vista(trabajo, n, sin_reticula=None):
-    """Copia de la versión n para la vista previa: solo la hoja «Gráfico» visible (Excel no exporta las
-    ocultas) y, salvo que se pida, la retícula imprimible. Excel la exporta a PDF y la cierra."""
-    estado = leer_estado(trabajo)
-    _, pasos = nombres(trabajo)
-    paso = estado["pasos"][int(n)]
-    origen = pasos / paso["archivo"]
-    with zipfile.ZipFile(origen) as z:
-        wb = z.read("xl/workbook.xml").decode("utf-8")
-        ruta = dibujo_de_hoja(z, HOJA_GRAFICO)
-        dibujo = z.read(ruta).decode("utf-8")
+def medidas_reticula():
+    """Ancho y alto de la retícula en puntos, para que la app encuadre Excel en el gráfico."""
+    global _medidas_reticula
+    if _medidas_reticula is None:
+        ret = CONFIG["reticula"]
+        with zipfile.ZipFile(PROYECTO / ret["archivo"]) as z:
+            dibujo = z.read(dibujo_de_hoja(z, ret["hoja"])).decode("utf-8")
+        grupo = next(a.group(0) for a in ANCLA.finditer(dibujo) if nombre_forma(a.group(0)) == ret["grupo"])
+        cx, cy = tamano(grupo, escala_grupo=True)
+        _medidas_reticula = [round(cx / EMU_PT, 1), round(cy / EMU_PT, 1)]
+    return _medidas_reticula
 
-    def ocultar(m):
-        hoja = m.group(0)
-        if f'name="{HOJA_GRAFICO}"' in hoja:
-            return re.sub(r'\sstate="[^"]*"', "", hoja)
-        hoja = re.sub(r'\sstate="[^"]*"', "", hoja)
-        return hoja.replace("<sheet ", '<sheet state="hidden" ', 1)
-    wb = re.sub(r'<sheet\b[^>]*/>', ocultar, wb)
-    # La hoja activa tiene que ser una visible
-    wb = re.sub(r'(<workbookView\b[^>]*?)\sactiveTab="\d+"', r"\1", wb)
-    if not sin_reticula:
-        dibujo = "".join(re.sub(r'<xdr:clientData fPrintsWithSheet="0"/>', "<xdr:clientData/>", a) if es_reticula(a) else a
-                         for a in partes_dibujo(dibujo))
-    destino = pasos / ".vista.xlsx"
-    reescribir_zip(origen, destino, {"xl/workbook.xml": wb.encode("utf-8"), ruta: dibujo.encode("utf-8")})
-    return {"trabajo": str(trabajo), **estado, "vista": str(destino)}
+
+_medidas_reticula = None
 
 
 def partes_dibujo(dibujo):
@@ -974,8 +963,15 @@ def escribir_config():
     ARCHIVO_CONFIG.write_text(texto + "\n", encoding="utf-8")
 
 
-def paletas():
-    """Las paletas de Excel con sus 10 colores, en el orden del menú de Excel."""
+ARCHIVO_PALETAS = MOTOR / "paletas.json"
+
+
+def paletas(actualizar=None):
+    """Las paletas de Excel con sus 10 colores, en el orden del menú de Excel. Se leen de una copia junto al
+    motor: la carpeta de Excel es de otra app y macOS frena o pide permiso a quien entra en ella (y a la app
+    la trata como nueva cada vez que se compila). Con «actualizar» se vuelven a leer de Excel."""
+    if ARCHIVO_PALETAS.exists() and not actualizar:
+        return {"paletas": json.loads(ARCHIVO_PALETAS.read_text(encoding="utf-8")), "carpeta": str(CARPETA_PALETAS)}
     lista = []
     for archivo in sorted(CARPETA_PALETAS.glob("*.xml"), key=lambda f: f.name.lower()):
         xml = archivo.read_text(encoding="utf-8", errors="replace")
@@ -988,6 +984,7 @@ def paletas():
         # (BdE_2026.xml se llama «Colores 2026_2», igual que la paleta de los Excel del autor)
         lista.append({"id": archivo.stem, "nombre": nombre.group(1) if nombre else archivo.stem,
                       "archivo": archivo.name, "colores": colores})
+    ARCHIVO_PALETAS.write_text(json.dumps(lista, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     return {"paletas": lista, "carpeta": str(CARPETA_PALETAS)}
 
 
@@ -1006,13 +1003,15 @@ def info(archivo):
 
 def main(args):
     ordenes = {"empezar": empezar, "estado": lambda t: {"trabajo": t, **leer_estado(t)}, "ir": ir, "paso1": paso1, "paso2": paso2, "info": info,
-               "vista": vista, "publicaciones": lambda: {}, "guardar_publicacion": guardar_publicacion, "borrar_publicacion": borrar_publicacion, "paletas": paletas}
+               "publicaciones": lambda: {}, "guardar_publicacion": guardar_publicacion, "borrar_publicacion": borrar_publicacion, "paletas": paletas}
     if not args or args[0] not in ordenes:
         print(__doc__, file=sys.stderr)
         return 2
     try:
         res = ordenes[args[0]](*args[1:])
         res["publicaciones"] = CONFIG["publicaciones"]
+        if args[0] in ("empezar", "estado", "ir") or args[0].startswith("paso"):
+            res["reticula_pt"] = medidas_reticula()
         res["muestrario"] = CONFIG.get("muestrario", [])
         print(json.dumps({"ok": True, **res}, ensure_ascii=False))
         return 0

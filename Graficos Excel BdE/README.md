@@ -5,19 +5,45 @@ maqueta en «Graficos Illus BdE», que no se toca desde aquí).
 
 - **Ventana general**, como la de «Crear Publicación»: publicación (alta, edición y borrado), Excel del
   autor, tarjetas «Maquetar» (los pasos) y «Adelante y atrás» (las versiones) y la actividad abajo.
-- **Ventana flotante** «Vista previa», siempre encima: el gráfico de la versión elegida tal como lo dibuja
-  Excel (PDF de la hoja «Gráfico»), con o sin la retícula. Cada versión guarda su PDF en la carpeta de pasos.
-
+- **Excel al lado**: cada paso y cada salto de versión se ven directamente en Excel. La app se pone a la
+  izquierda de la pantalla y Excel a la derecha, en la hoja «Gráfico», desde A1 y con el zoom justo para ver
+  la retícula entera. Excel enseña siempre la copia de trabajo `X maquetado.xlsx`, en una sola ventana: tras
+  cada paso o salto de versión la copia pasa a ser esa versión y Excel la cierra sin guardar y la vuelve a
+  abrir en el mismo sitio (≈ 0,9 s), como un deshacer o rehacer. Lo que se cambie a mano en esa ventana se
+  pierde al cambiar de versión. «Colocar Excel» vuelve a ponerlo en su sitio y recalcula el zoom.
+- Siempre el mismo archivo porque Excel (aislado) pide permiso archivo a archivo: con cada versión en su
+  propio archivo, cada paso nuevo era un archivo nuevo y Excel pedía permiso con una ventana «Abrir»
+  («Conceder acceso») que el Organizador visual escondía. Ahora se pide una vez por trabajo.
+- La app habla con Excel dentro de sí misma (NSAppleScript); lanzar `osascript` en cada orden costaba
+  segundos. No entra nunca en la carpeta de Office (`~/Library/Group Containers/UBF8T346G9.Office/`): es de
+  otra app y macOS frena o pide permiso a quien entra (y como la app solo tiene firma local, la trata como
+  nueva cada vez que se compila). Por eso las paletas se leen de una copia, `motor/paletas.json`, que solo
+  se rehace con ↻.
+- Firma: `compilar_app.sh` firma en local con un requisito fijo (el identificador de la app). Con la firma
+  local normal, el requisito era la huella del ejecutable: cada compilación era «otra app» para macOS, el
+  permiso de Automatización sobre Excel dejaba de valer (aunque siguiera marcado en Ajustes) y macOS volvía
+  a preguntar con un aviso que el Organizador visual escondía: esperas de minutos sin rastro.
+- **Nada de animaciones continuas** en la ventana (ruedecitas, iconos que laten): con el Organizador visual,
+  cada fotograma dejaba a la app esperando a que macOS lo mostrara, y la app entera (también Excel y el
+  motor) se quedaba parada hasta que se tocaba algo. Era la causa de las esperas de segundos y minutos. El
+  contador de segundos solo corre con la ventana a la vista. Ahora: abrir el trabajo ≈ 1,3 s, cada cambio
+  de versión ≈ 1 s.
+- Con el Organizador visual (Stage Manager) activado, Excel crea cada ventana nueva (la copia reabierta) en un
+  grupo aparte, escondida en la tira de la izquierda. Tras cada cambio la app la mete en su grupo con la acción
+  «AXAddToStage» de su miniatura en la tira (como arrastrarla a mano); la miniatura se busca por el número de
+  ventana (atributo «AXWindowsIDs»). Necesita el permiso de **Accesibilidad** para la app (Ajustes del Sistema →
+  Privacidad y seguridad → Accesibilidad); sin él, la actividad lo avisa. Los avisos de permiso (de Excel o de
+  macOS) también quedan escondidos por el Organizador visual.
 - Se trabaja sobre una **copia**: del original `X.xlsx` sale `X maquetado.xlsx`, y cada paso deja su
   versión en `X maquetado (pasos)/` (`00 Copia exacta.xlsx`, `01 Retícula y pastilla.xlsx`…). Ir adelante
   y atrás es volver a una de esas versiones. Elegir otra vez el original o la copia sigue donde se quedó.
-- Tras cada paso la app cierra la copia en Excel **sin guardar** y la vuelve a abrir **sin actualizar
-  vínculos externos**. Lo que se toque a mano en esa copia se pierde: los cambios los hace la app.
-- Excel está aislado (sandbox): la vista previa se exporta desde
-  `~/Library/Group Containers/UBF8T346G9.Office/Graficos Excel BdE/`, donde no pide permiso. Para abrir la
-  copia de trabajo puede pedirlo una vez con una ventana «Abrir»: se elige la carpeta y «Conceder acceso».
+- Excel abre siempre **sin actualizar vínculos externos**. La copia de trabajo `X maquetado.xlsx` es
+  siempre igual a la versión elegida.
+- Si Excel tarda más de 2,5 s (casi seguro, su ventana de permiso), la app lo trae delante y lo avisa.
 - AppleScript de Excel: las rutas van con barras (POSIX); con dos puntos da «Error de parámetros (-50)».
+  `repeat with … in every workbook` también da -50: hay que recorrer los libros por número.
   Y no llamar `pdf` a una variable: es palabra reservada de Excel.
+- La retícula no se imprime (como en el archivo de retículas): solo es guía en pantalla.
 - Idioma del gráfico por el nombre: «Ing» delante o detrás (`Ing_…`, `…_Ing`) es inglés; si no, castellano.
 
 ## Pasos
@@ -77,5 +103,5 @@ La hoja de «Nueva publicación» / «Editar publicación» enseña:
 
 - `motor/maquetar_excel.py`: el motor (Python 3 del sistema, sin dependencias). Toca el .xlsx por dentro y
   deja igual todo lo que el paso no cambia. Se puede usar suelto:
-  `maquetar_excel.py empezar|estado|ir|paso1|vista|info|publicaciones|guardar_publicacion|borrar_publicacion|paletas`.
+  `maquetar_excel.py empezar|estado|ir|paso1|paso2|info|publicaciones|guardar_publicacion|borrar_publicacion|paletas`.
 - `app/compilar_app.sh` → `Gráficos Excel BdE.app` en esta carpeta (no va a git).
