@@ -87,12 +87,12 @@ struct PasoMaquetacion: Identifiable {
 }
 
 let pasosMaquetacion = [
-    PasoMaquetacion(id: 1, titulo: "Retícula y pastilla",
-                    detalle: "Borra las del autor y pone las del archivo de retículas, en A1 y al fondo, con el color de la publicación",
+    PasoMaquetacion(id: 1, titulo: "Retícula, pastilla y textos",
+                    detalle: "Retícula y pastilla del archivo de retículas, en A1 y al fondo, con el color de la publicación; todo en Roboto: Gráfico NN y título con el marco de la plantilla; paneles, ejes, leyendas, unidades, interior y fuentes con su cuerpo",
                     icono: "square.grid.3x3.topleft.filled", orden: "paso1"),
-    PasoMaquetacion(id: 2, titulo: "Textos",
-                    detalle: "Todo en Roboto: Gráfico NN y título con el marco de la plantilla; paneles, ejes, leyendas, unidades, interior y fuentes con su cuerpo, donde los dejó el autor",
-                    icono: "textformat", orden: "paso2"),
+    PasoMaquetacion(id: 2, titulo: "Tamaño y colocación",
+                    detalle: "Paneles uno debajo de otro como en Illus: trazado en la columna 1 y leyenda en la 2; 9 filas hasta las categorías (trazado, mínimo 7); títulos de panel y FUENTES con las separaciones de Illus",
+                    icono: "rectangle.split.1x2", orden: "paso2"),
 ]
 
 struct Ejecucion: Identifiable {
@@ -413,6 +413,22 @@ final class Taller: ObservableObject {
         }
     }
 
+    /// Volver a empezar desde el original del autor: se borran todas las versiones (se pregunta antes) y la
+    /// copia de trabajo vuelve a ser la copia exacta.
+    func reiniciar() {
+        guard let trabajo, pasos.count > 1 else { return }
+        pregunta = Pregunta(titulo: "¿Reiniciar desde el original?",
+                            texto: "Se borran las versiones 1 a \(pasos.count - 1) y se vuelve a la copia exacta del Excel del autor. No se puede deshacer.",
+                            boton: "Reiniciar") {
+            self.tarea("Reiniciar desde el original") { id in
+                guard let r = await self.llamarMotor(["reiniciar", trabajo.path], registro: id) else { return false }
+                self.aplicar(r)
+                self.anotar(id, "Versiones borradas; de nuevo la copia exacta del original")
+                return await self.mostrar(id)
+            }
+        }
+    }
+
     /// Tras cada cambio, la copia de trabajo recargada en Excel, a la derecha de la app y encuadrada en el gráfico.
     private func mostrar(_ id: UUID) async -> Bool {
         await mostrarEnExcel(id, recargar: true)
@@ -420,15 +436,22 @@ final class Taller: ObservableObject {
 
     /// Pone la app a la izquierda de la pantalla y devuelve el sitio de Excel, a la derecha, como
     /// {izquierda, arriba, derecha, abajo} en coordenadas de AppleScript (origen arriba a la izquierda).
-    private func colocarVentanas() -> [Int] {
+    /// Excel empieza donde acaba de verdad la ventana de la app: con el Organizador visual, macOS la aparta a la
+    /// derecha para dejar sitio a la tira, y con el sitio pedido Excel la tapaba.
+    private func colocarVentanas() async -> [Int] {
         let ventana = NSApp.windows.first { $0.isVisible && $0.styleMask.contains(.titled) }
         guard let pantalla = ventana?.screen ?? NSScreen.main, let principal = NSScreen.screens.first else { return [] }
         let zona = pantalla.visibleFrame
         let anchoApp = min(max(980, zona.width * 0.42), zona.width - 640)
         let marco = NSRect(x: zona.minX, y: zona.minY, width: anchoApp, height: zona.height)
-        if ventana?.frame != marco { ventana?.setFrame(marco, display: true) }
+        // Solo si cambia el tamaño: el desplazamiento del Organizador visual se respeta (si no, se recolocaría siempre)
+        if let ventana, abs(ventana.frame.width - marco.width) > 1 || abs(ventana.frame.height - marco.height) > 1 {
+            ventana.setFrame(marco, display: true)
+            try? await Task.sleep(nanoseconds: 300_000_000)
+        }
+        let izquierda = max(ventana?.frame.maxX ?? zona.minX + anchoApp, zona.minX + anchoApp)
         let alto = principal.frame.maxY
-        return [Int(zona.minX + anchoApp), Int(alto - zona.maxY), Int(zona.maxX), Int(alto - zona.minY)]
+        return [Int(izquierda.rounded(.up)), Int(alto - zona.maxY), Int(zona.maxX), Int(alto - zona.minY)]
     }
 
     /// Excel enseña siempre la copia de trabajo, en una sola ventana: tras cada cambio (`recargar`) se cierra sin
@@ -438,7 +461,7 @@ final class Taller: ObservableObject {
     /// con una ventana «Abrir» que el Organizador visual escondía. Sin `recargar` solo coloca y encuadra.
     private func mostrarEnExcel(_ id: UUID, recargar: Bool) async -> Bool {
         guard let paso = pasoActual, let ruta = trabajo else { return false }
-        let sitio = colocarVentanas()
+        let sitio = await colocarVentanas()
         guard sitio.count == 4 else { return false }
         if !recargar { zoomExcel = nil }
         let zoom = zoomExcel.flatMap { $0.sitio == sitio ? $0.zoom : nil } ?? 0
@@ -452,7 +475,10 @@ final class Taller: ObservableObject {
             set altoRet to (item 7 of argv) as integer
             set z to (item 8 of argv) as integer
             set recargar to (item 9 of argv) is "si"
+            set arrancar to (item 10 of argv) is "si"
             tell application "Microsoft Excel"
+                -- Recién arrancado en segundo plano, Excel no enseña sus ventanas hasta que se le activa
+                if arrancar then activate
                 set wb to missing value
                 -- Por número: «repeat with … in every workbook» da error de parámetros
                 repeat with i from 1 to (count workbooks)
@@ -495,12 +521,15 @@ final class Taller: ObservableObject {
             NSRunningApplication.runningApplications(withBundleIdentifier: idExcel).first?.activate()
             anotar(id, "Excel tarda: si muestra una ventana «Abrir», pide permiso para «\(ruta.lastPathComponent)». Pulsa «Conceder acceso»: solo hace falta una vez por trabajo.")
         }
-        let r = await osascript(guion, [ruta.path] + (sitio + medidas + [zoom]).map(String.init) + [recargar ? "si" : "no"], espera: 120)
+        let arrancar = NSRunningApplication.runningApplications(withBundleIdentifier: idExcel).isEmpty
+        let r = await osascript(guion, [ruta.path] + (sitio + medidas + [zoom]).map(String.init) + [recargar ? "si" : "no", arrancar ? "si" : "no"], espera: 120)
         vigilante.cancel()
         // La app vuelve delante para seguir con ⌘← y ⌘→, y con el Organizador visual se trae a su grupo la ventana
         // de Excel (que Excel crea en un grupo aparte, escondida en la tira de la izquierda)
         NSApp.activate(ignoringOtherApps: true)
-        let juntas = organizadorVisual ? await juntarConExcel() : true
+        // Si se acaba de arrancar Excel, se deja terminar el cambio de grupo (mientras dura se ven las dos ventanas)
+        if arrancar && organizadorVisual { try? await Task.sleep(nanoseconds: 1_000_000_000) }
+        let juntas = organizadorVisual ? await juntarConExcel(sitio) : true
         if !juntas && !avisadoOrganizador {
             avisadoOrganizador = true
             anotar(id, "Organizador visual activado: para ver Excel junto a la app, da permiso a «Gráficos Excel BdE» en Ajustes del Sistema → Privacidad y seguridad → Accesibilidad. Mientras tanto, arrastra la ventana de Excel desde la tira de la izquierda hasta la app.")
@@ -522,26 +551,58 @@ final class Taller: ObservableObject {
     /// Con el Organizador visual, mete en el grupo de la app la última ventana de Excel (la copia recién abierta),
     /// como si se arrastrara desde la tira de la izquierda: la acción «AXAddToStage» de su miniatura. Necesita el
     /// permiso de Accesibilidad (se pide la primera vez). Si la ventana ya está en el grupo, no hay miniatura.
-    private func juntarConExcel() async -> Bool {
+    private func juntarConExcel(_ sitio: [Int]) async -> Bool {
         let opciones = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary
         guard AXIsProcessTrustedWithOptions(opciones),
               let excel = NSRunningApplication.runningApplications(withBundleIdentifier: idExcel).first,
               let organizador = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.WindowManager").first
         else { return false }
-        // La ventana más nueva de Excel (número más alto) es la de la copia
-        let ventanas = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] ?? []
-        guard let ventana = ventanas
-            .filter({ ($0[kCGWindowOwnerPID as String] as? pid_t) == excel.processIdentifier && ($0[kCGWindowLayer as String] as? Int) == 0 })
-            .compactMap({ $0[kCGWindowNumber as String] as? Int }).max()
-        else { return false }
+        // De las ventanas de Excel, la más nueva que esté en la tira (miniatura) o a la vista: Excel tiene además
+        // ventanas internas (al arrancar, una de 500 × 500 más nueva que la del libro) que no están en ninguna.
+        // Con Excel recién arrancado, su miniatura tarda en aparecer: se espera hasta 3 s.
         let tira = AXUIElementCreateApplication(organizador.processIdentifier)
-        for _ in 0..<5 {
-            if let miniatura = buscarMiniatura(de: ventana, en: tira) {
-                return AXUIElementPerformAction(miniatura, "AXAddToStage" as CFString) == .success
+        for _ in 0..<30 {
+            let ventanas = (CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] ?? [])
+                .filter { ($0[kCGWindowOwnerPID as String] as? pid_t) == excel.processIdentifier && ($0[kCGWindowLayer as String] as? Int) == 0 }
+                .compactMap { $0[kCGWindowNumber as String] as? Int }.sorted(by: >)
+            let propia = NSApp.windows.first { $0.isVisible && $0.styleMask.contains(.titled) }?.windowNumber ?? 0
+            for ventana in ventanas {
+                if let miniatura = buscarMiniatura(de: ventana, en: tira) {
+                    let ok = AXUIElementPerformAction(miniatura, "AXAddToStage" as CFString) == .success
+                    // Al meterla en el grupo, el Organizador visual la coloca a su manera: se vuelve a poner en su sitio
+                    try? await Task.sleep(nanoseconds: 400_000_000)
+                    await recolocarExcel(sitio)
+                    NSApp.activate(ignoringOtherApps: true)
+                    return ok
+                }
+                // Ya están juntas si se ven a la vez (durante la animación de cambio de grupo, solo se ve una)
+                if seVe(ventana) && seVe(propia) { return true }
             }
             try? await Task.sleep(nanoseconds: 100_000_000)
         }
         return true
+    }
+
+    /// La ventana de Excel otra vez en su sitio, a la derecha de la app.
+    private func recolocarExcel(_ sitio: [Int]) async {
+        let guion = """
+        on run argv
+            tell application "Microsoft Excel"
+                try
+                    set bounds of active window to {(item 1 of argv) as integer, (item 2 of argv) as integer, (item 3 of argv) as integer, (item 4 of argv) as integer}
+                end try
+            end tell
+        end run
+        """
+        _ = await osascript(guion, sitio.map(String.init), espera: 10)
+    }
+
+    /// ¿La ventana `numero` está en pantalla a su tamaño (no como miniatura de la tira)?
+    private func seVe(_ numero: Int) -> Bool {
+        let info = CGWindowListCopyWindowInfo([.optionIncludingWindow], CGWindowID(numero)) as? [[String: Any]] ?? []
+        guard let v = info.first, (v[kCGWindowIsOnscreen as String] as? Bool) == true,
+              let caja = v[kCGWindowBounds as String] as? [String: Any], let ancho = caja["Width"] as? Double else { return false }
+        return ancho > 300
     }
 
     /// La miniatura de la tira del Organizador visual que contiene la ventana `numero` (atributo «AXWindowsIDs»).
@@ -941,6 +1002,10 @@ struct TarjetaVersiones: View {
                     .disabled(taller.actual + 1 >= taller.pasos.count)
                     .keyboardShortcut(.rightArrow, modifiers: .command)
                 Spacer()
+                Button { taller.reiniciar() } label: { Label("Reiniciar", systemImage: "arrow.counterclockwise") }
+                    .controlSize(.small)
+                    .disabled(taller.pasos.count <= 1)
+                    .help("Vuelve a empezar desde el Excel del autor: borra todas las versiones")
                 Button { taller.colocarExcel() } label: { Label("Colocar Excel", systemImage: "rectangle.split.2x1") }
                     .controlSize(.small)
                     .help("Pone Excel a la derecha de la app, en la hoja «Gráfico» y con el gráfico entero a la vista")

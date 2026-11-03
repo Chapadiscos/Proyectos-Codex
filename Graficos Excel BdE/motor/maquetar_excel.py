@@ -9,6 +9,7 @@ Uso (la salida es siempre JSON):
   maquetar_excel.py empezar <origen.xlsx>
   maquetar_excel.py estado  <trabajo.xlsx>
   maquetar_excel.py ir      <trabajo.xlsx> <n>
+  maquetar_excel.py reiniciar <trabajo.xlsx>
   maquetar_excel.py paso1   <trabajo.xlsx> <id_publicacion>
   maquetar_excel.py paso2   <trabajo.xlsx> [id_publicacion]
   maquetar_excel.py info    <archivo.xlsx>
@@ -18,6 +19,7 @@ Uso (la salida es siempre JSON):
   maquetar_excel.py paletas [actualizar]
 """
 import html
+import io
 import json
 import os
 import re
@@ -86,6 +88,26 @@ def empezar(origen):
     return {"trabajo": str(trabajo), **estado}
 
 
+def reiniciar(trabajo):
+    """Vuelve a empezar desde el original del autor: borra todas las versiones, rehace «00 Copia exacta»
+    con el original (si sigue en su sitio) y la copia de trabajo pasa a ser esa versión."""
+    estado = leer_estado(trabajo)
+    _, pasos = nombres(trabajo)
+    for p in estado["pasos"]:
+        (pasos / p["archivo"]).unlink(missing_ok=True)
+    v0 = pasos / "00 Copia exacta.xlsx"
+    origen = Path(estado.get("origen", ""))
+    if not origen.is_file():
+        raise Fallo(f"No encuentro el original del autor ({origen}): no puedo reiniciar")
+    shutil.copyfile(origen, v0)
+    solo_lectura(v0)
+    shutil.copyfile(origen, trabajo)
+    estado["actual"] = 0
+    estado["pasos"] = [{"n": 0, "titulo": "Copia exacta del original", "archivo": v0.name, "detalle": []}]
+    guardar_estado(trabajo, estado)
+    return {"trabajo": str(trabajo), **estado}
+
+
 def ir(trabajo, n):
     estado = leer_estado(trabajo)
     n = int(n)
@@ -125,12 +147,14 @@ def nuevo_paso(trabajo, titulo, cambios, detalle):
 
 def reescribir_zip(origen, destino, cambios):
     """Copia el .xlsx entrada a entrada, en el mismo orden y compresión; solo cambia las de `cambios`."""
-    tmp = Path(str(destino) + ".tmp")
+    en_memoria = isinstance(destino, io.BytesIO)
+    tmp = destino if en_memoria else Path(str(destino) + ".tmp")
     with zipfile.ZipFile(origen) as zin, zipfile.ZipFile(tmp, "w") as zout:
         for info in zin.infolist():
             datos = cambios.get(info.filename)
             zout.writestr(info, datos if datos is not None else zin.read(info.filename))
-    os.replace(tmp, destino)
+    if not en_memoria:
+        os.replace(tmp, destino)
 
 
 # ---------------------------------------------------------------- xlsx por dentro
@@ -244,25 +268,39 @@ def publicacion(pid):
 
 # ---------------------------------------------------------------- pasos
 
+RETICULA_Y_TEXTOS = "Retícula, pastilla y textos"
+
+
 def paso1(trabajo, pid):
-    """Retícula y pastilla de la publicación desde el archivo de retículas, al fondo y en A1;
-    se borran las del autor por si las ha tocado."""
-    pub = publicacion(pid)
+    """Retícula, pastilla y textos en un solo paso (una sola versión): primero la retícula y la pastilla y,
+    sobre el resultado, los textos."""
     estado = leer_estado(trabajo)
     _, pasos = nombres(trabajo)
     base = pasos / estado["pasos"][estado["actual"]]["archivo"]
+    with zipfile.ZipFile(base) as z:
+        cambios, detalle = reticula_y_pastilla(z, pid)
+    intermedio = io.BytesIO()
+    reescribir_zip(base, intermedio, cambios)
+    with zipfile.ZipFile(intermedio) as z:
+        cambios_textos, detalle_textos = textos(z, estado)
+    return nuevo_paso(trabajo, RETICULA_Y_TEXTOS, {**cambios, **cambios_textos}, detalle + detalle_textos)
+
+
+def reticula_y_pastilla(z, pid):
+    """Retícula y pastilla de la publicación desde el archivo de retículas, al fondo y en A1;
+    se borran las del autor por si las ha tocado."""
+    pub = publicacion(pid)
 
     ret = CONFIG["reticula"]
-    with zipfile.ZipFile(PROYECTO / ret["archivo"]) as z:
-        dibujo_ret = z.read(dibujo_de_hoja(z, ret["hoja"])).decode("utf-8")
+    with zipfile.ZipFile(PROYECTO / ret["archivo"]) as zr:
+        dibujo_ret = zr.read(dibujo_de_hoja(zr, ret["hoja"])).decode("utf-8")
     anclas_ret = {nombre_forma(a.group(0)): a.group(0) for a in ANCLA.finditer(dibujo_ret)}
     if ret["grupo"] not in anclas_ret or ret["pastilla_modelo"] not in anclas_ret:
         raise Fallo("No encuentro la retícula o la pastilla en el archivo de retículas")
     grupo, modelo = anclas_ret[ret["grupo"]], anclas_ret[ret["pastilla_modelo"]]
 
-    with zipfile.ZipFile(base) as z:
-        ruta = dibujo_de_hoja(z, HOJA_GRAFICO)
-        dibujo = z.read(ruta).decode("utf-8")
+    ruta = dibujo_de_hoja(z, HOJA_GRAFICO)
+    dibujo = z.read(ruta).decode("utf-8")
 
     detalle = []
     quitar = []
@@ -292,19 +330,22 @@ def paso1(trabajo, pid):
     # Primero en el dibujo = al fondo; la pastilla va justo encima de la retícula.
     m = re.search(r'<xdr:wsDr\b[^>]*>', dibujo)
     dibujo = dibujo[:m.end()] + nueva_ret + nueva_pas + dibujo[m.end():]
-    return nuevo_paso(trabajo, "Retícula y pastilla", {ruta: dibujo.encode("utf-8")}, detalle)
+    return {ruta: dibujo.encode("utf-8")}, detalle
 
 
-def paso2(trabajo, pid=None):
+def requiere(estado, titulos, paso):
+    """Los pasos van en orden: el anterior tiene que estar en la versión de la que se parte. `titulos` admite
+    también los nombres de antes (las versiones ya hechas con los pasos separados siguen valiendo)."""
+    if not any(p["titulo"] in titulos for p in estado["pasos"][:estado["actual"] + 1]):
+        raise Fallo(f"Antes hay que hacer el paso «{titulos[0]}»: {paso} parte de él")
+
+
+def textos(z, estado):
     """Textos en Roboto: «Gráfico NN» y título con el marco de la plantilla, en su sitio; títulos de panel,
     ejes, leyendas, unidades, interior del gráfico y fuentes con su letra, donde los dejó el autor."""
-    estado = leer_estado(trabajo)
-    _, pasos = nombres(trabajo)
-    base = pasos / estado["pasos"][estado["actual"]]["archivo"]
-
     ret = CONFIG["reticula"]
-    with zipfile.ZipFile(PROYECTO / ret["archivo"]) as z:
-        dibujo_ret = z.read(dibujo_de_hoja(z, ret["hoja"])).decode("utf-8")
+    with zipfile.ZipFile(PROYECTO / ret["archivo"]) as zr:
+        dibujo_ret = zr.read(dibujo_de_hoja(zr, ret["hoja"])).decode("utf-8")
     anclas_ret = {nombre_forma(a.group(0)): a.group(0) for a in ANCLA.finditer(dibujo_ret)}
     marco_grafico, marco_titulo = anclas_ret.get(ret["marco_grafico"]), anclas_ret.get(ret["marco_titulo"])
     if not marco_grafico or not marco_titulo:
@@ -313,69 +354,68 @@ def paso2(trabajo, pid=None):
     alto_pastilla = tamano(anclas_ret[ret["pastilla_modelo"]])[1]
 
     cambios, detalle = {}, []
-    with zipfile.ZipFile(base) as z:
-        ruta = dibujo_de_hoja(z, HOJA_GRAFICO)
-        dibujo = z.read(ruta).decode("utf-8")
-        filas = altos_filas(z, HOJA_GRAFICO)
+    ruta = dibujo_de_hoja(z, HOJA_GRAFICO)
+    dibujo = z.read(ruta).decode("utf-8")
+    filas = altos_filas(z, HOJA_GRAFICO)
 
-        # Textos de la hoja
-        hechos = set()
-        partes = []
-        for a in partes_dibujo(dibujo):
-            if not ANCLA.fullmatch(a) or es_reticula(a) or es_pastilla(a) or "<c:chart " in a or "<xdr:txBody>" not in a:
-                partes.append(a)
-                continue
-            texto = texto_forma(a)
-            if not texto.strip():
-                partes.append(a)
-                continue
-            x, y = posicion(a)
-            corto = html.unescape(texto).replace("\n", " / ")[:60]
-            if x >= ancho_ret:
-                detalle.append(f"Sin tocar, fuera de la retícula: «{corto}»")
-            elif "grafico" not in hechos and RE_GRAFICO.match(texto):
-                hechos.add("grafico")
-                a = con_marco(a, marco_grafico, filas)
-                detalle.append(f"Gráfico NN «{corto}»: Roboto Regular 7 pt, marco y posición de la plantilla")
-            elif "titulo" not in hechos and y < alto_pastilla:
-                hechos.add("titulo")
-                a = con_marco(a, marco_titulo, filas, final_regular=FINAL_TITULO)
-                detalle.append(f"Título «{corto}»: Roboto Medium 8,5 pt, marco y posición de la plantilla")
-                final = FINAL_TITULO.search(html.unescape(texto))
-                if final:
-                    detalle.append(f"  «{final.group(0).strip()}» al final del título, en Roboto Regular")
-            elif RE_FUENTE.match(texto):
-                a, notas = maquetar_fuentes(a, estado["idioma"])
-                detalle.append(f"Fuentes «{corto}»: Roboto Light 7 pt" + "".join(f"; {n}" for n in notas))
-            else:
-                a = fijar_letra(a, 800, ROBOTO)
-                detalle.append(f"Título de panel «{corto}»: Roboto Regular 8 pt")
+    # Textos de la hoja
+    hechos = set()
+    partes = []
+    for a in partes_dibujo(dibujo):
+        if not ANCLA.fullmatch(a) or es_reticula(a) or es_pastilla(a) or "<c:chart " in a or "<xdr:txBody>" not in a:
             partes.append(a)
-        for falta, nombre in (("grafico", "«Gráfico NN»"), ("titulo", "título del gráfico")):
-            if falta not in hechos:
-                detalle.append(f"Aviso: no encuentro el {nombre}")
-        cambios[ruta] = "".join(partes).encode("utf-8")
+            continue
+        texto = texto_forma(a)
+        if not texto.strip():
+            partes.append(a)
+            continue
+        x, y = posicion(a)
+        corto = html.unescape(texto).replace("\n", " / ")[:60]
+        if x >= ancho_ret:
+            detalle.append(f"Sin tocar, fuera de la retícula: «{corto}»")
+        elif "grafico" not in hechos and RE_GRAFICO.match(texto):
+            hechos.add("grafico")
+            a = con_marco(a, marco_grafico, filas)
+            detalle.append(f"Gráfico NN «{corto}»: Roboto Regular 7 pt, marco y posición de la plantilla")
+        elif "titulo" not in hechos and y < alto_pastilla:
+            hechos.add("titulo")
+            a = con_marco(a, marco_titulo, filas, final_regular=FINAL_TITULO)
+            detalle.append(f"Título «{corto}»: Roboto Medium 8,5 pt, marco y posición de la plantilla")
+            final = FINAL_TITULO.search(html.unescape(texto))
+            if final:
+                detalle.append(f"  «{final.group(0).strip()}» al final del título, en Roboto Regular")
+        elif RE_FUENTE.match(texto):
+            a, notas = maquetar_fuentes(a, estado["idioma"])
+            detalle.append(f"Fuentes «{corto}»: Roboto Light 7 pt" + "".join(f"; {n}" for n in notas))
+        else:
+            a = fijar_letra(a, 800, ROBOTO)
+            detalle.append(f"Título de panel «{corto}»: Roboto Regular 8 pt")
+        partes.append(a)
+    for falta, nombre in (("grafico", "«Gráfico NN»"), ("titulo", "título del gráfico")):
+        if falta not in hechos:
+            detalle.append(f"Aviso: no encuentro el {nombre}")
+    cambios[ruta] = "".join(partes).encode("utf-8")
 
-        # Textos de cada gráfico y de sus formas (unidades)
-        relaciones = rels(z, ruta)
-        anchos = anchos_graficos(z, dibujo)
-        for i, rid in enumerate(re.findall(r'<c:chart\b[^>]*\br:id="([^"]+)"', dibujo), 1):
-            ruta_graf = relaciones[rid][1]
-            graf, cuentas = maquetar_grafico(z.read(ruta_graf).decode("utf-8"), anchos.get(rid))
-            cambios[ruta_graf] = graf.encode("utf-8")
-            linea = f"Panel {i}: general e interior Roboto Regular 6 pt"
-            if cuentas:
-                linea += "; " + ", ".join(cuentas)
-            for tipo, ruta_formas in rels(z, ruta_graf).values():
-                if tipo.endswith("/chartUserShapes"):
-                    formas, unidades, otros = maquetar_formas_grafico(z.read(ruta_formas).decode("utf-8"))
-                    cambios[ruta_formas] = formas.encode("utf-8")
-                    if unidades:
-                        linea += "; unidades 7 pt: " + ", ".join(f"«{u}»" for u in unidades)
-                    if otros:
-                        linea += "; textos interiores 6 pt: " + ", ".join(f"«{u}»" for u in otros)
-            detalle.append(linea)
-    return nuevo_paso(trabajo, "Textos", cambios, detalle)
+    # Textos de cada gráfico y de sus formas (unidades)
+    relaciones = rels(z, ruta)
+    anchos = anchos_graficos(z, dibujo)
+    for i, rid in enumerate(re.findall(r'<c:chart\b[^>]*\br:id="([^"]+)"', dibujo), 1):
+        ruta_graf = relaciones[rid][1]
+        graf, cuentas = maquetar_grafico(z.read(ruta_graf).decode("utf-8"), anchos.get(rid))
+        cambios[ruta_graf] = graf.encode("utf-8")
+        linea = f"Panel {i}: general e interior Roboto Regular 6 pt"
+        if cuentas:
+            linea += "; " + ", ".join(cuentas)
+        for tipo, ruta_formas in rels(z, ruta_graf).values():
+            if tipo.endswith("/chartUserShapes"):
+                formas, unidades, otros = maquetar_formas_grafico(z.read(ruta_formas).decode("utf-8"))
+                cambios[ruta_formas] = formas.encode("utf-8")
+                if unidades:
+                    linea += "; unidades 7 pt: " + ", ".join(f"«{u}»" for u in unidades)
+                if otros:
+                    linea += "; textos interiores 6 pt: " + ", ".join(f"«{u}»" for u in otros)
+        detalle.append(linea)
+    return cambios, detalle
 
 
 # ---------------------------------------------------------------- textos
@@ -752,10 +792,450 @@ def maquetar_grafico(xml, ancho_pt=None):
     return xml, [re.sub(r" (\d+)$", r" (\1)", c) for c in cuentas]
 
 
+
+# ---------------------------------------------------------------- paso 3: tamaño y colocación
+
+# Distribución de «Graficos Illus BdE» (Generador V3), en puntos desde arriba de la retícula, con el título del
+# gráfico en una línea: dónde empieza el panel 1 si no tiene título de panel (con título, el título va a
+# PASTILLA_A_TITULO_PANEL de la pastilla). Cada línea más del título lo baja todo un interlineado del título.
+INICIO_SIN_TITULO_PANEL = 50.57
+INTERLINEA_TITULO_PANEL = 9.6
+MM = 72 / 25.4
+SUBIDA_GRAFICO = 0.5 * MM
+ENTRE_PANELES = 8.5 * MM
+HASTA_FUENTES = 5 * MM
+FILAS_PANEL, FILAS_MIN_TRAZADO = 9, 7
+TITULO_PANEL_A_GRAFICO = 7.377 * MM   # del final del título de panel al gráfico (Illus, título de 1 línea)
+SUBIDA_CON_UNIDADES = 0.7 * MM
+UNIDADES_A_GRAFICO = 2 * MM          # del final de las unidades al borde de arriba del trazado
+LEYENDA_A_LA_IZQUIERDA = 3 * MM      # el cuadro de la leyenda tiene aire alrededor: así su texto cae en la columna 2
+CUERPO_TITULO = 8.5
+PASTILLA_A_TITULO_PANEL = 3.8 * MM   # del borde de abajo de la pastilla al texto del título del panel 1 (TERMINADO)
+CUERPO_UNIDADES = 7
+ALTO_UNIDADES = CUERPO_UNIDADES * 1.2 + 1   # cuadro de una línea (pt)
+BASE_UNIDADES = CUERPO_UNIDADES * 0.93      # de arriba del cuadro a la línea de base (ascendente de Roboto)
+SEPARACION_CATEGORIAS = 6.0   # del eje a las etiquetas de categorías (pt, medido en Excel)
+MARGEN_CATEGORIAS = 4.0       # debajo de la última línea (pt)
+NIVEL_CATEGORIAS = 5.0        # además de su línea, cada nivel de más (pt, medido en Excel)
+MEDIA_ETIQUETA = 7 * 1.2 / 2  # el número de arriba del eje sobresale medio alto por encima del trazado (pt)
+INTERLINEA = 1.2              # alto de línea / cuerpo
+
+
+def guias_reticula(dibujo):
+    """Las dos columnas de la retícula (x, ancho) y el paso de sus filas, en EMU de la hoja."""
+    ret = next((a.group(0) for a in ANCLA.finditer(dibujo) if es_reticula(a.group(0))), None)
+    if not ret:
+        raise Fallo("No hay retícula: haz antes el paso 1")
+    g = re.search(r'<a:off x="(-?\d+)" y="(-?\d+)"/>\s*<a:ext cx="(\d+)" cy="(\d+)"/>\s*'
+                  r'<a:chOff x="(-?\d+)" y="(-?\d+)"/>\s*<a:chExt cx="(\d+)" cy="(\d+)"/>', ret)
+    ox, oy, ex, ey, cx0, cy0, ccx, ccy = map(int, g.groups())
+    columnas, filas = [], []
+    for f in re.finditer(r'<xdr:(sp|cxnSp)\b.*?</xdr:\1>', ret, re.S):
+        t = f.group(0)
+        o = re.search(r'<a:off x="(-?\d+)" y="(-?\d+)"/>\s*<a:ext cx="(\d+)" cy="(\d+)"/>', t)
+        color = re.search(r'srgbClr val="(\w+)"', t)
+        x, y, w, h = map(int, o.groups())
+        if color and color.group(1) == "0070C0":
+            columnas.append((round(ox + (x - cx0) * ex / ccx), round(w * ex / ccx)))
+        elif 'prst="line"' in t and h == 0:
+            filas.append(oy + (y - cy0) * ey / ccy)
+    if len(columnas) < 2 or len(filas) < 2:
+        raise Fallo("La retícula no tiene las dos columnas y las filas que espero")
+    filas.sort()
+    return sorted(columnas)[:2], round((filas[-1] - filas[0]) / (len(filas) - 1))
+
+
+def margenes(ancla):
+    """Márgenes internos del cuadro de texto (EMU): izquierda, arriba, derecha, abajo."""
+    body = re.search(r'<a:bodyPr\b[^>]*>', ancla)
+    valores = []
+    for nombre, defecto in (("lIns", 91440), ("tIns", 45720), ("rIns", 91440), ("bIns", 45720)):
+        m = body and re.search(rf'\b{nombre}="(\d+)"', body.group(0))
+        valores.append(int(m.group(1)) if m else defecto)
+    return valores
+
+
+def lineas_parrafos(parrafos, ancho_pt, sz, medir):
+    """Líneas que ocupan los párrafos, partiendo por palabras como Excel, en un ancho dado."""
+    total = 0
+    espacio = medir(" ", sz)
+    for texto in parrafos:
+        lineas, actual = 1, 0.0
+        for palabra in texto.split():
+            w = medir(palabra, sz)
+            if actual and actual + espacio + w > ancho_pt:
+                lineas, actual = lineas + 1, w
+            else:
+                actual += (espacio if actual else 0) + w
+        total += lineas
+    return total
+
+
+def textos_lineas(ancla):
+    return [html.unescape(texto_de(linea)) for linea in lineas_de(ancla) if texto_de(linea).strip()]
+
+
+def interlineado(ancla, pt, fuente):
+    """Distancia entre líneas (pt) del párrafo del cuadro: el alto de línea de la fuente (hhea, como Excel)
+    por el interlineado del párrafo (sencillo si no lleva)."""
+    ruta = next((c / fuente for c in CARPETAS_FUENTES if (c / fuente).exists()), None)
+    factor = 1.171875   # Roboto: (1900 + 500) / 2048
+    if ruta:
+        d = ruta.read_bytes()
+        tablas = {struct.unpack(">4sIII", d[12 + 16 * i:28 + 16 * i])[0]: struct.unpack(">4sIII", d[12 + 16 * i:28 + 16 * i])[2]
+                  for i in range(struct.unpack(">H", d[4:6])[0])}
+        em = struct.unpack(">H", d[tablas[b"head"] + 18:tablas[b"head"] + 20])[0]
+        sube, baja, hueco = struct.unpack(">hhh", d[tablas[b"hhea"] + 4:tablas[b"hhea"] + 10])
+        factor = (sube - baja + hueco) / em
+    linea = re.search(r'<a:lnSpc>\s*<a:(spcPct|spcPts) val="(\d+)"', ancla)
+    if linea and linea.group(1) == "spcPts":
+        return int(linea.group(2)) / 100
+    return pt * factor * (int(linea.group(2)) / 100000 if linea else 1)
+
+
+def alargar(ancla, extra, caja):
+    """El objeto `extra` EMU más alto. Con su caja real (la de las celdas, que es la que usa Excel) y ancla
+    absoluta: en un ancla de dos celdas, cambiar solo el tamaño de dentro no lo cambia en Excel."""
+    x, y, cx, cy = caja(ancla)
+    return colocar(ancla, x, y, cx, cy + extra)
+
+
+def colocar(ancla, x, y, cx, cy):
+    """El objeto en una posición y tamaño fijos (EMU desde A1), con ancla absoluta."""
+    cuerpo = re.search(r'(?:</xdr:to>|<xdr:ext\b[^>]*/>)(.*)</xdr:(?:twoCellAnchor|oneCellAnchor|absoluteAnchor)>',
+                       ancla, re.S).group(1)
+    cuerpo = re.sub(r'(<a:off) x="-?\d+" y="-?\d+"/>(\s*<a:ext) cx="\d+" cy="\d+"/>',
+                    rf'\1 x="{x}" y="{y}"/>\2 cx="{cx}" cy="{cy}"/>', cuerpo, count=1)
+    return (f'<xdr:absoluteAnchor><xdr:pos x="{x}" y="{y}"/><xdr:ext cx="{cx}" cy="{cy}"/>'
+            f'{cuerpo}</xdr:absoluteAnchor>')
+
+
+def medidas_hoja(z, dibujo):
+    """Función ancla → (x, y, ancho, alto) en EMU desde A1, por las celdas de anclaje (las que usa Excel; el
+    xfrm de dentro puede estar desfasado). Las filas, por su alto; las columnas, con lo que mide una unidad
+    de ancho de columna en este dibujo (como en anchos_graficos)."""
+    filas = altos_filas(z, HOJA_GRAFICO)
+    altos, defecto = filas
+    hoja = z.read(hoja_de(z, HOJA_GRAFICO)).decode("utf-8")
+    cols = [(int(a), int(b), float(w)) for a, b, w in
+            re.findall(r'<col\b[^>]*?\bmin="(\d+)"[^>]*?\bmax="(\d+)"[^>]*?\bwidth="([\d.]+)"', hoja)]
+    dc = re.search(r'\bdefaultColWidth="([\d.]+)"', hoja)
+    dc = float(dc.group(1)) if dc else 8.43
+
+    def suma_cols(c):
+        return sum(next((w for a, b, w in cols if a <= i + 1 <= b), dc) for i in range(c))
+    medidas = []
+    for m in ANCLA.finditer(dibujo):
+        c = re.search(r'<xdr:from><xdr:col>(\d+)</xdr:col><xdr:colOff>(-?\d+)</xdr:colOff>.*?'
+                      r'<xdr:to><xdr:col>(\d+)</xdr:col><xdr:colOff>(-?\d+)</xdr:colOff>', m.group(0), re.S)
+        ext = re.search(r'<a:ext cx="(\d+)"', m.group(0))
+        if c and ext and int(ext.group(1)) > 0:
+            c1, o1, c2, o2 = map(int, c.groups())
+            if suma_cols(c2) > suma_cols(c1):
+                medidas.append((int(ext.group(1)) - o2 + o1) / (suma_cols(c2) - suma_cols(c1)))
+    unidad = sorted(medidas)[len(medidas) // 2] if medidas else 7 * 9525
+
+    def fila_y(r, off):
+        return sum(altos.get(i, defecto) for i in range(r)) + off
+
+    def medir(ancla):
+        pos = re.search(r'<xdr:pos x="(-?\d+)" y="(-?\d+)"/>\s*<xdr:ext cx="(\d+)" cy="(\d+)"/>', ancla)
+        if pos:
+            return tuple(map(int, pos.groups()))
+        d = re.search(r'<xdr:from><xdr:col>(\d+)</xdr:col><xdr:colOff>(-?\d+)</xdr:colOff>'
+                      r'<xdr:row>(\d+)</xdr:row><xdr:rowOff>(-?\d+)</xdr:rowOff></xdr:from>', ancla)
+        c, co, r, ro = map(int, d.groups())
+        x, y = round(unidad * suma_cols(c)) + co, fila_y(r, ro)
+        h = re.search(r'<xdr:to><xdr:col>(\d+)</xdr:col><xdr:colOff>(-?\d+)</xdr:colOff>'
+                      r'<xdr:row>(\d+)</xdr:row><xdr:rowOff>(-?\d+)</xdr:rowOff></xdr:to>', ancla)
+        if h:
+            c2, co2, r2, ro2 = map(int, h.groups())
+            return x, y, round(unidad * suma_cols(c2)) + co2 - x, fila_y(r2, ro2) - y
+        e = re.search(r'<xdr:ext cx="(\d+)" cy="(\d+)"/>', ancla)
+        return x, y, int(e.group(1)), int(e.group(2))
+    return medir
+
+
+def ancho_numeros_eje(xml, medir):
+    """Lo que ocupan a la izquierda los números del eje de valores (pt, aproximado por el dato mayor)."""
+    valores = [abs(float(v)) for v in re.findall(r'<c:val>.*?</c:val>', xml, re.S)
+               for v in re.findall(r'<c:v>(-?[\d.Ee+-]+)</c:v>', v)]
+    negativos = any(float(v) < 0 for v in re.findall(r'<c:val>.*?<c:v>(-[\d.]+)</c:v>', xml, re.S))
+    mayor = f"{round(max(valores) * 1.1) if valores else 100:,}".replace(",", ".")
+    # Excel deja unos 8 pt entre el número y el eje; si no caben, corre todo el trazado a la derecha
+    return medir(("-" if negativos else "") + mayor, 7) + 8
+
+
+def nombres_series(xml):
+    return [html.unescape(v) for v in re.findall(r'<c:ser>.*?<c:tx>.*?<c:v>([^<]*)</c:v>', xml, re.S)]
+
+
+def disposicion(xml, ancho, alto, dentro, leyenda, medir):
+    """Área de trazado interior en `dentro` = (x, y, ancho, alto) y leyenda en `leyenda` = (x, y, ancho
+    máximo), todo en pt dentro del gráfico de `ancho` × `alto` pt. La leyenda, con el ancho justo de su
+    entrada más larga (una entrada por línea) y el alto de sus entradas."""
+    x, y, w, h = dentro
+    trazado = ('<c:layout><c:manualLayout><c:layoutTarget val="inner"/><c:xMode val="edge"/><c:yMode val="edge"/>'
+               f'<c:x val="{x / ancho:.6f}"/><c:y val="{y / alto:.6f}"/><c:w val="{w / ancho:.6f}"/>'
+               f'<c:h val="{h / alto:.6f}"/></c:manualLayout></c:layout>')
+    xml = re.sub(r'(<c:plotArea>\s*)(<c:layout>.*?</c:layout>|<c:layout/>)?', lambda m: m.group(1) + trazado,
+                 xml, count=1, flags=re.S)
+    lx, ly, lmax = leyenda
+    clave = 7 + 4 + 6   # muestra de color, separación y márgenes de la leyenda (pt)
+    nombres = nombres_series(xml) or ["Serie"]
+    lw = min(lmax, max(medir(n, 7) for n in nombres) + clave + 2)
+    lineas = sum(lineas_parrafos([n], lw - clave, 7, medir) for n in nombres)
+    lh = lineas * 7 * INTERLINEA + len(nombres) * 1.5 + 4
+
+    def cambiar(m):
+        lay = ('<c:layout><c:manualLayout><c:xMode val="edge"/><c:yMode val="edge"/>'
+               f'<c:x val="{lx / ancho:.6f}"/><c:y val="{ly / alto:.6f}"/><c:w val="{lw / ancho:.6f}"/>'
+               f'<c:h val="{min(lh, alto - ly) / alto:.6f}"/></c:manualLayout></c:layout>')
+        bloque = re.sub(r'<c:layout>.*?</c:layout>|<c:layout/>', "", m.group(0), count=1, flags=re.S)
+        return re.sub(r'(<c:legendPos val="\w+"/>)', lambda p: p.group(1) + lay, bloque, count=1)
+    return re.sub(r'<c:legend>.*?</c:legend>', cambiar, xml, count=1, flags=re.S)
+
+
+def unidades_de(formas):
+    """Las anclas de las unidades en las formas del gráfico: cuadros de texto en el 20 % de arriba."""
+    return [a for a in re.findall(r'<cdr:relSizeAnchor\b.*?</cdr:relSizeAnchor>', formas, re.S)
+            if texto_forma(a).strip()
+            and float(re.search(r'<cdr:from>.*?<cdr:y>([^<]+)</cdr:y>', a, re.S).group(1)) < 0.2]
+
+
+def colocar_unidades(formas, ancla, x, y, ancho, alto, medir):
+    """Las unidades en (`x`, `y`) pt dentro del gráfico (x, la línea del eje), en una línea y con el texto
+    pegado arriba."""
+    texto = html.unescape(texto_forma(ancla)).strip()
+    w = min(medir(texto, CUERPO_UNIDADES) + 4, ancho - x)
+    nueva = re.sub(r'<cdr:from>.*?</cdr:to>',
+                   f'<cdr:from><cdr:x>{x / ancho:.5f}</cdr:x><cdr:y>{y / alto:.5f}</cdr:y></cdr:from>'
+                   f'<cdr:to><cdr:x>{(x + w) / ancho:.5f}</cdr:x><cdr:y>{(y + ALTO_UNIDADES) / alto:.5f}</cdr:y></cdr:to>',
+                   ancla, count=1, flags=re.S)
+    nueva = re.sub(r'(<a:bodyPr\b[^>]*?)\s+anchor="\w+"', r'\1', nueva, count=1)
+    nueva = re.sub(r'<a:bodyPr\b', '<a:bodyPr anchor="t" tIns="0" bIns="0"', nueva, count=1) \
+        if 'tIns=' not in re.search(r'<a:bodyPr\b[^>]*>', nueva).group(0) else \
+        re.sub(r'<a:bodyPr\b', '<a:bodyPr anchor="t"', nueva, count=1)
+    return formas.replace(ancla, nueva)
+
+
+def filas_categorias(xml, trazado, paso_pt):
+    """Cuerpo de las categorías (regla del paso 2, con el ancho nuevo del trazado, en pt) y filas de la
+    retícula que ocupan debajo del eje: la palabra más larga tiene que caber en su hueco; cada etiqueta se
+    parte por palabras."""
+    medir = medidor()
+    sz, nota = cuerpo_categorias(xml, trazado, sin_disposicion=True)
+    lineas = 1
+    etiquetas = etiquetas_categorias(xml)
+    horizontal = re.search(r'<c:catAx>.*?<c:axPos val="[bt]"/>', xml, re.S)
+    if medir and etiquetas and horizontal:
+        hueco = trazado / len(etiquetas) - HOLGURA_PT
+        lineas = max(lineas_parrafos([e], hueco, sz / 100, medir) for e in etiquetas)
+    # Con varios niveles (y sin juntarlos), cada nivel de más va en otra línea debajo
+    niveles = niveles_categorias(xml) if horizontal and '<c:noMultiLvlLbl val="1"/>' not in xml else 1
+    linea = sz / 100 * INTERLINEA
+    alto = SEPARACION_CATEGORIAS + lineas * linea + (niveles - 1) * (linea + NIVEL_CATEGORIAS) + MARGEN_CATEGORIAS
+    return sz, nota, lineas + niveles - 1, max(1, int(-(-alto // paso_pt))), alto
+
+
+def niveles_categorias(xml):
+    """Niveles del eje de categorías. Por el rango (la caché puede tener menos: Excel la rehace al abrir):
+    con las categorías en filas, cada columna es un nivel."""
+    cat = re.search(r'<c:cat>.*?</c:cat>', xml, re.S)
+    if not cat or "<c:multiLvlStrRef>" not in cat.group(0):
+        return 1
+    guardados = max(1, len(re.findall(r'<c:lvl\b', cat.group(0))))
+    f = re.search(r'<c:f>([^<]*)</c:f>', cat.group(0))
+    rangos = re.findall(r'\$?([A-Z]+)\$?(\d+):\$?([A-Z]+)\$?(\d+)', f.group(1)) if f else []
+    if not rangos:
+        return guardados
+
+    def columna(letras):
+        n = 0
+        for c in letras:
+            n = n * 26 + ord(c) - 64
+        return n
+    # Puede ser una unión de trozos: las categorías son las filas (o columnas) de todos juntos
+    columnas = columna(rangos[0][2]) - columna(rangos[0][0]) + 1
+    filas = sum(int(f2) - int(f1) + 1 for _, f1, _, f2 in rangos)
+    return max(guardados, columnas if filas >= columnas else filas)
+
+    def columna(letras):
+        n = 0
+        for c in letras:
+            n = n * 26 + ord(c) - 64
+        return n
+    c1, f1, c2, f2 = rango.groups()
+    columnas, filas = columna(c2) - columna(c1) + 1, int(f2) - int(f1) + 1
+    return max(guardados, columnas if filas >= columnas else filas)
+
+
+def paso2(trabajo, pid=None):
+    """Tamaño y colocación de los paneles, uno debajo de otro como en «Graficos Illus BdE»: el área de trazado
+    en la primera columna de la retícula y la leyenda en la segunda; 9 filas de alto desde arriba hasta las
+    categorías (el trazado, como mínimo 7); títulos de panel encima y FUENTES debajo."""
+    estado = leer_estado(trabajo)
+    _, pasos = nombres(trabajo)
+    base = pasos / estado["pasos"][estado["actual"]]["archivo"]
+    requiere(estado, (RETICULA_Y_TEXTOS, "Textos"), "«Tamaño y colocación»")
+    ret = CONFIG["reticula"]
+    with zipfile.ZipFile(PROYECTO / ret["archivo"]) as z:
+        dibujo_ret = z.read(dibujo_de_hoja(z, ret["hoja"])).decode("utf-8")
+    anclas_ret = {nombre_forma(a.group(0)): a.group(0) for a in ANCLA.finditer(dibujo_ret)}
+    alto_pastilla = tamano(anclas_ret[ret["pastilla_modelo"]])[1]
+    medir, medir_medium = medidor(), medidor("Roboto-Medium.ttf")
+    if not medir or not medir_medium:
+        raise Fallo("No encuentro la Roboto instalada (Regular y Medium) para medir los textos")
+
+    cambios, detalle = {}, []
+    with zipfile.ZipFile(base) as z:
+        ruta = dibujo_de_hoja(z, HOJA_GRAFICO)
+        dibujo = z.read(ruta).decode("utf-8")
+        relaciones = rels(z, ruta)
+        columnas, paso_fila = guias_reticula(dibujo)
+        (x1, w1), (x2, w2) = columnas
+        ancho_ret = tamano(next(a.group(0) for a in ANCLA.finditer(dibujo) if es_reticula(a.group(0))), True)[0]
+        paso_pt = paso_fila / EMU_PT
+        detalle.append(f"Retícula: columna 1 de {x1 / 36000:.1f} a {(x1 + w1) / 36000:.1f} mm, columna 2 de "
+                       f"{x2 / 36000:.1f} a {(x2 + w2) / 36000:.1f} mm; filas de {paso_fila / 36000:.2f} mm".replace(".", ","))
+
+        # Qué es cada cosa
+        partes = list(partes_dibujo(dibujo))
+        caja = medidas_hoja(z, dibujo)
+        titulo, fuentes, graficos, titulos_panel = None, None, [], []
+        for i, a in enumerate(partes):
+            if not ANCLA.fullmatch(a) or es_reticula(a) or es_pastilla(a):
+                continue
+            x, y, _, _ = caja(a)
+            if x >= ancho_ret:
+                continue
+            graf = re.search(r'<c:chart\b[^>]*\br:id="([^"]+)"', a)
+            if graf:
+                graficos.append((y, i, graf.group(1)))
+                continue
+            texto = texto_forma(a)
+            if "<xdr:txBody>" not in a or not texto.strip() or RE_GRAFICO.match(texto):
+                continue
+            if titulo is None and y < alto_pastilla:
+                titulo = i
+            elif RE_FUENTE.match(texto):
+                fuentes = i
+            else:
+                titulos_panel.append((y, i))
+        if not graficos:
+            raise Fallo("No hay gráficos en la hoja «Gráfico»")
+        graficos.sort()
+        if len(graficos) > 3:
+            detalle.append(f"Aviso: hay {len(graficos)} gráficos; la distribución de Illus prevé hasta 3 paneles")
+
+        # Líneas del título del gráfico (Roboto Medium 8,5 pt en su marco)
+        lineas_titulo = 1
+        if titulo is not None:
+            l, _, r, _ = margenes(partes[titulo])
+            ancho = (caja(partes[titulo])[2] - l - r) / EMU_PT
+            lineas_titulo = min(3, max(1, lineas_parrafos(textos_lineas(partes[titulo]), ancho, 8.5, medir_medium)))
+        detalle.append(f"Título del gráfico: {lineas_titulo} línea{'s' if lineas_titulo > 1 else ''}")
+        # Con más líneas, el marco del título, la pastilla y todo lo de debajo bajan un interlineado del título
+        # por línea de más: así la pastilla queda siempre a la misma distancia por debajo del texto
+        crece = 0.0
+        pastilla = next((caja(a) for a in partes if ANCLA.fullmatch(a) and es_pastilla(a)), None)
+        fondo_pastilla = (pastilla[1] + pastilla[3] if pastilla else alto_pastilla) / EMU_PT
+        if lineas_titulo > 1:
+            crece = (lineas_titulo - 1) * interlineado(partes[titulo], CUERPO_TITULO, "Roboto-Medium.ttf")
+            partes[titulo] = alargar(partes[titulo], round(crece * EMU_PT), caja)
+            for i, a in enumerate(partes):
+                if ANCLA.fullmatch(a) and es_pastilla(a):
+                    partes[i] = alargar(a, round(crece * EMU_PT), caja)
+            detalle.append(f"  marco del título, pastilla y paneles {crece / MM:.1f} mm más abajo "
+                           f"({lineas_titulo - 1} interlineado{'s' if lineas_titulo > 2 else ''} del título)".replace(".", ","))
+
+        # Cada título de panel va con el primer gráfico que tiene debajo
+        de_panel = {}
+        for y, i in sorted(titulos_panel):
+            for yg, ig, _ in graficos:
+                if yg > y and ig not in de_panel:
+                    de_panel[ig] = i
+                    break
+
+        ancho_util = x2 + w2 - x1
+        ancho_graf = ancho_util
+        W = ancho_graf / EMU_PT
+        fondo = None
+        for n, (_, ig, rid) in enumerate(graficos, 1):
+            linea = f"Panel {n}:"
+            ruta_graf = relaciones[rid][1]
+            xml = z.read(ruta_graf).decode("utf-8")
+            ruta_formas = next((d for t, d in rels(z, ruta_graf).values() if t.endswith("/chartUserShapes")), None)
+            formas = z.read(ruta_formas).decode("utf-8") if ruta_formas else ""
+            unidades = unidades_de(formas)
+            subida = SUBIDA_GRAFICO + (SUBIDA_CON_UNIDADES if unidades else 0)
+
+            # Dónde empieza el gráfico (lo más alto de su trazado), con o sin título de panel
+            it = de_panel.get(ig)
+            if it is not None:
+                a = partes[it]
+                l, t, r, b = margenes(a)
+                lineas_tp = max(1, lineas_parrafos(textos_lineas(a), ancho_util / EMU_PT, 8, medir))
+                if n == 1:
+                    arriba = fondo_pastilla + crece + PASTILLA_A_TITULO_PANEL
+                else:
+                    arriba = fondo + ENTRE_PANELES
+                final_tp = arriba + lineas_tp * INTERLINEA_TITULO_PANEL
+                alto_tp = t + b + round(lineas_tp * INTERLINEA_TITULO_PANEL * EMU_PT)
+                partes[it] = colocar(a, x1 - l, round(arriba * EMU_PT) - t, ancho_util + l + r, alto_tp)
+                inicio = final_tp + TITULO_PANEL_A_GRAFICO - subida
+                linea += f" título a {arriba / MM:.1f} mm ({lineas_tp} línea{'s' if lineas_tp > 1 else ''});".replace(".", ",")
+            else:
+                inicio = (INICIO_SIN_TITULO_PANEL + crece if n == 1 else fondo + ENTRE_PANELES) - subida
+
+            # Alto: 9 filas hasta el final de las categorías (el trazado, como mínimo 7)
+            numeros = ancho_numeros_eje(xml, medir)
+            trazado = w1 / EMU_PT - numeros
+            sz, nota, lineas_cat, filas_cat, alto_cat = filas_categorias(xml, trazado, paso_pt)
+            filas = max(FILAS_PANEL, FILAS_MIN_TRAZADO + filas_cat)
+            alto_panel = filas * paso_pt
+            # Unidades: su línea de base, 2 mm por encima del borde de arriba del trazado
+            ini_unidades = inicio + MEDIA_ETIQUETA - UNIDADES_A_GRAFICO - BASE_UNIDADES
+            arriba_marco = min(ini_unidades, inicio) if unidades else inicio
+            H = inicio + alto_panel - arriba_marco
+            dentro = (numeros, inicio - arriba_marco + MEDIA_ETIQUETA, trazado,
+                      alto_panel - MEDIA_ETIQUETA - alto_cat)
+            xml = disposicion(xml, W, H, dentro, ((x2 - x1) / EMU_PT - LEYENDA_A_LA_IZQUIERDA, inicio - arriba_marco, w2 / EMU_PT), medir)
+            # Cuerpo de las categorías con el ancho nuevo (regla del paso 2)
+            xml = re.sub(r'<c:catAx>.*?</c:catAx>',
+                         lambda m: re.sub(r'(<c:txPr>.*?</c:txPr>)', lambda t: fijar_letra(t.group(1), sz, ROBOTO),
+                                          m.group(0), count=1, flags=re.S) if re.search(r'<c:axPos val="[bt]"/>', m.group(0)) else m.group(0),
+                         xml, flags=re.S)
+            cambios[ruta_graf] = xml.encode("utf-8")
+            for u in unidades:
+                formas = colocar_unidades(formas, u, numeros, ini_unidades - arriba_marco, W, H, medir)
+            if unidades:
+                cambios[ruta_formas] = formas.encode("utf-8")
+                linea += f" unidades a {ini_unidades / MM:.1f} mm, en la línea del eje y 2 mm sobre el trazado;".replace(".", ",")
+            partes[ig] = colocar(partes[ig], x1, round(arriba_marco * EMU_PT), ancho_graf, round(H * EMU_PT))
+            fondo = inicio + alto_panel
+            linea += (f" gráfico a {inicio / MM:.1f} mm, {filas} filas ({alto_panel / MM:.1f} mm;"
+                      f" categorías {sz / 100:g} pt en {lineas_cat} línea{'s' if lineas_cat > 1 else ''},"
+                      f" {filas_cat} fila{'s' if filas_cat > 1 else ''})").replace(".", ",")
+            if nota:
+                linea += f" — {nota}"
+            detalle.append(linea)
+
+        if fuentes is not None:
+            a = partes[fuentes]
+            l, t, r, _ = margenes(a)
+            y = fondo + HASTA_FUENTES
+            partes[fuentes] = colocar(a, x1 - l, round(y * EMU_PT) - t, ancho_util + l + r, caja(a)[3])
+            detalle.append(f"FUENTES a {y / MM:.1f} mm, a lo ancho de las dos columnas".replace(".", ","))
+        else:
+            detalle.append("Aviso: no encuentro FUENTES")
+        cambios[ruta] = "".join(partes).encode("utf-8")
+    return nuevo_paso(trabajo, "Tamaño y colocación", cambios, detalle)
+
 # ---------------------------------------------------------------- medir textos
 
 CARPETAS_FUENTES = [Path.home() / "Library/Fonts", Path("/Library/Fonts"), Path("/System/Library/Fonts/Supplemental")]
-HOLGURA_PT = 1.0
+HOLGURA_PT = 5.0   # lo que Excel deja libre en cada hueco: si la palabra no cabe, agranda el trazado
 _medidores = {}
 
 
@@ -857,7 +1337,7 @@ def etiquetas_categorias(xml):
     return etiquetas
 
 
-def cuerpo_categorias(xml, ancho_pt):
+def cuerpo_categorias(xml, ancho_pt, sin_disposicion=False):
     """7 pt; si alguna palabra no cabe en el hueco de su categoría (Excel la corta o gira las etiquetas),
     6,5 pt, y si tampoco, 6 pt."""
     medir = medidor()
@@ -866,7 +1346,7 @@ def cuerpo_categorias(xml, ancho_pt):
         return 700, None if etiquetas else None
     lay = re.search(r'<c:plotArea>\s*<c:layout>\s*<c:manualLayout>(.*?)</c:manualLayout>', xml, re.S)
     w = lay and re.search(r'<c:w val="([^"]+)"', lay.group(1))
-    hueco = ancho_pt * (float(w.group(1)) if w else 0.8) / len(etiquetas) - HOLGURA_PT
+    hueco = (ancho_pt if sin_disposicion else ancho_pt * (float(w.group(1)) if w else 0.8)) / len(etiquetas) - HOLGURA_PT
     palabras = [p for e in etiquetas for p in e.split()]
     if not palabras:
         return 700, None
@@ -879,7 +1359,7 @@ def cuerpo_categorias(xml, ancho_pt):
     nota = f"«{larga}» mide {medir(larga, 7):.1f} pt a 7 pt y el hueco es de {hueco:.1f} pt".replace(".", ",")
     if medir(larga, sz / 100) > hueco:
         nota += "; no cabe ni a 6 pt"
-    return sz, nota + ("" if w else "; hueco aproximado")
+    return sz, nota + ("" if w or sin_disposicion else "; hueco aproximado")
 
 
 def maquetar_formas_grafico(xml):
@@ -1002,7 +1482,7 @@ def info(archivo):
 
 
 def main(args):
-    ordenes = {"empezar": empezar, "estado": lambda t: {"trabajo": t, **leer_estado(t)}, "ir": ir, "paso1": paso1, "paso2": paso2, "info": info,
+    ordenes = {"empezar": empezar, "estado": lambda t: {"trabajo": t, **leer_estado(t)}, "ir": ir, "reiniciar": reiniciar, "paso1": paso1, "paso2": paso2, "info": info,
                "publicaciones": lambda: {}, "guardar_publicacion": guardar_publicacion, "borrar_publicacion": borrar_publicacion, "paletas": paletas}
     if not args or args[0] not in ordenes:
         print(__doc__, file=sys.stderr)
@@ -1010,7 +1490,7 @@ def main(args):
     try:
         res = ordenes[args[0]](*args[1:])
         res["publicaciones"] = CONFIG["publicaciones"]
-        if args[0] in ("empezar", "estado", "ir") or args[0].startswith("paso"):
+        if args[0] in ("empezar", "estado", "ir", "reiniciar") or args[0].startswith("paso"):
             res["reticula_pt"] = medidas_reticula()
         res["muestrario"] = CONFIG.get("muestrario", [])
         print(json.dumps({"ok": True, **res}, ensure_ascii=False))

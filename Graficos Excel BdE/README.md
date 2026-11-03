@@ -11,6 +11,9 @@ maqueta en «Graficos Illus BdE», que no se toca desde aquí).
   cada paso o salto de versión la copia pasa a ser esa versión y Excel la cierra sin guardar y la vuelve a
   abrir en el mismo sitio (≈ 0,9 s), como un deshacer o rehacer. Lo que se cambie a mano en esa ventana se
   pierde al cambiar de versión. «Colocar Excel» vuelve a ponerlo en su sitio y recalcula el zoom.
+- **Reiniciar** (en «Adelante y atrás»): vuelve a empezar desde el Excel del autor. Pregunta antes, borra todas
+  las versiones, rehace «00 Copia exacta» con el original y la copia de trabajo vuelve a ser esa (motor:
+  `reiniciar`).
 - Siempre el mismo archivo porque Excel (aislado) pide permiso archivo a archivo: con cada versión en su
   propio archivo, cada paso nuevo era un archivo nuevo y Excel pedía permiso con una ventana «Abrir»
   («Conceder acceso») que el Organizador visual escondía. Ahora se pide una vez por trabajo.
@@ -28,14 +31,20 @@ maqueta en «Graficos Illus BdE», que no se toca desde aquí).
   motor) se quedaba parada hasta que se tocaba algo. Era la causa de las esperas de segundos y minutos. El
   contador de segundos solo corre con la ventana a la vista. Ahora: abrir el trabajo ≈ 1,3 s, cada cambio
   de versión ≈ 1 s.
+- Excel se coloca donde acaba de verdad la ventana de la app (con el Organizador visual, macOS puede apartarla
+  a la derecha). La app solo se recoloca si cambia su tamaño.
+- Si la app arranca Excel, lo activa una vez: recién arrancado en segundo plano, Excel no enseña sus ventanas.
+  Luego espera 1 s a que acabe el cambio de grupo antes de juntar las ventanas.
 - Con el Organizador visual (Stage Manager) activado, Excel crea cada ventana nueva (la copia reabierta) en un
   grupo aparte, escondida en la tira de la izquierda. Tras cada cambio la app la mete en su grupo con la acción
   «AXAddToStage» de su miniatura en la tira (como arrastrarla a mano); la miniatura se busca por el número de
-  ventana (atributo «AXWindowsIDs»). Necesita el permiso de **Accesibilidad** para la app (Ajustes del Sistema →
+  ventana (atributo «AXWindowsIDs»): la más nueva de Excel que esté en la tira o a la vista (Excel tiene
+  ventanas internas, como una de 500 × 500 al arrancar, que no están en ninguna). Ya están juntas si se ven
+  las dos a la vez. Al juntarla, el Organizador visual la coloca a su manera: se vuelve a poner en su sitio. Necesita el permiso de **Accesibilidad** para la app (Ajustes del Sistema →
   Privacidad y seguridad → Accesibilidad); sin él, la actividad lo avisa. Los avisos de permiso (de Excel o de
   macOS) también quedan escondidos por el Organizador visual.
 - Se trabaja sobre una **copia**: del original `X.xlsx` sale `X maquetado.xlsx`, y cada paso deja su
-  versión en `X maquetado (pasos)/` (`00 Copia exacta.xlsx`, `01 Retícula y pastilla.xlsx`…). Ir adelante
+  versión en `X maquetado (pasos)/` (`00 Copia exacta.xlsx`, `01 Retícula, pastilla y textos.xlsx`…). Ir adelante
   y atrás es volver a una de esas versiones. Elegir otra vez el original o la copia sigue donde se quedó.
 - Excel abre siempre **sin actualizar vínculos externos**. La copia de trabajo `X maquetado.xlsx` es
   siempre igual a la versión elegida.
@@ -48,10 +57,15 @@ maqueta en «Graficos Illus BdE», que no se toca desde aquí).
 
 ## Pasos
 
-1. **Retícula y pastilla**: borra la retícula y la pastilla del autor y pone las del archivo de retículas
+Van en orden: cada paso exige que el anterior esté en la versión de la que parte (si no, el motor avisa).
+Las versiones hechas cuando retícula y textos eran dos pasos («Retícula y pastilla» y «Textos») siguen valiendo.
+
+1. **Retícula, pastilla y textos** (`paso1`, una sola versión; el motor hace primero la retícula y la
+   pastilla y, sobre eso, los textos):
+   - Retícula y pastilla: borra la retícula y la pastilla del autor y pone las del archivo de retículas
    (`SdE_Reticulas_Publicaciones_ImagenNueva2024_Roboto.xlsx`, hoja «Gráfico»), en A1 y al fondo, con el
    color de la publicación. La retícula va a su tamaño de diseño (16,63 × 24,78 cm).
-2. **Textos**: todo en Roboto, sin negrita (el peso lo da la variante):
+   - Textos: todo en Roboto, sin negrita (el peso lo da la variante):
    - «Gráfico NN»: Roboto Regular 7 pt; título: Roboto Medium 8,5 pt. Los dos toman el marco de la plantilla
      (`marco_grafico` y `marco_titulo` en la configuración): posición, tamaño, márgenes y letra, con el texto
      del autor.
@@ -80,6 +94,36 @@ maqueta en «Graficos Illus BdE», que no se toca desde aquí).
      más larga de las etiquetas contra el hueco de cada categoría (ancho del área de trazado / categorías,
      menos 1 pt); si no cabe, 6,5 pt, y si tampoco, 6 pt. Excel parte por espacios: si una palabra no cabe, la
      corta o gira las etiquetas.
+2. **Tamaño y colocación** (`paso2`) (como en «Graficos Illus BdE», paneles uno debajo de otro):
+   - Guías de la retícula de la copia: columna 1 (2,55–114,72 mm), columna 2 (121,25–163,62 mm), filas de
+     5,03 mm.
+   - Cada gráfico, de la columna 1 al final de la columna 2. Dentro, el área de trazado interior
+     (`layoutTarget inner`) llena la columna 1: a la izquierda queda el sitio de los números del eje (su ancho
+     + 8 pt; si no caben, Excel corre todo el trazado a la derecha).
+   - Leyenda: empieza en la columna 2 (el cuadro, 3 mm antes, por el aire que deja alrededor del texto), a la
+     altura del comienzo del gráfico, con el ancho justo de su entrada más larga, para que vayan una debajo de
+     otra.
+   - Alto: 9 filas desde lo más alto del trazado hasta el final de las categorías. Si las categorías ocupan
+     más de 2 filas, el trazado se queda en 7 y el panel crece. Alto de las categorías (medido en Excel): 6 pt
+     hasta la primera línea, sus líneas (partidas por palabras en su hueco), 13,5 pt más por cada nivel de más y
+     4 pt debajo. Los niveles se cuentan por el rango (puede ser una unión de trozos; la caché puede venir
+     incompleta).
+   - Cuerpo de las categorías: la regla de los textos con el hueco nuevo. Excel deja unos 5 pt libres por hueco;
+     si la palabra más larga no cabe, ensancha el trazado por su cuenta.
+   - Vertical: el texto del título del panel 1 empieza 3,8 mm por debajo de la pastilla (como en el TERMINADO; lo
+     deducido de Illus quedaba pegado a la pastilla); sin título de panel, el panel 1 empieza donde en Illus.
+     Con las medidas de Illus: el gráfico empieza 7,38 mm por debajo del final del título de panel (0,5 mm más
+     arriba, y 0,7 mm más si hay unidades);
+     8,5 mm entre paneles; FUENTES 5 mm bajo el último, a lo ancho de las dos columnas.
+   - Unidades (cuadro de texto dentro del gráfico, en su 20 % de arriba): en la línea del eje vertical, con su
+     línea de base 2 mm por encima del borde de arriba del trazado. El marco del gráfico empieza en ellas.
+   - Título del gráfico de 2 o 3 líneas: su marco, la pastilla y todo lo de debajo crecen o bajan un interlineado
+     del título por línea de más (el alto de línea de Roboto Medium 8,5 pt, 9,96 pt, por el interlineado del
+     párrafo): la pastilla queda siempre a la misma distancia por debajo del texto. Se reescribe su anclaje (en
+     uno de dos celdas, cambiar solo el tamaño de dentro no hace nada). Un título de panel de varias líneas
+     baja su gráfico (7,38 mm desde el final del título) y todo lo de debajo.
+   - Las posiciones se leen de las celdas de anclaje (el `a:off` de dentro puede estar desfasado) y se
+     escriben con ancla absoluta (`absoluteAnchor`).
 
 ## Publicaciones
 
@@ -103,5 +147,7 @@ La hoja de «Nueva publicación» / «Editar publicación» enseña:
 
 - `motor/maquetar_excel.py`: el motor (Python 3 del sistema, sin dependencias). Toca el .xlsx por dentro y
   deja igual todo lo que el paso no cambia. Se puede usar suelto:
-  `maquetar_excel.py empezar|estado|ir|paso1|paso2|info|publicaciones|guardar_publicacion|borrar_publicacion|paletas`.
+  `maquetar_excel.py empezar|estado|ir|reiniciar|paso1|paso2|info|publicaciones|guardar_publicacion|borrar_publicacion|paletas`.
 - `app/compilar_app.sh` → `Gráficos Excel BdE.app` en esta carpeta (no va a git).
+- `app/crear_icono.swift` dibuja el icono (degradado verde-azul de «Maquetar» y «Versiones» con unas barras);
+  `compilar_app.sh` lo convierte en `app/icono.icns` si no existe (para rehacerlo, se borra el .icns).
