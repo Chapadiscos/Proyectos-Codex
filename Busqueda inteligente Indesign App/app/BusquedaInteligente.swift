@@ -1,7 +1,7 @@
 // Búsqueda inteligente: buscar y cambiar en InDesign describiendo en español lo que se quiere.
 // Es la ventana «Buscar con Claude» de InDesign hecha app de Mac: Claude Code busca en segundo
-// plano con el servidor MCP de «Ventana Buscar con Claude en Indesign» (sin modificarlo) y aquí
-// se ve en directo cada paso; la revisión (Cambiar / Omitir / Cambiar todo, un solo paso de
+// plano con servidor/servidor.py (copia del de «Ventana Buscar con Claude en Indesign», que no se
+// toca) y aquí se ve en directo cada paso; la revisión (Cambiar / Omitir / Cambiar todo, un solo paso de
 // deshacer por documento) la ejecuta jsx/revision.jsx dentro de InDesign.
 // No instala nada en InDesign. Compilar con app/compilar_app.sh.
 
@@ -15,7 +15,7 @@ import UniformTypeIdentifiers
 let proyecto = Bundle.main.bundleURL.deletingLastPathComponent()
 let ajustes = UserDefaults.standard
 
-/// Carpeta del servidor MCP (servidor.py y su .venv); se cambia con
+/// Carpeta con el .venv de Python (tiene el paquete mcp) que ejecuta servidor/servidor.py; se cambia con
 /// `defaults write es.estudioencuadre.busqueda-inteligente motor "<ruta>"`
 let motor: URL = {
     if let ruta = ajustes.string(forKey: "motor") { return URL(fileURLWithPath: ruta) }
@@ -51,14 +51,18 @@ func claudeEjecutable() -> URL? {
     return nil
 }
 
-func inDesignAbierto() -> NSRunningApplication? {
-    NSRunningApplication.runningApplications(withBundleIdentifier: idInDesign).first
+/// Nombre de la app de InDesign instalada («Adobe InDesign 2026»), para el servidor MCP.
+/// Si InDesign está abierto lo dice el propio AppleScript de enInDesign: NSRunningApplication,
+/// dentro de la app, a veces dice que no aunque lo esté.
+func nombreInDesign() -> String {
+    NSWorkspace.shared.urlForApplication(withBundleIdentifier: idInDesign)?.deletingPathExtension().lastPathComponent
+        ?? "Adobe InDesign 2026"
 }
 
 // MARK: - Modelo
 
 enum Ambito: String, CaseIterable, Identifiable {
-    case seleccion, articulo, documento, documentos, libro
+    case seleccion, articulo, documento, documentos, disco, libro
 
     var id: String { rawValue }
 
@@ -68,6 +72,7 @@ enum Ambito: String, CaseIterable, Identifiable {
         case .articulo: return "Artículo"
         case .documento: return "Documento"
         case .documentos: return "Todos los documentos"
+        case .disco: return "Documento del disco"
         case .libro: return "Libro"
         }
     }
@@ -78,6 +83,7 @@ enum Ambito: String, CaseIterable, Identifiable {
         case .articulo: return "text.alignleft"
         case .documento: return "doc.text"
         case .documentos: return "doc.on.doc"
+        case .disco: return "folder"
         case .libro: return "books.vertical"
         }
     }
@@ -126,6 +132,8 @@ struct Alcance {
         case .libro: return "Ámbito: todos los capítulos del libro «\(libro ?? "")»: \(docs) (abiertos, algunos sin ventana)."
         case .documentos: return "Ámbito: todos estos documentos abiertos: \(docs)."
         case .documento: return "Ámbito: todo el documento \(docs)."
+        case .disco: return documentos.count == 1 ? "Ámbito: todo el documento \(docs) (abierto sin ventana)."
+                                                  : "Ámbito: todos estos documentos: \(docs) (abiertos, algunos sin ventana)."
         }
     }
 
@@ -136,6 +144,7 @@ struct Alcance {
         case .documento: return "«\(corto(documentos.first ?? ""))»"
         case .documentos: return "\(documentos.count) documentos"
         case .libro: return "\(documentos.count) capítulos de «\(corto(libro ?? ""))»"
+        case .disco: return documentos.count == 1 ? "«\(corto(documentos[0]))»" : "\(documentos.count) documentos"
         }
     }
 }
@@ -195,6 +204,20 @@ struct Paso: Identifiable {
     var herramienta = ""
     let hora = Date()
     var fin: Date?
+}
+
+/// Búsqueda guardada para repetirla en otros documentos y libros (el ámbito se elige cada vez)
+struct Guardada: Codable, Identifiable, Hashable {
+    var id = UUID()
+    var nombre: String
+    var texto: String
+}
+
+/// La que se está guardando o editando en la hoja «Guardar búsqueda»
+struct EdicionGuardada: Identifiable {
+    let id = UUID()
+    var guardada: Guardada
+    let nueva: Bool
 }
 
 struct Reciente: Codable, Identifiable, Hashable {
@@ -284,7 +307,6 @@ func osascript(_ guion: String, espera: TimeInterval) async -> (ok: Bool, texto:
 /// Ejecuta una acción de jsx/revision.jsx dentro de InDesign y devuelve su respuesta.
 /// Los datos van en un .json aparte (pueden ser cientos de resultados). Nunca abre InDesign.
 func enInDesign(_ accion: String, _ datos: [String: Any]? = nil, espera: TimeInterval = 120) async -> [String: Any] {
-    guard inDesignAbierto() != nil else { return ["error": "InDesign no está abierto"] }
     var ruta = ""
     if let datos, let json = try? JSONSerialization.data(withJSONObject: datos) {
         // ExtendScript no admite estos dos separadores sin escapar dentro de una cadena
@@ -297,6 +319,7 @@ func enInDesign(_ accion: String, _ datos: [String: Any]? = nil, espera: TimeInt
     defer { if !ruta.isEmpty { try? FileManager.default.removeItem(atPath: ruta) } }
     // POSIX file dentro del tell de InDesign falla (-1708): se convierte fuera
     let guion = """
+    if application id "\(idInDesign)" is not running then return "{\\"error\\":\\"InDesign no está abierto\\",\\"cerrado\\":true}"
     set archivo to POSIX file \(cadenaAS(revisionJSX.path))
     with timeout of \(Int(espera)) seconds
     tell application id "\(idInDesign)"
@@ -305,6 +328,7 @@ func enInDesign(_ accion: String, _ datos: [String: Any]? = nil, espera: TimeInt
     end timeout
     """
     let r = await osascript(guion, espera: espera + 5)
+    registrar("\(accion): ok=\(r.ok) \(r.texto.prefix(300))")
     guard r.ok else {
         if r.texto.contains("-1712") || r.texto.isEmpty { return ["error": "InDesign no ha respondido (¿hay un diálogo abierto?)"] }
         if r.texto.contains("-1743") { return ["error": "macOS no deja que la app controle InDesign: actívalo en Ajustes › Privacidad y seguridad › Automatización"] }
@@ -314,6 +338,19 @@ func enInDesign(_ accion: String, _ datos: [String: Any]? = nil, espera: TimeInt
         return ["error": "Respuesta inesperada de InDesign: \(r.texto.prefix(300))"]
     }
     return obj
+}
+
+/// Registro para diagnosticar las llamadas a InDesign: ~/Library/Logs/Busqueda inteligente.log
+func registrar(_ linea: String) {
+    let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/Busqueda inteligente.log")
+    let texto = "\(Date().formatted(date: .omitted, time: .standard)) \(linea)\n"
+    if let h = try? FileHandle(forWritingTo: url) {
+        h.seekToEndOfFile()
+        h.write(Data(texto.utf8))
+        try? h.close()
+    } else {
+        try? texto.write(to: url, atomically: true, encoding: .utf8)
+    }
 }
 
 /// Texto de un tool_result (cadena o lista de bloques)
@@ -396,6 +433,16 @@ func describirHerramienta(_ nombre: String, _ input: [String: Any]) -> (titulo: 
     }
 }
 
+/// Los espacios que importan (dobles, o al principio o al final de lo encontrado) se ven como «·», igual que los
+/// caracteres ocultos de InDesign; los normales entre palabras se quedan como espacios.
+func espaciosVisibles(_ t: String) -> String {
+    let c = Array(t)
+    func esEspacio(_ i: Int) -> Bool { i >= 0 && i < c.count && (c[i] == "\t" || c[i].unicodeScalars.allSatisfy { $0.properties.generalCategory == .spaceSeparator }) }
+    return String(c.indices.map { i in
+        esEspacio(i) && (i == 0 || i == c.count - 1 || esEspacio(i - 1) || esEspacio(i + 1)) ? "·" : c[i]
+    })
+}
+
 /// «…texto ⟦marcado⟧ texto…» con lo marcado resaltado
 func conMarcas(_ s: String, color: Color) -> AttributedString {
     var r = AttributedString()
@@ -404,10 +451,7 @@ func conMarcas(_ s: String, color: Color) -> AttributedString {
         r.append(AttributedString(String(resto[..<a.lowerBound])))
         resto = resto[a.upperBound...]
         let b = resto.range(of: "⟧")
-        // Los espacios se ven como en los caracteres ocultos de InDesign: si no, un espacio resaltado no se distingue
-        let marcado = String(resto[..<(b?.lowerBound ?? resto.endIndex)])
-            .replacingOccurrences(of: "[\\p{Zs}\\t]", with: "·", options: .regularExpression)
-        var m = AttributedString(marcado)
+        var m = AttributedString(espaciosVisibles(String(resto[..<(b?.lowerBound ?? resto.endIndex)])))
         m.backgroundColor = color.opacity(0.22)
         m.inlinePresentationIntent = .stronglyEmphasized
         r.append(m)
@@ -429,6 +473,8 @@ final class Buscador: ObservableObject {
     @Published var ambito: Ambito = .documento
     @Published var contexto = Contexto()
     @Published var libro: LibroAbierto?
+    /// Documentos elegidos en el disco para «Documento del disco» (se abren sin ventana al buscar)
+    @Published var archivos: [URL] = []
     @Published var buscando = false
     @Published var inicio: Date?
     @Published var duracion: TimeInterval?
@@ -448,6 +494,8 @@ final class Buscador: ObservableObject {
     @Published var uso: Double?
     @Published var modelo = ""
     @Published var recientes: [Reciente] = []
+    @Published var guardadas: [Guardada] = []
+    @Published var editando: EdicionGuardada?
     @Published var aviso: Aviso?
 
     private var proceso: Process?
@@ -463,12 +511,14 @@ final class Buscador: ObservableObject {
     init() {
         if let datos = ajustes.data(forKey: "recientes"),
            let l = try? JSONDecoder().decode([Reciente].self, from: datos) { recientes = l }
+        if let datos = ajustes.data(forKey: "guardadas"),
+           let l = try? JSONDecoder().decode([Guardada].self, from: datos) { guardadas = l }
     }
 
     // MARK: Contexto de InDesign
 
     var ambitosDisponibles: [Ambito] {
-        contexto.abierto ? contexto.opciones + [.libro] : [.documento]
+        contexto.abierto ? contexto.opciones + [.disco, .libro] : [.documento]
     }
 
     var hechos: Int { casos.filter { $0.estado == .hecho }.count }
@@ -485,8 +535,8 @@ final class Buscador: ObservableObject {
     }
 
     func leerContexto() async -> Contexto? {
-        guard inDesignAbierto() != nil else { return Contexto() }
         let r = await enInDesign("contexto", espera: 20)
+        if r["cerrado"] as? Bool == true { return Contexto() }
         if let e = r["error"] as? String {
             mensaje = e
             return nil
@@ -521,8 +571,8 @@ final class Buscador: ObservableObject {
         if c.firma != firma {
             firma = c.firma
             // Lo seleccionado es un resultado que puso la app: no es una selección del usuario
-            if c.propia { ambito = ultimoAlcance.map(\.tipo).flatMap { c.opciones.contains($0) || $0 == .libro ? $0 : nil } ?? .documento }
-            else if ambito != .libro { ambito = c.opciones.first ?? .documento }
+            if c.propia { ambito = ultimoAlcance.map(\.tipo).flatMap { c.opciones.contains($0) || $0 == .libro || $0 == .disco ? $0 : nil } ?? .documento }
+            else if ambito != .libro && ambito != .disco { ambito = c.opciones.first ?? .documento }
         }
         if !ambitosDisponibles.contains(ambito) { ambito = ambitosDisponibles.first ?? .documento }
         if libro == nil || !c.libros.contains(where: { $0.ruta == libro?.ruta }) {
@@ -539,7 +589,23 @@ final class Buscador: ObservableObject {
         case .documento: return contexto.activo == nil ? "No hay ningún documento abierto" : "Todo \(doc)"
         case .documentos: return "Los \(contexto.documentos.filter(\.ventana).count) documentos abiertos"
         case .libro: return libro.map { "Todos los capítulos de «\(corto($0.nombre))», aunque estén cerrados" } ?? "Elige un libro"
+        case .disco: return archivos.isEmpty ? "Elige el documento: se abre en segundo plano, sin ventana"
+                                             : "Se abre en segundo plano, sin ventana, y se cierra al terminar"
         }
+    }
+
+    /// Uno o varios .indd que no hace falta tener abiertos en InDesign
+    func elegirArchivos() {
+        let panel = NSOpenPanel()
+        panel.title = "Elige el documento de InDesign donde buscar"
+        panel.message = "Se abrirá en InDesign sin ventana, en segundo plano. Con Cmd puedes elegir varios."
+        panel.allowedContentTypes = [UTType(filenameExtension: "indd") ?? .data]
+        panel.allowsMultipleSelection = true
+        if let ultima = ajustes.string(forKey: "carpetaIndd") { panel.directoryURL = URL(fileURLWithPath: ultima) }
+        guard panel.runModal() == .OK, !panel.urls.isEmpty else { return }
+        ajustes.set(panel.urls[0].deletingLastPathComponent().path, forKey: "carpetaIndd")
+        archivos = panel.urls
+        ambito = .disco
     }
 
     func elegirLibroEnDisco() {
@@ -565,18 +631,15 @@ final class Buscador: ObservableObject {
             return
         }
         let python = motor.appendingPathComponent(".venv/bin/python")
-        let servidor = motor.appendingPathComponent("servidor.py")
+        let servidor = proyecto.appendingPathComponent("servidor/servidor.py")
         guard FileManager.default.isExecutableFile(atPath: python.path), FileManager.default.fileExists(atPath: servidor.path) else {
             aviso = Aviso(titulo: "No encuentro el servidor de InDesign",
-                          texto: "La búsqueda usa servidor.py y su .venv en\n\(motor.path)\nPara otra carpeta:\ndefaults write es.estudioencuadre.busqueda-inteligente motor \"<ruta>\"")
-            return
-        }
-        guard let indesign = inDesignAbierto() else {
-            aviso = Aviso(titulo: "InDesign no está abierto", texto: "Abre InDesign y el documento donde quieres buscar.")
+                          texto: "La búsqueda usa servidor/servidor.py de la app con el .venv de\n\(motor.path)\nPara otra carpeta:\ndefaults write es.estudioencuadre.busqueda-inteligente motor \"<ruta>\"")
             return
         }
         if ambito == .libro && libro == nil { elegirLibroEnDisco(); guard libro != nil else { return } }
-        let nombreApp = indesign.bundleURL?.deletingPathExtension().lastPathComponent ?? "Adobe InDesign 2026"
+        if ambito == .disco && archivos.isEmpty { elegirArchivos(); guard !archivos.isEmpty else { return } }
+        let nombreApp = nombreInDesign()
 
         // Empieza de cero: la revisión anterior se cierra (sus cambios se quedan, como «Terminar»)
         buscando = true
@@ -603,6 +666,7 @@ final class Buscador: ObservableObject {
             _ = await enInDesign("cerrar")
             guard let c = await leerContexto() else { fallo(mensaje); return }
             contexto = c
+            guard c.abierto else { fallo("InDesign no está abierto: ábrelo y vuelve a buscar"); return }
             guard let a = await prepararAlcance(c) else { return }
             guard buscando, !detenida else { return }
             alcance = a
@@ -634,6 +698,26 @@ final class Buscador: ObservableObject {
             let docs = c.documentos.filter(\.ventana).map(\.nombre)
             guard !docs.isEmpty else { fallo("No hay ningún documento abierto en InDesign"); return nil }
             return Alcance(tipo: .documentos, documentos: docs)
+        case .disco:
+            guard !archivos.isEmpty else { fallo("Elige el documento"); return nil }
+            let nombres = archivos.map { corto($0.lastPathComponent) }
+            var p = Paso(tipo: .herramienta, titulo: nombres.count == 1 ? "Abre «\(nombres[0])» sin ventana" : "Abre \(nombres.count) documentos sin ventana")
+            pasos.append(p)
+            let r = await enInDesign("abrirDocumentos", ["rutas": archivos.map(\.path)], espera: 900)
+            p.fin = Date()
+            if let e = r["error"] as? String {
+                pasos[pasos.count - 1].ok = false
+                fallo("No se pudo abrir: \(e)")
+                return nil
+            }
+            let docs = r["documentos"] as? [String] ?? []
+            let faltan = r["faltan"] as? [String] ?? []
+            p.ok = !docs.isEmpty
+            p.respuesta = (r["yaAbiertos"] as? Int ?? 0) > 0 ? "Ya estaba abierto: se usa ese" : "Abierto en segundo plano"
+            if !faltan.isEmpty { p.respuesta += " · no se encuentran: " + faltan.joined(separator: ", ") }
+            pasos[pasos.count - 1] = p
+            guard !docs.isEmpty else { fallo("No se ha podido abrir ningún documento"); return nil }
+            return Alcance(tipo: .disco, documentos: docs)
         case .libro:
             guard let l = libro else { fallo("Elige un libro"); return nil }
             var p = Paso(tipo: .herramienta, titulo: "Abre los capítulos de «\(corto(l.nombre))» sin ventana")
@@ -798,6 +882,9 @@ final class Buscador: ObservableObject {
             cambio = Cambio(descripcion: c["descripcion"] as? String ?? "", codigo: c["aplicar"] as? String ?? "")
         }
         p.ok = true
+        if let n = r["omitidosMesa"] as? Int, n > 0 {
+            resumen += (resumen.isEmpty ? "" : "\n") + "Se han omitido \(n) resultado\(n == 1 ? "" : "s") de la mesa de trabajo (fuera de las páginas)."
+        }
         p.respuesta = (r["aviso"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "Lista para revisar"
         pasos[pasos.count - 1] = p
         pasos.append(Paso(tipo: .fin, titulo: "\(casos.count) resultado\(casos.count == 1 ? "" : "s") en \(segundos(duracion ?? 0))", ok: true))
@@ -805,7 +892,7 @@ final class Buscador: ObservableObject {
         mensaje = "\(casos.count) resultado\(casos.count == 1 ? "" : "s") · \(segundos(duracion ?? 0))"
         guardarReciente()
         panel = .revision
-        if let k = casos.first(where: { $0.estado != .error })?.id { elegir(k) }
+        if let k = casos.first(where: { $0.estado != .error })?.id { elegir(k, ver: false) }
         if CommandLine.arguments.contains("--recorrer") { verEnInDesign() }
     }
 
@@ -818,6 +905,50 @@ final class Buscador: ObservableObject {
 
     func guardarRecientes() {
         if let datos = try? JSONEncoder().encode(recientes) { ajustes.set(datos, forKey: "recientes") }
+    }
+
+    // MARK: Búsquedas guardadas
+
+    /// Nombre propuesto: las primeras palabras de la descripción
+    func nombrePropuesto(_ t: String) -> String {
+        let palabras = t.split(whereSeparator: \.isWhitespace).prefix(6).joined(separator: " ")
+        return palabras.count < t.trimmingCharacters(in: .whitespacesAndNewlines).count ? palabras + "…" : palabras
+    }
+
+    func guardarBusqueda(_ t: String) {
+        let t = t.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { mensaje = "Escribe primero la búsqueda que quieres guardar"; return }
+        if let g = guardadas.first(where: { $0.texto == t }) {
+            editando = EdicionGuardada(guardada: g, nueva: false)
+        } else {
+            editando = EdicionGuardada(guardada: Guardada(nombre: nombrePropuesto(t), texto: t), nueva: true)
+        }
+    }
+
+    func confirmar(_ e: EdicionGuardada) {
+        var g = e.guardada
+        g.nombre = g.nombre.trimmingCharacters(in: .whitespacesAndNewlines)
+        g.texto = g.texto.trimmingCharacters(in: .whitespacesAndNewlines)
+        if g.nombre.isEmpty { g.nombre = nombrePropuesto(g.texto) }
+        if let i = guardadas.firstIndex(where: { $0.id == g.id }) { guardadas[i] = g } else { guardadas.append(g) }
+        guardarGuardadas()
+        mensaje = "Búsqueda guardada: «\(g.nombre)»"
+    }
+
+    func quitar(_ g: Guardada) {
+        guardadas.removeAll { $0.id == g.id }
+        guardarGuardadas()
+    }
+
+    private func guardarGuardadas() {
+        if let datos = try? JSONEncoder().encode(guardadas) { ajustes.set(datos, forKey: "guardadas") }
+    }
+
+    /// Rellena la descripción; el ámbito es el que esté elegido (sirve para cualquier documento o libro)
+    func usar(_ g: Guardada, buscarYa: Bool = false) {
+        guard !buscando else { return }
+        texto = g.texto
+        if buscarYa { buscar() }
     }
 
     func usar(_ r: Reciente) {
@@ -835,12 +966,13 @@ final class Buscador: ObservableObject {
         }
     }
 
-    /// Elige un resultado: InDesign lo selecciona y la app enseña su antes y después
-    func elegir(_ k: Int?) {
+    /// Elige un resultado: InDesign lo selecciona y la app enseña su antes y después.
+    /// Con ver = false no se abre ventana a un capítulo de libro que está en segundo plano.
+    func elegir(_ k: Int?, ver: Bool = true) {
         seleccion = k
         guard let k, k < casos.count else { detalle = nil; return }
         Task {
-            let r = await enInDesign("mostrar", ["k": k], espera: 60)
+            let r = await enInDesign("mostrar", ["k": k, "ver": ver], espera: 60)
             guard seleccion == k else { return }  // el usuario ya está en otro
             aplicarEstados(r)
             if let e = r["error"] as? String {
@@ -876,12 +1008,20 @@ final class Buscador: ObservableObject {
         return nil
     }
 
-    func cambiar() {
-        guard let k = actualPendiente ?? siguiente(-1) else { return }
+    /// Como en Buscar/Cambiar de InDesign: Cambiar se queda en el resultado para ver cómo ha quedado;
+    /// Buscar/Cambiar (yPasar) cambia y pasa al siguiente pendiente.
+    func cambiar(yPasar: Bool = false) {
+        guard let k = actualPendiente ?? (yPasar ? siguiente(seleccion ?? -1) : nil) else { return }
         accion("cambiar", ["k": k]) { _ in
             self.mensaje = self.casos[k].estado == .error ? "No se pudo cambiar: \(self.casos[k].error)" : "Cambiado (pág. \(self.casos[k].pagina))"
-            self.elegir(self.siguiente(k))
+            self.elegir(yPasar ? self.siguiente(k) : k)
         }
+    }
+
+    /// Como en InDesign: pasa al siguiente pendiente sin cambiar ni omitir este, que se queda pendiente
+    func buscarSiguiente() {
+        guard let k = siguiente(seleccion ?? -1), k != seleccion else { mensaje = "No quedan más pendientes"; return }
+        elegir(k)
     }
 
     func omitir() {
@@ -930,7 +1070,7 @@ final class Buscador: ObservableObject {
 
     /// InDesign delante y, encima, la ventanita «Recorrer» para ir de un resultado a otro sin taparlo
     func verEnInDesign() {
-        inDesignAbierto()?.activate()
+        Task { _ = await osascript("tell application id \"\(idInDesign)\" to activate", espera: 10) }
         Recorrido.shared.abrir(self)
     }
 
@@ -1040,10 +1180,21 @@ struct Recorrer: View {
                 if b.cambio != nil {
                     Divider()
                     VStack(spacing: 6) {
-                        HStack(spacing: 6) {
-                            Button { b.cambiar() } label: { Text("Cambiar").frame(maxWidth: .infinity) }
-                                .buttonStyle(.borderedProminent)
-                            Button { b.omitir() } label: { Text("Omitir").frame(maxWidth: .infinity) }
+                        VStack(spacing: 6) {
+                            HStack(spacing: 6) {
+                                Button { b.cambiar() } label: { Text("Cambiar").frame(maxWidth: .infinity) }
+                                    .disabled(b.actualPendiente == nil)
+                                    .help("Cambia este resultado y se queda en él")
+                                Button { b.cambiar(yPasar: true) } label: { Text("Buscar/Cambiar").frame(maxWidth: .infinity) }
+                                    .buttonStyle(.borderedProminent)
+                                    .help("Cambia este resultado y pasa al siguiente")
+                            }
+                            HStack(spacing: 6) {
+                                Button { b.buscarSiguiente() } label: { Text("Buscar siguiente").frame(maxWidth: .infinity) }
+                                    .help("Pasa al siguiente sin cambiar este (se queda pendiente)")
+                                Button { b.omitir() } label: { Text("Omitir").frame(maxWidth: .infinity) }
+                                    .help("No lo cambia y pasa al siguiente")
+                            }
                         }
                         .disabled(b.ocupado || b.pendientes == 0)
                         Button { b.cambiarTodo() } label: { Text("Cambiar todo").frame(maxWidth: .infinity) }
@@ -1093,9 +1244,160 @@ struct Ventana: View {
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { n in
             if !Recorrido.shared.esEl(n.object) { Recorrido.shared.cerrar() }
         }
+        .sheet(item: $b.editando) { e in
+            HojaGuardada(b: b, edicion: e)
+        }
         .alert(item: $b.aviso) { a in
             Alert(title: Text(a.titulo), message: Text(a.texto), dismissButton: .default(Text("Aceptar")))
         }
+    }
+}
+
+// MARK: Búsquedas guardadas
+
+/// Botón «★ Guardadas» que despliega la lista; cada fila lleva a la derecha sus botones Editar y Quitar
+/// (en un Menu de macOS no caben botones junto a cada opción).
+struct BotonGuardadas: View {
+    @ObservedObject var b: Buscador
+    @State private var abierto = false
+
+    var body: some View {
+        Button { abierto.toggle() } label: {
+            HStack(spacing: 4) {
+                Label(b.guardadas.isEmpty ? "Guardadas" : "Guardadas (\(b.guardadas.count))", systemImage: "star")
+                Image(systemName: "chevron.down").font(.caption2)
+            }
+            .frame(minWidth: 106)
+        }
+        .disabled(b.buscando)
+        .help("Búsquedas guardadas: elige una para rellenar la descripción, o guarda la actual")
+        .popover(isPresented: $abierto, arrowEdge: .bottom) {
+            ListaGuardadas(b: b, cerrar: { abierto = false })
+        }
+    }
+}
+
+struct ListaGuardadas: View {
+    @ObservedObject var b: Buscador
+    let cerrar: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                cerrar()
+                b.guardarBusqueda(b.texto)
+            } label: {
+                Label("Guardar esta búsqueda…", systemImage: "star.badge.plus").frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.borderless)
+            .disabled(b.texto.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .padding(10)
+            Divider()
+            if b.guardadas.isEmpty {
+                Text("Aún no hay búsquedas guardadas").foregroundStyle(.secondary).padding(12)
+            } else {
+                ScrollView {
+                    VStack(spacing: 2) {
+                        ForEach(b.guardadas) { g in
+                            FilaGuardada(g: g,
+                                         usar: { cerrar(); b.usar(g) },
+                                         editar: { cerrar(); b.editando = EdicionGuardada(guardada: g, nueva: false) },
+                                         quitar: { b.quitar(g) })
+                        }
+                    }
+                    .padding(6)
+                }
+                .frame(maxHeight: 380)
+            }
+        }
+        .frame(width: 400)
+    }
+}
+
+struct FilaGuardada: View {
+    let g: Guardada
+    let usar: () -> Void
+    let editar: () -> Void
+    let quitar: () -> Void
+    @State private var encima = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Button(action: usar) {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "star.fill").foregroundStyle(.yellow)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(g.nombre).lineLimit(1)
+                        if g.nombre != g.texto {
+                            Text(g.texto).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Usar: rellena la descripción")
+            Button(action: editar) { Image(systemName: "pencil") }
+                .buttonStyle(.borderless)
+                .help("Editar")
+            Button(role: .destructive, action: quitar) { Image(systemName: "trash") }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.red)
+                .help("Quitar de guardadas")
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(RoundedRectangle(cornerRadius: 6).fill(encima ? Color.accentColor.opacity(0.12) : Color.clear))
+        .onHover { encima = $0 }
+    }
+}
+
+// MARK: Guardar búsqueda
+
+struct HojaGuardada: View {
+    @ObservedObject var b: Buscador
+    @State var edicion: EdicionGuardada
+    @Environment(\.dismiss) private var cerrar
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Label(edicion.nueva ? "Guardar búsqueda" : "Editar búsqueda guardada", systemImage: "star.fill")
+                .font(.title3.bold())
+                .foregroundStyle(.primary)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Nombre").font(.caption.bold()).foregroundStyle(.secondary)
+                TextField("Nombre corto para la lista", text: $edicion.guardada.nombre)
+                    .textFieldStyle(.roundedBorder)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Qué buscar o cambiar").font(.caption.bold()).foregroundStyle(.secondary)
+                TextEditor(text: $edicion.guardada.texto)
+                    .font(.system(size: 13))
+                    .frame(height: 110)
+                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.3)))
+            }
+            Text("Se guarda solo la descripción: el ámbito (documento, libro…) lo eliges cada vez que la uses.")
+                .font(.caption).foregroundStyle(.secondary)
+            HStack {
+                if !edicion.nueva {
+                    Button("Quitar de guardadas", role: .destructive) {
+                        b.quitar(edicion.guardada)
+                        cerrar()
+                    }
+                }
+                Spacer()
+                Button("Cancelar") { cerrar() }.keyboardShortcut(.cancelAction)
+                Button(edicion.nueva ? "Guardar" : "Aceptar") {
+                    b.confirmar(edicion)
+                    cerrar()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(edicion.guardada.texto.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 480)
     }
 }
 
@@ -1160,6 +1462,7 @@ struct BarraLateral: View {
                     .buttonStyle(.plain)
                     .help("Usar esta búsqueda")
                     .contextMenu {
+                        Button("Guardar búsqueda…") { b.guardarBusqueda(r.texto) }
                         Button("Quitar de la lista") {
                             b.recientes.removeAll { $0.id == r.id }
                             b.guardarRecientes()
@@ -1195,7 +1498,7 @@ struct Cabecera: View {
                             .allowsHitTesting(false)
                     }
                 }
-                .frame(height: 70)
+                .frame(height: 104)
                 .background(RoundedRectangle(cornerRadius: 8).fill(Color(nsColor: .textBackgroundColor)))
                 .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.3)))
                 .disabled(b.buscando)
@@ -1222,6 +1525,8 @@ struct Cabecera: View {
                         Label("Nueva búsqueda", systemImage: "square.and.pencil").frame(minWidth: 120)
                     }
                     .help("Borra la descripción y los resultados para empezar otra búsqueda. Los cambios ya hechos se conservan.")
+                    // Desplegable: por muchas que haya, no ocupan sitio en la ventana
+                    BotonGuardadas(b: b)
                 }
             }
 
@@ -1235,6 +1540,16 @@ struct Cabecera: View {
                 .labelsHidden()
                 .fixedSize()
                 .disabled(b.buscando || !b.contexto.abierto)
+                if b.ambito == .disco {
+                    Button { b.elegirArchivos() } label: {
+                        Label(b.archivos.isEmpty ? "Elegir documento…"
+                              : b.archivos.count == 1 ? corto(b.archivos[0].lastPathComponent) : "\(b.archivos.count) documentos",
+                              systemImage: "doc.badge.plus")
+                    }
+                    .fixedSize()
+                    .disabled(b.buscando)
+                    .help(b.archivos.map(\.path).joined(separator: "\n"))
+                }
                 if b.ambito == .libro {
                     Menu {
                         ForEach(b.contexto.libros) { l in
@@ -1606,14 +1921,25 @@ struct PanelRevision: View {
 
     var botonera: some View {
         VStack(spacing: 10) {
-            HStack(spacing: 8) {
-                Button { b.cambiar() } label: { Label("Cambiar", systemImage: "checkmark").frame(maxWidth: .infinity) }
-                    .buttonStyle(.borderedProminent)
-                    .keyboardShortcut("y", modifiers: .command)
-                    .help("Cambia este resultado y pasa al siguiente (⌘Y)")
-                Button { b.omitir() } label: { Label("Omitir", systemImage: "forward").frame(maxWidth: .infinity) }
-                    .keyboardShortcut("n", modifiers: [.command, .option])
-                    .help("No se realizará el cambio (⌥⌘N)")
+            VStack(spacing: 8) {
+                HStack(spacing: 8) {
+                    Button { b.cambiar() } label: { Label("Cambiar", systemImage: "checkmark").frame(maxWidth: .infinity) }
+                        .keyboardShortcut("y", modifiers: .command)
+                        .disabled(b.actualPendiente == nil)
+                        .help("Cambia este resultado y se queda en él para ver cómo ha quedado (⌘Y)")
+                    Button { b.cambiar(yPasar: true) } label: { Label("Buscar/Cambiar", systemImage: "arrow.down.circle").frame(maxWidth: .infinity) }
+                        .buttonStyle(.borderedProminent)
+                        .keyboardShortcut("y", modifiers: [.command, .shift])
+                        .help("Cambia este resultado y pasa al siguiente pendiente (⇧⌘Y)")
+                }
+                HStack(spacing: 8) {
+                    Button { b.buscarSiguiente() } label: { Label("Buscar siguiente", systemImage: "arrow.down").frame(maxWidth: .infinity) }
+                        .keyboardShortcut("g", modifiers: .command)
+                        .help("Pasa al siguiente pendiente sin cambiar este, que se queda pendiente (⌘G)")
+                    Button { b.omitir() } label: { Label("Omitir", systemImage: "forward").frame(maxWidth: .infinity) }
+                        .keyboardShortcut("n", modifiers: [.command, .option])
+                        .help("No se realizará el cambio y pasa al siguiente (⌥⌘N)")
+                }
             }
             .disabled(b.ocupado || b.pendientes == 0)
             .controlSize(.large)
@@ -1827,11 +2153,17 @@ struct BusquedaInteligenteApp: App {
             Ventana(b: b)
                 .frame(minWidth: 1080, minHeight: 640)
                 .task {
-                    // Para pruebas: BusquedaInteligente --buscar "<descripción>" lanza la búsqueda al abrir
+                    // Para pruebas: BusquedaInteligente --buscar "<descripción>" [--ambito libro|disco] [--archivo <.indd>] lanza la búsqueda al abrir
                     let a = CommandLine.arguments
                     if let i = a.firstIndex(of: "--buscar"), i + 1 < a.count {
-                        await b.refrescarContexto()
+                        // la ventana también lee el estado de InDesign al abrirse: esperar a tenerlo
+                        for _ in 0..<40 where !b.contexto.abierto {
+                            await b.refrescarContexto()
+                            try? await Task.sleep(nanoseconds: 500_000_000)
+                        }
                         b.texto = a[i + 1]
+                        if let j = a.firstIndex(of: "--ambito"), j + 1 < a.count, let am = Ambito(rawValue: a[j + 1]) { b.ambito = am }
+                        if let j = a.firstIndex(of: "--archivo"), j + 1 < a.count { b.archivos = [URL(fileURLWithPath: a[j + 1])] }
                         b.buscar()
                     }
                 }

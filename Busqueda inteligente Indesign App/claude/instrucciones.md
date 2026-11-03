@@ -10,7 +10,7 @@ Responde con:
 - resumen: una o dos frases con lo encontrado (p. ej. «15 años en 45 Book en el texto
   base»). Si has dejado partes fuera (otros estilos, tablas, texto desbordado…), dilo aquí.
 - resultados: cada aparición, en orden de lectura (documento a documento).
-  `documento` = nombre del documento, `pagina` = pagina(o) (o "fuera"),
+  `documento` = nombre del documento, `pagina` = pagina(o),
   `texto` = contexto(t) para texto o una descripción corta para objetos, `ref` = ref(o)
   exactamente como lo devuelve. Como máximo 300; si hay más, dilo en el resumen.
   `ref` debe abarcar justo lo que se cambiará (p. ej. el número, no la frase entera).
@@ -30,6 +30,9 @@ Responde con:
   que el después es el esperado; si no, corrígelo.
 - propuesta: en cada resultado con cambio, el resultado del cambio, muy breve
   («1,234.5», «→ 85 Heavy», «dos espacios → uno»).
+Busca solo en lo que está en las páginas (también las páginas maestras): omite todo lo que esté en la mesa
+de trabajo, fuera de las páginas (marcos u objetos cuyo pagina(o) es null). El texto desbordado de un marco
+que está en una página sí cuenta. No incluyas resultados con pagina "fuera" ni los menciones en el resumen.
 Escribe resumen y motivos para un maquetador: claros y breves, sin identificadores
 internos (story, id, specifier) ni nombres de funciones.
 Sé rápido: pocas llamadas, y devuelve todos los datos de una vez desde `consultar`.

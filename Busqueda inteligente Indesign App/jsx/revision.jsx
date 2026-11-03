@@ -135,10 +135,25 @@ var ARGV = typeof arguments !== "undefined" ? arguments : [];
     // Cada resultado: {d: datos de Claude, estado: "" | "hecho" | "omitido" | "error", doc, cdoc,
     //   texto, cont, clave, ini, fin (posición original), delta (cambio de longitud al aplicarlo),
     //   fijo (aplicado en un paso anterior que ya no se puede rehacer), antes}
+    // En la mesa de trabajo: un objeto sin página, o un texto cuyo marco no está en ninguna página.
+    // El texto desbordado (sin marco) sí cuenta: es parte de un artículo que está en las páginas.
+    function enMesaDeTrabajo(o) {
+        try {
+            if (esTexto(o)) {
+                var m = o.parentTextFrames;
+                return m.length > 0 && !m[0].parentPage;
+            }
+            return o.hasOwnProperty("parentPage") && !o.parentPage;
+        } catch (_) { return false; }
+    }
+
+    // Las búsquedas se centran en las páginas: lo que esté en la mesa de trabajo se omite.
     function preparar(datos) {
+        S.omitidosMesa = 0;
         for (var i = 0; i < datos.resultados.length; i++) {
             var d = datos.resultados[i], o = null, e = {d: d, estado: "", delta: 0};
             try { o = resolve(d.ref); } catch (_) {}
+            if (o && o.isValid && enMesaDeTrabajo(o)) { S.omitidosMesa++; continue; }
             if (o && o.isValid) {
                 e.doc = docDe(o);
                 e.cdoc = e.doc ? e.doc.toSpecifier() : "";
@@ -327,6 +342,24 @@ var ARGV = typeof arguments !== "undefined" ? arguments : [];
         return {libro: libro.name, documentos: nombres, faltan: faltan};
     };
 
+    // Abre documentos del disco que no estén abiertos, sin ventana (como los capítulos de un libro).
+    A.abrirDocumentos = function (d) {
+        var interaccion = app.scriptPreferences.userInteractionLevel, nombres = [], faltan = [], ya = 0;
+        app.scriptPreferences.userInteractionLevel = UserInteractionLevels.NEVER_INTERACT;  // sin avisos de fuentes o vínculos
+        try {
+            for (var i = 0; i < d.rutas.length; i++) {
+                var f = File(d.rutas[i]), doc = null;
+                if (!f.exists) { faltan.push(f.name); continue; }
+                for (var j = 0; j < app.documents.length; j++)
+                    try { if (app.documents[j].fullName.fsName === f.fsName) doc = app.documents[j]; } catch (_) {}  // sin guardar: sin ruta
+                if (doc) ya++;
+                else { doc = app.open(f, false); S.abiertos.push(doc); }
+                nombres.push(doc.name);
+            }
+        } finally { app.scriptPreferences.userInteractionLevel = interaccion; }
+        return {documentos: nombres, faltan: faltan, yaAbiertos: ya};
+    };
+
     // Recibe {resultados, cambio} de Claude y prepara la revisión.
     A.cargar = function (d) {
         S.R = R = [];
@@ -347,7 +380,7 @@ var ARGV = typeof arguments !== "undefined" ? arguments : [];
                         post: p.post || "", desc: e.texto ? "" : (e.antes || e.d.texto || ""), propuesta: e.d.propuesta || "",
                         dudoso: !!e.d.dudoso, motivo: e.d.motivo || ""});
         }
-        return estados({items: items, hayCambio: !!S.cambio, aviso: aviso});
+        return estados({items: items, hayCambio: !!S.cambio, aviso: aviso, omitidosMesa: S.omitidosMesa});
     };
 
     // Selecciona un resultado en InDesign y devuelve su antes y después.
@@ -363,6 +396,8 @@ var ARGV = typeof arguments !== "undefined" ? arguments : [];
             r.antes = e.estado === "hecho" ? e.partes.enc : pp.enc;  // ya cambiado: el texto original
         } else r.antes = e.antes;
         r.despues = vistaPrevia(d.k, p);
+        // ver: false (al terminar la búsqueda) no abre ventana a un capítulo que está en segundo plano
+        if (d.ver === false && !e.doc.windows.length) return estados(r);
         try {
             if (!e.doc.windows.length) e.doc.windows.add();  // capítulo abierto sin ventana
             app.activeDocument = e.doc;
@@ -419,7 +454,7 @@ var ARGV = typeof arguments !== "undefined" ? arguments : [];
     };
 
     if (!A[accion]) return json({error: "Acción desconocida: " + accion});
-    if (accion !== "contexto" && accion !== "cerrar" && app.documents.length === 0 && accion !== "abrirLibro")
+    if (accion !== "contexto" && accion !== "cerrar" && app.documents.length === 0 && accion !== "abrirLibro" && accion !== "abrirDocumentos")
         return json({error: "No hay ningún documento abierto en InDesign"});
     try { return json(A[accion](leerDatos())); }
     catch (e) { return json({error: (e.message || String(e)) + (e.line ? " (línea " + e.line + ")" : "")}); }
