@@ -53,6 +53,8 @@ maqueta en «Graficos Illus BdE», que no se toca desde aquí).
   `repeat with … in every workbook` también da -50: hay que recorrer los libros por número.
   Y no llamar `pdf` a una variable: es palabra reservada de Excel.
 - La retícula no se imprime (como en el archivo de retículas): solo es guía en pantalla.
+- La hoja del gráfico es «Gráfico»; si no existe (hay autores que usan «G1» y «D1»), la primera hoja con
+  gráficos.
 - Idioma del gráfico por el nombre: «Ing» delante o detrás (`Ing_…`, `…_Ing`) es inglés; si no, castellano.
 
 ## Pasos
@@ -71,10 +73,39 @@ Las versiones hechas cuando retícula y textos eran dos pasos («Retícula y pas
      del autor.
    - Títulos de panel 8 pt; ejes, leyendas y unidades 7 pt; interior del gráfico (etiquetas de datos, tabla
      de datos, lo que no tenga letra propia) 6 pt; FUENTES Roboto Light 7 pt. Donde los dejó el autor.
-   - Cómo se reconoce cada texto: «Gráfico NN» por su texto; el título, el que empieza dentro de la pastilla;
-     FUENTES, el que empieza por «FUENTE»/«SOURCE»; el resto de cuadros de la hoja, títulos de panel. Dentro
-     del gráfico, los cuadros de texto del 20 % de arriba son unidades y el resto, interior. Lo que queda
-     fuera de la retícula (el «Más info») no se toca.
+   - Cómo se reconoce cada texto de la hoja (`clasificar_textos`, el mismo en los pasos 1 y 2): «Gráfico NN»
+     por su texto; el título, el que empieza dentro de la pastilla; FUENTES, el que empieza por
+     «FUENTE»/«SOURCE»; título de panel, el numerado («1 a», «1.a», «2.6.a»), aunque esté encima del gráfico;
+     un texto suelto en la mitad de arriba de un gráfico (o hasta 2 mm por encima), a la izquierda, son
+     unidades (7 pt) y a la derecha, un texto sobre el gráfico (7 pt, se mueve con él, p. ej. «14%»); el resto,
+     título de panel. Lo que queda fuera de la retícula (el «Más info») no se toca. Dentro del gráfico, los
+     cuadros de texto del 20 % de arriba son unidades y el resto, interior.
+   - Si «Gráfico NN» y el título van en el mismo cuadro (dos párrafos), se parte en dos cuadros.
+   - La pastilla del autor se reconoce aunque esté hasta 1 mm desplazada del origen (en el 2.6, 0,3 mm).
+   - Leyendas en minúscula salvo siglas (y la primera letra, la de después de un punto, los nombres propios y
+     los números romanos), solo si el autor las escribió enteras en mayúsculas («FRENTE AL EURO» → «Frente al
+     euro», «ELECCIONES EEUU» → «Elecciones EEUU»). Listas de siglas y nombres propios en el motor (`SIGLAS`,
+     `SIGLAS_ESCRITAS` — «pymes», «euríbor», «BdE» —, `NOMBRES_PROPIOS`). Se cambia la celda de la que sale el
+     nombre (como texto propio de la celda, sin tocar los textos compartidos) y, si es una fórmula
+     (`=SI(…;T(F9);T(F8))`), la celda de su columna con el mismo texto, su origen.
+   - Textos especiales (guía, págs. 10 y 11; interactiva: Esp_texto02-0n):
+     - Fechas del eje en el formato del idioma: `[$-1540A]mmm\-yy;@` (es; el `[$-es-US,1]mmm-aa;@` de la guía)
+       o `[$-10409]mmm\-yy;@` (en), si el eje (o sus datos) tienen mes y año o día.
+     - Números de los ejes de valores: sin decimales si todos son ceros, uno si hay decimales, dos en las
+       centésimas; separador de miles (`#,##0`, `#,##0.0`, `#,##0.00`; respeta el %). Los decimales salen del
+       salto del eje: el fijo o el que pondría Excel (`escala_eje`: el menor de 1, 2, 5 × 10ⁿ con ≤ 9 tramos,
+       5 % de aire, 0 como mínimo salvo datos por encima de 5/6 del máximo; comprobado con los ejes de prueba).
+       Solo ejes (no etiquetas de datos). Si el eje toma el formato de los datos, se cambia en sus celdas (un
+       numFmt y copias de los estilos de celda).
+     - Leyendas con la escala derecha en cualquier versión → «(Escala dcha.)» / «(Right-hand scale)», en la
+       celda de la que salen.
+     - Trimestres → «I TR … IV TR» (es) / «Q1 … Q4» (en), con el año detrás: en leyendas, categorías (celdas y
+       caché), textos de la hoja dentro de la retícula y textos de dentro de los gráficos.
+     - Eje horizontal: nunca en oblicuo. Horizontal (explícito, para que Excel no lo incline) si la palabra
+       más larga cabe a 6 pt; si no, vertical de abajo arriba (`rot=-5400000`) a 7 pt (6 si no cabe una línea),
+       partido en 2 o 3 líneas (saltos en las celdas) solo lo necesario para no pasar del largo de la etiqueta
+       más difícil; si ni así cabe, aviso. «Tamaño y colocación» mide entonces las categorías por su línea más
+       larga. Se decide con el ancho final del trazado (columna 1, o las dos si va sin leyenda).
    - Título: si acaba en una letra, «(cont.)» o «(cont'd)» entre paréntesis, ese final va en Roboto Regular.
    - Formato local del autor: se respetan cursivas, subrayados, índices y la negrita de una parte del texto
      (también en «Gráfico NN» y el título, aunque tomen el marco de la plantilla). Si todo un texto va en
@@ -100,9 +131,27 @@ Las versiones hechas cuando retícula y textos eran dos pasos («Retícula y pas
    - Cada gráfico, de la columna 1 al final de la columna 2. Dentro, el área de trazado interior
      (`layoutTarget inner`) llena la columna 1: a la izquierda queda el sitio de los números del eje (su ancho
      + 8 pt; si no caben, Excel corre todo el trazado a la derecha).
+   - Sin título del gráfico (solo «Gráfico NN», como en el G_Trim_03): la pastilla se acorta lo que va de la
+     línea de base de «Gráfico NN» a la del título en la plantilla (unos 4 mm: queda en 9,2 mm; el TERMINADO,
+     8,6), para acabar a la misma distancia del último texto; los paneles suben con ella.
    - Leyenda: empieza en la columna 2 (el cuadro, 3 mm antes, por el aire que deja alrededor del texto), a la
-     altura del comienzo del gráfico, con el ancho justo de su entrada más larga, para que vayan una debajo de
-     otra.
+     altura del comienzo del gráfico, con el ancho justo de su línea más larga (los nombres que no caben en
+     la columna 2 se parten), para que vayan una debajo de otra. Medido en Excel: Excel **centra** las
+     entradas si el cuadro es más ancho (por eso el ancho justo); la muestra de una serie de líneas mide unos
+     16 pt más que la de columnas; cada entrada ocupa el alto de la más alta y Excel reparte lo que sobre, y
+     si no caben todas quita las últimas. No cuentan las entradas borradas de la leyenda.
+   - Sin leyenda: si el autor no la tiene, ha borrado todas sus entradas o la ha encogido a menos de 10 pt de
+     ancho (en el 2.6, el panel a: 6 pt), el trazado ocupa las dos columnas, como en el TERMINADO, la leyenda
+     se deja como está y el detalle lo avisa (en rojo y negrita en la app): lo que representa tiene que explicarlo
+     el título del panel.
+   - Título de panel: va con el gráfico que empieza más cerca de él (hay autores que lo ponen sobre el marco
+     del gráfico).
+   - Unidades puestas en la hoja (no dentro del gráfico): igual que las del gráfico, en la línea del eje y
+     con la línea de base 2 mm sobre el trazado.
+   - Las filas se miden por la letra que se ve, de lo alto del número más alto del eje a lo bajo de la última
+     línea de categorías (`LETRA_ARRIBA` 1,7 pt y `LETRA_ABAJO` 3,4 pt: lo que sobran las cajas de Excel; sin
+     esto el panel quedaba 5,1 pt corto). Las filas de las categorías se cuentan igual: dos niveles de una
+     línea caben en 2 filas.
    - Alto: 9 filas desde lo más alto del trazado hasta el final de las categorías. Si las categorías ocupan
      más de 2 filas, el trazado se queda en 7 y el panel crece. Alto de las categorías (medido en Excel): 6 pt
      hasta la primera línea, sus líneas (partidas por palabras en su hueco), 13,5 pt más por cada nivel de más y
@@ -124,6 +173,44 @@ Las versiones hechas cuando retícula y textos eran dos pasos («Retícula y pas
      baja su gráfico (7,38 mm desde el final del título) y todo lo de debajo.
    - Las posiciones se leen de las celdas de anclaje (el `a:off` de dentro puede estar desfasado) y se
      escriben con ancla absoluta (`absoluteAnchor`).
+3. **Ejes** (`paso3`; se irá completando). Casos de la página 15 de la «Guía gráficos v4.pdf» (interactiva:
+   el texto está en campos ocultos, G-Eje/Esp-Eje/Esq-Eje) y formato del TERMINADO. En cada panel:
+   - Línea de los ejes visibles (también el derecho) 0,5 pt y de las líneas de división 0,3 pt, en
+     blanco oscurecido: matiz 5 (`FFFFFF` con `lumMod` 50 %) los ejes y matiz 4 (65 %) las divisiones; remate
+     plano («sin relieve») y unión angular. Solo da formato a las divisiones que ya tenga el autor.
+   - Eje en cero: el eje de categorías (y los dos en dispersión) cruza el otro en 0 (`crossesAt 0`). Si cruza
+     en el máximo (eje derecho o de arriba) se deja y se avisa.
+   - Marcas de graduación: horizontal en Cruz si el eje que cruza tiene negativos, si no Interior; vertical
+     siempre Interior (en dispersión, Cruz si hay negativos). Secundarias Ninguno. Si el eje horizontal queda
+     arriba (todo negativo), principal y secundaria Exterior. Una marca por valor en el eje horizontal.
+   - Etiquetas en Bajo (ejes horizontales y, en dispersión, también el vertical) y, en el eje de categorías,
+     a distancia 100 (en el de valores Excel no tiene ese ajuste).
+   - Eje cortado: un máximo fijo sube y un mínimo fijo baja al siguiente tramo del intervalo (55 → 60 de 10
+     en 10), para cerrar con una línea de división. Si el intervalo es automático, solo avisa.
+   - Los ejes ocultos no se tocan (como en el TERMINADO 2.6).
+   - Dispersión: solo cuando el grupo `scatterChart` va sobre dos ejes de valores; en un gráfico combinado
+     (columnas + puntos) la dispersión puede ir sobre el eje de categorías y no cuenta.
+   - Comprobado con «G_DO26XX_2.6 EJES ORIGINAL/TERMINADO.xlsx»: los ejes quedan idénticos al TERMINADO.
+   - El TERMINADO no sigue la guía en el panel 3: Cruz sin negativos y una marca cada 2 categorías.
+4. **Líneas interiores** (`paso4`). Línea base, líneas divisorias y flechas.
+   - Línea base (guía de gráficos, pág. 13, interactiva: el texto está en Esp-Base_0n). Si las
+   unidades de un panel (de la hoja o de dentro del gráfico) indican un dato de referencia — «Base 100 = …»,
+   «100 = …», «… = 100», o con 50 —:
+   - En la hoja de datos de sus series, en la primera columna libre (detrás de la última usada, para no mover
+     las referencias de las demás series), ese dato desde la primera fila de las series hasta la última con
+     datos (las series suelen apuntar a más filas de las que tienen).
+   - Una serie «Base 100» / «Base 50» (nombre escrito en la serie) en el grupo de líneas de los ejes
+     principales, o en uno nuevo sobre ellos si el gráfico es de columnas; sin marcadores; gris como los ejes
+     (blanco matiz 5, como en el TERMINADO de prueba «G_Trim_03 BASE 100TERMINADO.xlsx»), 0,5 pt, remate plano y
+     unión en ángulo; oculta en la leyenda. El TERMINADO la llama «100»; el usuario prefiere «Base 100».
+   - Líneas divisorias (pág. 14: negra, 1 pt, remate plano y unión en ángulo). Las que el autor hace con una
+     serie de columnas (muchas categorías y como mucho 3 valores, como «Elecciones EEUU» en el G_Trim_03):
+     relleno negro y contorno de 1 pt, como en el TERMINADO (que se lo pone al punto). Las dibujadas (línea
+     sin puntas): igual.
+   - Flechas dibujadas (dentro del gráfico o en la hoja, dentro de la retícula), como en el TERMINADO: negras
+     (tx1), 0,5 pt, unión en ángulo y punta abierta («arrow») en los mismos extremos.
+   - Trampa: en los dibujos de dentro de los gráficos el prefijo `a:` se declara en cada elemento; un `<a:ln>`
+     nuevo sin `xmlns:a` hace que Excel descarte todo el dibujo (desaparecen flechas y textos).
 
 ## Publicaciones
 
@@ -147,7 +234,7 @@ La hoja de «Nueva publicación» / «Editar publicación» enseña:
 
 - `motor/maquetar_excel.py`: el motor (Python 3 del sistema, sin dependencias). Toca el .xlsx por dentro y
   deja igual todo lo que el paso no cambia. Se puede usar suelto:
-  `maquetar_excel.py empezar|estado|ir|reiniciar|paso1|paso2|info|publicaciones|guardar_publicacion|borrar_publicacion|paletas`.
+  `maquetar_excel.py empezar|estado|ir|reiniciar|paso1|paso2|paso3|paso4|info|publicaciones|guardar_publicacion|borrar_publicacion|paletas`.
 - `app/compilar_app.sh` → `Gráficos Excel BdE.app` en esta carpeta (no va a git).
 - `app/crear_icono.swift` dibuja el icono (degradado verde-azul de «Maquetar» y «Versiones» con unas barras);
   `compilar_app.sh` lo convierte en `app/icono.icns` si no existe (para rehacerlo, se borra el .icns).

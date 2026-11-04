@@ -88,11 +88,17 @@ struct PasoMaquetacion: Identifiable {
 
 let pasosMaquetacion = [
     PasoMaquetacion(id: 1, titulo: "Retícula, pastilla y textos",
-                    detalle: "Retícula y pastilla del archivo de retículas, en A1 y al fondo, con el color de la publicación; todo en Roboto: Gráfico NN y título con el marco de la plantilla; paneles, ejes, leyendas, unidades, interior y fuentes con su cuerpo",
+                    detalle: "Retícula y pastilla del archivo de retículas, en A1 y al fondo, con el color de la publicación; todo en Roboto: Gráfico NN y título con el marco de la plantilla; paneles, ejes, leyendas (en minúscula salvo siglas), unidades, interior y fuentes con su cuerpo; fechas, números de los ejes, (Escala dcha.), trimestres y dirección del eje horizontal (guía, págs. 10 y 11)",
                     icono: "square.grid.3x3.topleft.filled", orden: "paso1"),
     PasoMaquetacion(id: 2, titulo: "Tamaño y colocación",
                     detalle: "Paneles uno debajo de otro como en Illus: trazado en la columna 1 y leyenda en la 2; 9 filas hasta las categorías (trazado, mínimo 7); títulos de panel y FUENTES con las separaciones de Illus",
                     icono: "rectangle.split.1x2", orden: "paso2"),
+    PasoMaquetacion(id: 3, titulo: "Ejes",
+                    detalle: "Ejes 0,5 pt matiz 5 y divisiones 0,3 pt matiz 4, sin relieve y unión angular; eje en cero, marcas de graduación, etiquetas en Bajo a distancia 100 y límites fijos en un tramo (guía, pág. 15)",
+                    icono: "chart.xyaxis.line", orden: "paso3"),
+    PasoMaquetacion(id: 4, titulo: "Líneas interiores",
+                    detalle: "Línea base si las unidades indican un dato de referencia (Base 100 = …; 100 o 50), gris como los ejes y oculta en la leyenda (guía, pág. 13); líneas divisorias negras de 1 pt (pág. 14); flechas como en el TERMINADO: negras de 0,5 pt con punta abierta",
+                    icono: "chart.line.flattrend.xyaxis", orden: "paso4"),
 ]
 
 struct Ejecucion: Identifiable {
@@ -493,7 +499,17 @@ final class Taller: ObservableObject {
                 else
                     activate object wb
                 end if
-                activate object worksheet "Gráfico" of wb
+                -- La hoja «Gráfico» o, si el autor la llamó de otra forma («G1»), la primera con gráficos
+                try
+                    activate object worksheet "Gráfico" of wb
+                on error
+                    repeat with i from 1 to (count worksheets of wb)
+                        if (count chart objects of worksheet i of wb) > 0 then
+                            activate object worksheet i of wb
+                            exit repeat
+                        end if
+                    end repeat
+                end try
                 set w to active window
                 try
                     set bounds of w to sitio
@@ -540,7 +556,7 @@ final class Taller: ObservableObject {
         }
         if let z = Int(r.texto) {
             zoomExcel = (sitio, z)
-            anotar(id, "En Excel: versión \(paso.n) · hoja «Gráfico» al \(z) %")
+            anotar(id, "En Excel: versión \(paso.n) · hoja del gráfico al \(z) %")
         } else {
             anotar(id, "En Excel: versión \(paso.n)")
         }
@@ -1015,11 +1031,15 @@ struct TarjetaVersiones: View {
                 VStack(alignment: .leading, spacing: 5) {
                     Rotulo("Cambios de la versión \(p.n)")
                     ForEach(p.detalle, id: \.self) { linea in
+                        // Los avisos, en rojo y negrita: piden comprobar algo a mano
+                        let aviso = linea.hasPrefix("Aviso")
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
-                            Image(systemName: linea.hasPrefix("Aviso") ? "exclamationmark.triangle.fill" : "circle.fill")
-                                .font(.system(size: linea.hasPrefix("Aviso") ? 10 : 4))
-                                .foregroundStyle(linea.hasPrefix("Aviso") ? Color.orange : colorVersiones)
-                            Text(linea).font(.system(size: 11.5)).fixedSize(horizontal: false, vertical: true)
+                            Image(systemName: aviso ? "exclamationmark.triangle.fill" : "circle.fill")
+                                .font(.system(size: aviso ? 10 : 4))
+                                .foregroundStyle(aviso ? Color.red : colorVersiones)
+                            Text(linea).font(.system(size: 11.5, weight: aviso ? .bold : .regular))
+                                .foregroundStyle(aviso ? Color.red : Color.primary)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                     }
                 }
@@ -1142,7 +1162,7 @@ struct Consola: View {
                         VStack(alignment: .leading, spacing: 1) {
                             ForEach(Array(e.texto.components(separatedBy: "\n").enumerated()), id: \.offset) { _, linea in
                                 Text(linea.isEmpty ? " " : linea)
-                                    .font(.system(size: 11.5, design: .monospaced))
+                                    .font(.system(size: 11.5, weight: linea.hasPrefix("• Aviso") ? .bold : .regular, design: .monospaced))
                                     .foregroundStyle(color(linea))
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
@@ -1175,8 +1195,8 @@ struct Consola: View {
     }
 
     func color(_ linea: String) -> Color {
-        if linea.hasPrefix("Error") { return .red }
-        if linea.contains("⚠") || linea.hasPrefix("• Aviso") { return .orange }
+        if linea.hasPrefix("Error") || linea.hasPrefix("• Aviso") { return .red }
+        if linea.contains("⚠") { return .orange }
         return .primary
     }
 }
