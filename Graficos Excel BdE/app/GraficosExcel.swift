@@ -67,6 +67,7 @@ struct Respuesta: Decodable {
     let error: String?
     let trabajo: String?
     let idioma: String?
+    let motivo_idioma: String?
     let actual: Int?
     let pasos: [Paso]?
     let publicaciones: [Publicacion]?
@@ -391,7 +392,7 @@ final class Taller: ObservableObject {
             guard let r = await self.llamarMotor(seguir ? ["estado", copia.path] : ["empezar", url.path], registro: id) else { return false }
             self.aplicar(r)
             self.anotar(id, seguir ? "Sigue la maquetación en el paso \(self.actual)." : "Copia exacta creada: \(copia.lastPathComponent)")
-            self.anotar(id, "Idioma: \(self.idioma == "en" ? "inglés" : "castellano") (por el nombre del archivo)")
+            self.anotar(id, "Idioma: \(self.idioma == "en" ? "inglés" : "castellano") (\(r.motivo_idioma ?? "por el nombre del archivo"))")
             return await self.mostrar(id)
         }
     }

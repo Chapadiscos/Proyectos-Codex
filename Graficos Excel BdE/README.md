@@ -65,7 +65,14 @@ maqueta en «Graficos Illus BdE», que no se toca desde aquí).
 - La retícula no se imprime (como en el archivo de retículas): solo es guía en pantalla.
 - La hoja del gráfico es «Gráfico»; si no existe (hay autores que usan «G1» y «D1»), la primera hoja con
   gráficos.
-- Idioma del gráfico por el nombre: «Ing» delante o detrás (`Ing_…`, `…_Ing`) es inglés; si no, castellano.
+- Idioma del gráfico por el nombre: «Ing» delante o detrás (`Ing_…`, `…_Ing`), también pegado a la letra del
+  tipo de figura (`GIng_…`, `CIng_…`), es inglés. Si el nombre no lo dice, también es inglés si el rótulo del
+  gráfico es «Chart N» (`rotulo_en_ingles`). Si no, castellano. La app dice por qué lo ha decidido.
+- Punto decimal en inglés: Excel pone el separador decimal según la configuración del Mac (en español, coma) y
+  ningún formato de número del archivo lo cambia. **No se escriben las etiquetas como texto** (decisión del
+  usuario): en inglés, si el Mac usa la coma decimal, los pasos 1 y 5 avisan en rojo de que hay que cambiarlo a
+  mano (Ajustes del Sistema > General > Idioma y región > Formato de número; en Excel, «Usar separadores del
+  sistema»). El separador se lee del Mac con `NSLocale` (`separador_decimal_mac`).
 
 ## Pasos
 
@@ -93,11 +100,26 @@ Las versiones hechas cuando retícula y textos eran dos pasos («Retícula y pas
      unidades (7 pt) y a la derecha, un texto sobre el gráfico (7 pt, se mueve con él, p. ej. «14%»); el resto,
      título de panel. Lo que queda fuera de la retícula (el «Más info») no se toca. Dentro del gráfico, los
      cuadros de texto del 20 % de arriba son unidades y el resto, interior.
+   - Títulos de panel, en todos los gráficos y publicaciones (`dos_espacios_panel`): el número con letra
+     siempre como **«N.x»**, con la letra en minúscula («1 a», «6.A.», «6.a)» → «1.a», «6.a»; «2.6.a» se queda), **2 espacios** entre
+     él y el título (un espacio, tres, un tabulador o un espacio duro pasan a 2) y **sin espacios dobles**
+     dentro del título. Funciona aunque el texto vaya repartido entre varias carreras de texto: cada letra se
+     queda con su formato. Si el título viene en mayúsculas, pasa a minúscula con las reglas de las leyendas
+     (salvo nombres propios, siglas y la primera letra): «2.a EVOLUCIÓN DEL CONSUMO PRIMARIO (b)» →
+     «2.a  Evolución del consumo primario (b)». Las llamadas a nota («(b)»), que van en minúscula, no impiden
+     reconocer un texto en mayúsculas (también en las leyendas).
+   - Textos vinculados a una celda (`textlink`, casi todos los títulos de panel): al abrir, Excel **repone el
+     texto de la celda** (comprobado). Si la app cambia el texto de un cuadro vinculado (de la hoja o de dentro
+     de un gráfico), escribe el texto nuevo también en su celda (`escribir_vinculos`); solo los que ha cambiado
+     ella. Si la celda es una fórmula, solo se cambia su valor guardado y hay aviso.
    - Si «Gráfico NN» y el título van en el mismo cuadro (dos párrafos), se parte en dos cuadros.
    - La pastilla del autor se reconoce aunque esté hasta 1 mm desplazada del origen (en el 2.6, 0,3 mm).
    - Leyendas en minúscula salvo siglas (y la primera letra, la de después de un punto, los nombres propios y
      los números romanos), solo si el autor las escribió enteras en mayúsculas («FRENTE AL EURO» → «Frente al
-     euro», «ELECCIONES EEUU» → «Elecciones EEUU»). Listas de siglas y nombres propios en el motor (`SIGLAS`,
+     euro», «ELECCIONES EEUU» → «Elecciones EEUU»). En las tartas y anillos la leyenda son las categorías: se les
+     aplica lo mismo, en la caché y en sus celdas («ESTADOS UNIDOS» → «Estados Unidos», «MEXICO» → «México»:
+     en español, los nombres propios que vienen sin tilde por ir en mayúsculas la recuperan, `CON_TILDE`; prueba
+     «G_DO2608_06», paneles b y c). Una letra suelta entre paréntesis se deja («LTI (D)»: abreviatura). Listas de siglas y nombres propios en el motor (`SIGLAS`,
      `SIGLAS_ESCRITAS` — «pymes», «euríbor», «BdE» —, `NOMBRES_PROPIOS`). Se cambia la celda de la que sale el
      nombre (como texto propio de la celda, sin tocar los textos compartidos) y, si es una fórmula
      (`=SI(…;T(F9);T(F8))`), la celda de su columna con el mismo texto, su origen.
@@ -123,11 +145,20 @@ Las versiones hechas cuando retícula y textos eran dos pasos («Retícula y pas
        más larga cabe a 6 pt; si no, vertical de abajo arriba (`rot=-5400000`) a 7 pt (6 si no cabe una línea),
        partido en 2 o 3 líneas (saltos en las celdas) solo lo necesario para no pasar del largo de la etiqueta
        más difícil; si ni así cabe, aviso. «Tamaño y colocación» mide entonces las categorías por su línea más
-       larga. Se decide con el ancho final del trazado (columna 1, o las dos si va sin leyenda).
+       larga, más los niveles de debajo si las categorías tienen varios («1990-2018» en «G_DO2608_01»: si no
+       se cuentan, Excel sube el trazado para que quepan y las unidades quedan dentro del gráfico). Se decide
+       con el ancho final del trazado (columna 1, o las dos si va sin leyenda).
    - Título: si acaba en una letra, «(cont.)» o «(cont'd)» entre paréntesis, ese final va en Roboto Regular.
    - Formato local del autor: se respetan cursivas, subrayados, índices y la negrita de una parte del texto
      (también en «Gráfico NN» y el título, aunque tomen el marco de la plantilla). Si todo un texto va en
      negrita, se quita: el peso lo da la variante de Roboto.
+   - **Todos los textos del gráfico, en negro** (norma general del usuario, 2026-11-05; sustituye a la de no
+     tocar los colores del autor): los de la hoja dentro de la retícula (títulos, títulos de panel, unidades,
+     FUENTES, textos sueltos) y los de dentro de los gráficos (ejes, leyenda, etiquetas de datos, títulos,
+     textos de sus formas), en el paso 1 (`textos_en_negro`). El detalle dice qué colores había para revisar
+     que ninguno estuviera así a propósito. No cuentan como cambio los negros escritos de otra forma (`tx1`,
+     `dk1`, `black`, `windowText`); un `tx1` aclarado (gris) sí pasa a negro. La entrada invisible de la
+     leyenda que pone el paso 2 (muestras anchas) sigue en blanco.
    - FUENTES, con las reglas de «Gráficos Illus BdE» (`setSourceFrameText` del generador V3):
      - rótulo FUENTE(S)/SOURCE(S)/NOTA(S) seguido de «:», «.» o espacio → en mayúsculas y con «: »; en inglés,
        FUENTE → SOURCE. FUENTE(S)/SOURCE(S) en Roboto Medium; NOTA(S) en Light. Si la primera línea no
@@ -158,6 +189,35 @@ Las versiones hechas cuando retícula y textos eran dos pasos («Retícula y pas
      entradas si el cuadro es más ancho (por eso el ancho justo); la muestra de una serie de líneas mide unos
      16 pt más que la de columnas; cada entrada ocupa el alto de la más alta y Excel reparte lo que sobre, y
      si no caben todas quita las últimas. No cuentan las entradas borradas de la leyenda.
+   - Muestras anchas en los gráficos solo de barras (agrupadas o apiladas; como «G_DO2608_06 TERMINADO
+     LEYENDA», panel a): con solo barras Excel dibuja muestras cuadradas pequeñas donde la trama no se ve; si
+     en la leyenda hay una línea, todas salen anchas. Se añade al final una serie de línea blanca de 2,25 pt,
+     sin datos y llamada « », cuya entrada lleva el texto en blanco (`muestras_anchas`), antes de medir la
+     leyenda. Si conviven barras y líneas visibles no se toca; las series de solo marcadores (línea o
+     dispersión sin línea) no cuentan como línea, porque su muestra también es pequeña («G_DO2608_01»).
+     Excel ordena la leyenda por tipos (barras, líneas, dispersión) sean cuales sean los ejes: si hay una
+     dispersión, la muestra va como serie de dispersión con línea, detrás de su última serie (si no, queda
+     un hueco antes de los marcadores, como en el 2.6 b). Con barras horizontales la línea va a unos ejes
+     secundarios borrados (con los mismos ejes Excel rompe las categorías), y si ya hay ejes secundarios, a
+     esos (Excel solo admite dos juegos: con un tercero da el libro por dañado); probado bien en un panel
+     normal, pero no en uno de categorías a dos niveles girado a mano. El paso 5 no la colorea (`es_muestra`).
+     El `<c:layout>` de la leyenda va detrás de los `<c:legendEntry>` (lo pide el esquema).
+   - Barras horizontales («GIng_DO2626_05 HORIZONTAL»; `es_horizontal`):
+     - El trazado se queda en la columna 1 aunque no haya leyenda, y el gráfico acaba al final de la última
+       cifra del eje horizontal: como va centrada en el borde del trazado, el trazado acaba media cifra antes
+       del final de la columna 1 (`media_ultima_cifra`, con el máximo fijo del eje o el estimado).
+     - A la izquierda, las categorías (`ancho_categorias_izquierda`) y, si lo hay, el título girado del eje
+       vertical: 2 mm antes de las categorías, a lo alto del trazado, a 7 pt.
+     - Unidades: siempre texto horizontal, nunca un texto girado ni un número suelto como «(2)»
+       (`es_unidad_grafico`). En barras horizontales son las del eje de valores: el texto de debajo del
+       trazado. Van debajo de sus números (2 mm), en una línea, alineadas a la derecha al final del eje
+       horizontal (no de la última cifra, que sobresale media cifra).
+     - Números sueltos que el autor puso a mano junto a cada barra («(2)», «(4)»): pasan a ser la etiqueta de
+       datos de su barra, con su mismo texto, «fuera, al final» y a 6 pt (`etiquetas_de_barras`): Excel la
+       pone siempre a la derecha de la barra aunque cambie el tamaño. La barra se busca por la altura del
+       número en la disposición del autor (si no la fijó, o con barras apiladas, aviso y se dejan).
+     - Los demás textos sueltos del gráfico («Oracle, Amazon and Alibaba») se mueven con el trazado: su
+       esquina conserva su sitio respecto al trazado y su tamaño en pt (`recolocar_formas`).
    - Sin leyenda: si el autor no la tiene, ha borrado todas sus entradas o la ha encogido a menos de 10 pt de
      ancho (en el 2.6, el panel a: 6 pt), el trazado ocupa las dos columnas, como en el TERMINADO, la leyenda
      se deja como está y el detalle lo avisa (en rojo y negrita en la app): lo que representa tiene que explicarlo
@@ -258,8 +318,14 @@ Las versiones hechas cuando retícula y textos eran dos pasos («Retícula y pas
      estilo por sector, en el orden de la leyenda.
    - No se tocan: la línea base, las series de columnas que hacen de línea divisoria, las invisibles y las
      ocultas en la leyenda. Las barras llevan `invertIfNegative` 0 (si no, los negativos salen en blanco).
+   - Puntos (`dPt`) que el autor pintó con el mismo color que su serie (en «G_DO2608_01», las primeras barras
+     de la OCDE y Alemania): se les quita ese relleno para que lleven la trama de la serie, como en el
+     TERMINADO (`puntos_como_su_serie`). Los que tienen otro color o algo más (borde) no se tocan.
+   - Marcadores ocultos en la leyenda que el autor hizo iguales (mismo símbolo y color) a una serie de
+     marcadores visible (los «…_rombo» del 1.b de «G_DO2608_01»): llevan el mismo estilo que ella, para que
+     en el panel no haya dos marcadores distintos (`firma_marcador`).
    - Aviso en rojo a partir de la 8.ª serie (la guía recomienda 5; con 8 o más la secuencia se repite) y si
-     una serie tiene puntos con formato propio del autor (no se tocan).
+     una serie tiene puntos con formato propio del autor que no repiten su color (no se tocan).
    - Trampa: el `idx` de `<c:legendEntry>` es la posición en la leyenda (grupos en su orden y, dentro, por
      `order`), no el `idx` de la serie (`orden_leyenda`). Arreglado también en la línea base y en las medidas
      de la leyenda del paso 2.
