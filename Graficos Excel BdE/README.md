@@ -43,6 +43,16 @@ maqueta en «Graficos Illus BdE», que no se toca desde aquí).
   las dos a la vez. Al juntarla, el Organizador visual la coloca a su manera: se vuelve a poner en su sitio. Necesita el permiso de **Accesibilidad** para la app (Ajustes del Sistema →
   Privacidad y seguridad → Accesibilidad); sin él, la actividad lo avisa. Los avisos de permiso (de Excel o de
   macOS) también quedan escondidos por el Organizador visual.
+- **Dos copias de trabajo** que se alternan, «X maquetado.xlsx» y «X maquetado (2).xlsx», siempre con la
+  versión elegida: al cambiar de versión, Excel abre la que no está abierta, la coloca y, después, cierra la
+  otra; así su ventana no desaparece (Excel no abre dos veces el mismo archivo ni dos libros que se llamen
+  igual). Antes de abrirla, la app escribe en el libro (workbookView de xl/workbook.xml, en veinteavos de
+  punto) el sitio de la ventana, y nace ya colocada. Con el Organizador visual, Excel se pone delante antes de
+  abrir solo si su ventana ya está en el grupo de la app (la nueva nace en el mismo grupo); si no, se junta
+  después. Para dar por juntas la app y Excel tienen que seguir viéndose 0,6 s después (durante el cambio de
+  grupo se ven un momento las dos). Probado con la app y `scratchpad/vigilar` (ventanas en pantalla cada 0,1 s):
+  Excel siempre en pantalla, también arrancando con Excel cerrado. `--abrir <xlsx>` abre un trabajo al
+  arrancar la app (para probar sin el diálogo).
 - Se trabaja sobre una **copia**: del original `X.xlsx` sale `X maquetado.xlsx`, y cada paso deja su
   versión en `X maquetado (pasos)/` (`00 Copia exacta.xlsx`, `01 Retícula, pastilla y textos.xlsx`…). Ir adelante
   y atrás es volver a una de esas versiones. Elegir otra vez el original o la copia sigue donde se quedó.
@@ -64,6 +74,9 @@ Las versiones hechas cuando retícula y textos eran dos pasos («Retícula y pas
 
 1. **Retícula, pastilla y textos** (`paso1`, una sola versión; el motor hace primero la retícula y la
    pastilla y, sobre eso, los textos):
+   - Si el autor lo ha agrupado todo con el gráfico (pastilla, títulos, gráfico, FUENTES: «G_26XX_06
+     INTERVALOS»), primero se desagrupa: cada elemento, con la escala de su grupo, queda anclado a sus celdas en
+     el mismo sitio (`desagrupar`). La retícula del autor (grupo de líneas) no se desagrupa.
    - Retícula y pastilla: borra la retícula y la pastilla del autor y pone las del archivo de retículas
    (`SdE_Reticulas_Publicaciones_ImagenNueva2024_Roboto.xlsx`, hoja «Gráfico»), en A1 y al fondo, con el
    color de la publicación. La retícula va a su tamaño de diseño (16,63 × 24,78 cm).
@@ -98,7 +111,12 @@ Las versiones hechas cuando retícula y textos eran dos pasos («Retícula y pas
        Solo ejes (no etiquetas de datos). Si el eje toma el formato de los datos, se cambia en sus celdas (un
        numFmt y copias de los estilos de celda).
      - Leyendas con la escala derecha en cualquier versión → «(Escala dcha.)» / «(Right-hand scale)», en la
-       celda de la que salen.
+       celda de la que salen. Sin cursiva (decisión del usuario: no se usa la cursiva).
+     - Etiquetas de datos (págs. 10 y 16, `etiquetas_datos`): los decimales de la regla de los ejes según sus
+       valores (ninguno si son enteros, uno si hay decimales, dos si con uno alguna cifra quedaría en 0,0;
+       separador de miles; respeta el %), escritos en las etiquetas (`sourceLinked 0`; las celdas no se tocan).
+       Va después de pasar las tartas a 0-100: el G_26XX_05 queda con un decimal (62,6), no con dos como su
+       TERMINADO. Si una etiqueta lleva texto (categoría, serie o valor de las celdas) y número, separador «: ».
      - Trimestres → «I TR … IV TR» (es) / «Q1 … Q4» (en), con el año detrás: en leyendas, categorías (celdas y
        caché), textos de la hoja dentro de la retícula y textos de dentro de los gráficos.
      - Eje horizontal: nunca en oblicuo. Horizontal (explícito, para que Excel no lo incline) si la palabra
@@ -209,8 +227,111 @@ Las versiones hechas cuando retícula y textos eran dos pasos («Retícula y pas
      sin puntas): igual.
    - Flechas dibujadas (dentro del gráfico o en la hoja, dentro de la retícula), como en el TERMINADO: negras
      (tx1), 0,5 pt, unión en ángulo y punta abierta («arrow») en los mismos extremos.
+   - Líneas guía de las etiquetas de datos (pág. 16: blanco matiz 5, 0,5 pt, remate plano y unión en ángulo):
+     solo se ponen si las etiquetas se confunden, así que no se activan; si están activadas, se les da ese
+     formato. Dos sitios: en las tartas, `c:showLeaderLines` + `c:leaderLines` dentro de las etiquetas; en el
+     resto (Excel 2013), `c15:showLeaderLines` + `c15:leaderLines` en su extensión. Probado en Excel con copias
+     del circular y de PRUEBAS.
+     Si se activan a mano en Excel, Excel les pone su formato (negro, 0,75 pt): el formato de las desactivadas
+     no sirve, porque Excel lo descarta al abrir. Para eso está el botón **«Líneas guía»** de la app (tarjeta de
+     versiones): en el Excel abierto, a cada serie con líneas guía le pone 0,5 pt y gris 808080 (AppleScript:
+     `line format of chart format of leader lines`); hay que guardar el libro para conservarlo. Además, cada vez
+     que se vuelve a la app (de Excel), lo revisa sola y corrige las que no tengan ese formato (lo anota en la
+     actividad); una nota bajo los botones lo recuerda. No hay forma de que Excel las cree así por defecto: los
+     gráficos de los autores no tienen hoja de estilo (`xl/charts/styleN.xml`, donde va `cs:leaderLine`).
    - Trampa: en los dibujos de dentro de los gráficos el prefijo `a:` se declara en cada elemento; un `<a:ln>`
      nuevo sin `xmlns:a` hace que Excel descarte todo el dibujo (desaparecen flechas y textos).
+
+5. **Tramas, colores y líneas** (`paso5`). Estilos de las series según «Excel. Guía lineas y tramas colores
+   2026.pdf», con la paleta de la publicación (`ESTILOS_SERIES` por tema; de momento solo BdE_2026,
+   Documentos Ocasionales; las demás publicaciones tendrán los suyos).
+   - Secuencia de 7 estilos, empezando por el negro (decisión del usuario: la de la guía 2026, no «el tercer
+     color del tema» de la guía v4). Tramas: dkHorz 000000/595959, pct90 7DB749/FFFFFF, dkUpDiag
+     FFDB93/FFF0D2 (la pág. 2 dice FFEDC9; el usuario eligió FFF0D2, como el TERMINADO), zigZag EF9011/FFC000,
+     narVert 1D5191/AECEF4, wdDnDiag C30FBA/F257EB, dkVert 7F3C2F/C9796B; sin borde. Líneas de 2,25 pt: negra
+     sólida, 7DB749 punto cuadrado (`sysDash`), FFDB93 punto redondo (`sysDot`, remate redondo), y sólidas con
+     marcador sin borde del color de la línea: EF9011 triángulo 6, AECEF4 cuadrado 5, C30FBA círculo 5, C9796B
+     rombo 6.
+   - Orden (guía de gráficos, pág. 7), en cada panel: primero las líneas, luego áreas y barras (en el orden de
+     las series: de izquierda a derecha o desde el eje hacia arriba) y al final los marcadores (series de
+     dispersión o de línea sin línea: círculo sólido de 5 pt sin borde, del color de su estilo). Tartas: un
+     estilo por sector, en el orden de la leyenda.
+   - No se tocan: la línea base, las series de columnas que hacen de línea divisoria, las invisibles y las
+     ocultas en la leyenda. Las barras llevan `invertIfNegative` 0 (si no, los negativos salen en blanco).
+   - Aviso en rojo a partir de la 8.ª serie (la guía recomienda 5; con 8 o más la secuencia se repite) y si
+     una serie tiene puntos con formato propio del autor (no se tocan).
+   - Trampa: el `idx` de `<c:legendEntry>` es la posición en la leyenda (grupos en su orden y, dentro, por
+     `order`), no el `idx` de la serie (`orden_leyenda`). Arreglado también en la línea base y en las medidas
+     de la leyenda del paso 2.
+   - Cada panel empieza de cero (decisión del usuario; el TERMINADO del 2.6 empieza el panel b en el estilo 2,
+     pero no se sigue).
+   - Marcadores de las líneas con muchos puntos (series diarias): no se quitan, se espacian (como mucho uno
+     cada 4 mm del ancho del trazado, `ESPACIO_MARCADORES`). El marcador se queda en la serie (así sale en la
+     leyenda) y se quita con un `dPt` (`symbol none`) en los puntos que no tocan; las líneas con marcador de un
+     mismo panel se desfasan para no coincidir. Comprobado en Excel con el G_Trim_03 (17 triángulos, uno cada
+     32 puntos; la leyenda conserva el triángulo).
+   - Intervalos (guía, pág. 16; prueba: «G_26XX_06 INTERVALOS ORIGINAL/TERMINADO»): en los grupos de líneas con
+     líneas de máximos y mínimos (`c:hiLowLines`), la línea negra de 1 pt, remate plano y unión en ángulo; las
+     dos series de los extremos (la que más veces es la más alta y la más baja) sin línea y con marcador raya
+     negro de 7 pt; no entran en el orden de colores. Los marcadores del medio no pueden ser negros (irían sobre
+     la línea negra): se salta al estilo siguiente.
+   - Sombreados (pág. 16): series de áreas o columnas sin hueco (≤ 50) cuyos datos son siempre el mismo valor o
+     vacíos (con algún vacío; no las divisorias), y rectángulos rellenos sin texto dibujados dentro del gráfico.
+     Color de la publicación (el de la pastilla; matiz 1), sin borde; sin transparencia, o al 80 % si quedan por
+     encima de otras columnas o áreas (Excel pinta áreas, luego columnas, el eje secundario encima y, entre
+     grupos iguales, en el orden del archivo); los dibujados, siempre al 80 %. No entran en el orden de colores.
+     Probado en Excel con una banda añadida al G_Trim_03 (no hay archivo de prueba con sombreados).
+   - Pendiente: datos proyectados (fondo de otro color).
+
+### Terminar (tarjeta «Terminar», debajo de los pasos)
+
+- **Comparar con el original** (`comparar`): compara lo guardado (la más reciente de las dos copias de
+  trabajo, así que incluye lo que el usuario haya guardado a mano en Excel) con el Excel del autor. No mira la
+  colocación ni el formato de letra; sí:
+  - los datos de todas las hojas (celda a celda): los que faltan (aviso en rojo), los que cambian, clasificados
+    en cifras, mayúsculas, trimestres, ortotipografía o texto (columnas enteras ×100 de las tartas, en una
+    línea), los cambios de formato de número o fecha de las celdas y las celdas añadidas (línea base);
+  - las series de los gráficos (que falte alguna o cambie su rango; las añadidas);
+  - el formato de números y fechas de los ejes;
+  - los textos de los cuadros (de la hoja y de dentro de los gráficos) y de los gráficos (títulos, títulos de
+    ejes, etiquetas escritas): se emparejan por parecido y se comparan palabra a palabra (lo que el paso 1
+    separa en otro cuadro, como «Gráfico 2.6», no cuenta como falta; si solo se quitan letras, «falta»).
+  El resultado sale en la tarjeta y en la actividad: «Aviso…» en rojo, «Cambio de…» en naranja. No crea versión
+  y se borra al cambiar de versión. Trampa: `difflib` con `autojunk` (por defecto) da parecidos muy bajos en
+  textos de más de 200 caracteres (FUENTES con notas): siempre `autojunk=False`.
+- **Guardar como TERMINADO** (`terminar`): si la copia abierta en Excel tiene cambios sin guardar, avisa y no
+  sigue; pide confirmación; cierra en Excel; copia lo guardado como «… TERMINADO.xlsx» junto al original
+  («ORIGINAL» del nombre pasa a «TERMINADO», o se añade al final; si ya existe no se pisa: « (2)», « (3)»…) y
+  borra las dos copias de trabajo y la carpeta «(pasos)». El original del autor no se toca. Al acabar enseña el
+  TERMINADO en el Finder.
+
+### Gráficos de tarta (guía, págs. 16 y 17; prueba: «G_MemoriaSupervision_2.3 CIRCULAR»)
+
+Tartas, anillos y subgráficos (`pieChart`, `pie3DChart`, `doughnutChart`, `ofPieChart`):
+- Paso 1: anillo con agujero del 80 %; líneas del subgráfico en blanco matiz 5, 1 pt, remate plano y unión en
+  ángulo; si las etiquetas llevan %, se quita (formato sin %: `#,##0`, `#,##0.0`…), los datos de la hoja se
+  multiplican por 100 (no si son fórmulas: aviso) y se pone «%» como unidad arriba a la izquierda si no está.
+  El texto del hueco del anillo («2,3 billones de euros»), como en el TERMINADO: la cifra en Roboto Black
+  24 pt (negrita) y el resto en Roboto Regular 7 pt, centrado, y el cuadro sin relleno ni borde (probado con
+  «… ORIGINAL MODIFICADO», que lo trae con otras fuentes, tamaños y fondo rojo).
+- Paso 2: la tarta mide 9 filas de diámetro y va centrada en la columna 1; arriba, donde le toque por el
+  título, el título de panel y las unidades (como el trazado de los demás gráficos). La leyenda (sus entradas
+  son las categorías) va centrada a lo alto de la tarta, pegada a la columna 2. Etiquetas por fuera: en las
+  tartas, «extremo externo»; en los anillos (Excel no lo tiene), cada una a mano, 2 pt por fuera del anillo
+  en la mitad de su porción (por fuera de la porción si el autor la separó: «explosión», % del radio; Excel
+  no achica el anillo por ello). Las que chocan se apartan solas: se empujan a lo largo del anillo sin
+  cruzarse (30° como mucho), cada una en el primer sitio libre en su dirección (se mira la forma real de cada
+  porción) y sin salir del marco ni pasar a la columna de la leyenda; el marco sube hasta la pastilla o el
+  título del panel. Si así alguna queda lejos de su porción (más de 4 pt o más cerca de otra), el anillo baja
+  una fila de la retícula (dos como mucho; sigue con 9 filas de diámetro y FUENTES baja con él) y se queda con
+  la primera que vale (G_26XX_05: baja 1 fila y las tres pequeñas de arriba quedan junto a la suya, como en el
+  TERMINADO). Si ni así, línea guía dibujada en la capa de formas del gráfico (blanco matiz 5, 0,5 pt; Excel
+  no dibuja líneas guía en los anillos) y aviso si alguna no cabe. Los
+  textos sobre la tarta se mueven con su centro; el del hueco se centra en la tarta (cuadro centrado, texto en
+  el medio del cuadro y 1,75 pt más arriba para compensar el hueco de la línea de 24 pt sobre las cifras;
+  medido en Excel: centro del anillo y del texto a 1 px).
+- Unidades de la hoja: solo las que están arriba (hasta 12 mm por debajo del borde del gráfico) y a la
+  izquierda; el resto es texto interior.
 
 ## Publicaciones
 

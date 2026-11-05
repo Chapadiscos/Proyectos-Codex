@@ -75,6 +75,11 @@ struct Respuesta: Decodable {
     let reticula_pt: [Double]?
     let paletas: [Paleta]?
     let carpeta: String?
+    let comparacion: [String]?
+    let comparado: String?
+    let original: String?
+    let terminado: String?
+    let borrados: [String]?
 }
 
 /// Los pasos de maquetación que la app sabe hacer, en orden
@@ -97,8 +102,11 @@ let pasosMaquetacion = [
                     detalle: "Ejes 0,5 pt matiz 5 y divisiones 0,3 pt matiz 4, sin relieve y unión angular; eje en cero, marcas de graduación, etiquetas en Bajo a distancia 100 y límites fijos en un tramo (guía, pág. 15)",
                     icono: "chart.xyaxis.line", orden: "paso3"),
     PasoMaquetacion(id: 4, titulo: "Líneas interiores",
-                    detalle: "Línea base si las unidades indican un dato de referencia (Base 100 = …; 100 o 50), gris como los ejes y oculta en la leyenda (guía, pág. 13); líneas divisorias negras de 1 pt (pág. 14); flechas como en el TERMINADO: negras de 0,5 pt con punta abierta",
+                    detalle: "Línea base si las unidades indican un dato de referencia (Base 100 = …; 100 o 50), gris como los ejes y oculta en la leyenda (guía, pág. 13); líneas divisorias negras de 1 pt (pág. 14); flechas como en el TERMINADO: negras de 0,5 pt con punta abierta; líneas guía de las etiquetas, si las hay: blanco matiz 5, 0,5 pt (pág. 16)",
                     icono: "chart.line.flattrend.xyaxis", orden: "paso4"),
+    PasoMaquetacion(id: 5, titulo: "Tramas, colores y líneas",
+                    detalle: "Tramas y estilos de línea de la paleta de la publicación (Excel. Guía líneas y tramas colores 2026), en el orden de la guía (pág. 7): primero las líneas, luego barras y áreas desde el eje y al final los marcadores; líneas de 2,25 pt, tramas sin borde; aviso a partir de la 8.ª serie",
+                    icono: "paintpalette", orden: "paso5"),
 ]
 
 struct Ejecucion: Identifiable {
@@ -131,12 +139,13 @@ func cadenaAS(_ s: String) -> String {
 }
 
 /// Ejecuta un programa y lo corta si pasa del tiempo (Excel con un diálogo abierto).
-func ejecutar(_ programa: String, _ argumentos: [String], espera: TimeInterval) async -> (ok: Bool, texto: String) {
+func ejecutar(_ programa: String, _ argumentos: [String], espera: TimeInterval, carpeta: URL? = nil) async -> (ok: Bool, texto: String) {
     await withCheckedContinuation { continuacion in
         DispatchQueue.global().async {
             let p = Process()
             p.executableURL = URL(fileURLWithPath: programa)
             p.arguments = argumentos
+            if let carpeta { p.currentDirectoryURL = carpeta }
             let salida = Pipe(), errores = Pipe()
             p.standardOutput = salida
             p.standardError = errores
@@ -237,6 +246,8 @@ final class Taller: ObservableObject {
     @Published var carpetaPaletas: String?
     @Published var errorPaletas: String?
     @Published var ahora = Date()
+    /// Resultado de «Comparar con el original» (se borra al cambiar de versión: ya no vale)
+    @Published var comparacion: [String] = []
 
     var motorEncontrado: Bool { FileManager.default.fileExists(atPath: motor.appendingPathComponent("maquetar_excel.py").path) }
     var publicacionActual: Publicacion? { publicaciones.first { $0.id == publicacion } }
@@ -246,6 +257,15 @@ final class Taller: ObservableObject {
     var pasoActual: Paso? { pasos.indices.contains(actual) ? pasos[actual] : nil }
 
     init() {
+        // «--abrir <xlsx>»: abre ese trabajo al arrancar (para probar la app sin el diálogo)
+        if let i = CommandLine.arguments.firstIndex(of: "--abrir"), i + 1 < CommandLine.arguments.count {
+            let url = URL(fileURLWithPath: CommandLine.arguments[i + 1])
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.abrir(url) }
+        }
+        // Al volver de Excel a la app, las líneas guía activadas a mano se ponen con el formato de la guía
+        NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
+            Task { @MainActor [weak self] in self?.revisarLineasGuia() }
+        }
         Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
             Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -340,6 +360,7 @@ final class Taller: ObservableObject {
         idioma = r.idioma ?? idioma
         actual = r.actual ?? actual
         pasos = r.pasos ?? pasos
+        comparacion = []
         if let m = r.reticula_pt, m.count == 2 { reticula = (m[0], m[1]) }
     }
 
@@ -358,8 +379,9 @@ final class Taller: ObservableObject {
     /// que ya tiene copia, sigue donde se quedó.
     func abrir(_ url: URL) {
         UserDefaults.standard.set(url.deletingLastPathComponent().path, forKey: "carpeta")
-        let base = url.deletingPathExtension().lastPathComponent
-        let copia = base.hasSuffix(" maquetado") ? url
+        var base = url.deletingPathExtension().lastPathComponent
+        if base.hasSuffix(" maquetado (2)") { base = String(base.dropLast(4)) }   // la segunda copia: la primera
+        let copia = base.hasSuffix(" maquetado") ? url.deletingLastPathComponent().appendingPathComponent(base + ".xlsx")
             : url.deletingLastPathComponent().appendingPathComponent(base + " maquetado.xlsx")
         let seguir = FileManager.default.fileExists(atPath: copia.deletingPathExtension().path + " (pasos)")
         let anterior = trabajo
@@ -401,6 +423,7 @@ final class Taller: ObservableObject {
         guard let trabajo, let carpeta = carpetaPasos, pasos.indices.contains(n), n != actual else { return }
         tarea("Ir a la versión \(n)") { id in
             self.actual = n
+            self.comparacion = []
             self.anotar(id, "Versión \(n): \(self.pasos[n].titulo)")
             do {
                 let estadoURL = carpeta.appendingPathComponent("estado.json")
@@ -435,7 +458,120 @@ final class Taller: ObservableObject {
         }
     }
 
+    // MARK: Terminar
+
+    /// Compara la copia de trabajo (lo guardado: la más reciente de las dos) con el Excel del autor: textos y
+    /// cifras, no la colocación. Avisa de lo que falta y de lo que ha cambiado. No crea versión.
+    func comparar() {
+        guard let trabajo else { return }
+        tarea("Comparar con el original") { id in
+            guard let r = await self.llamarMotor(["comparar", trabajo.path], registro: id) else { return false }
+            self.comparacion = r.comparacion ?? []
+            if let c = r.comparado, let o = r.original {
+                self.anotar(id, "«\(URL(fileURLWithPath: c).lastPathComponent)» (lo guardado) frente a «\(URL(fileURLWithPath: o).lastPathComponent)»")
+            }
+            self.comparacion.forEach { self.anotar(id, "• " + $0) }
+            return true
+        }
+    }
+
+    /// Nombre que tendrá el TERMINADO: el del original con «ORIGINAL» cambiado por «TERMINADO», o con
+    /// « TERMINADO» al final (si ya existe, el motor le pone « (2)»…)
+    var nombreTerminado: String {
+        guard let trabajo else { return "" }
+        var base = trabajo.deletingPathExtension().lastPathComponent
+        if base.hasSuffix(" maquetado") { base = String(base.dropLast(" maquetado".count)) }
+        if base.range(of: #"\bORIGINAL\b"#, options: .regularExpression) != nil {
+            base = base.replacingOccurrences(of: #"\bORIGINAL\b"#, with: "TERMINADO", options: .regularExpression)
+        } else {
+            base += " TERMINADO"
+        }
+        return base + ".xlsx"
+    }
+
+    private static let guionGuardado = """
+    on run argv
+        if application "Microsoft Excel" is not running then return "sin libro"
+        tell application "Microsoft Excel"
+            repeat with i from 1 to (count workbooks)
+                set n to full name of workbook i
+                if n is item 1 of argv or n is item 2 of argv then
+                    if saved of workbook i then return "guardado"
+                    return "sin guardar"
+                end if
+            end repeat
+        end tell
+        return "sin libro"
+    end run
+    """
+
+    /// Guarda el resultado como «… TERMINADO.xlsx» junto al original y borra lo generado (las dos copias de
+    /// trabajo y la carpeta de pasos con todas las versiones). Antes: que no haya cambios sin guardar en Excel
+    /// y confirmación.
+    func terminar() {
+        guard let trabajo, enCurso == nil else { return }
+        Task {
+            let estado = await osascript(Taller.guionGuardado, [trabajo.path, Taller.copiaB(trabajo).path], espera: 10)
+            if estado.texto.contains("sin guardar") {
+                self.aviso = Aviso(titulo: "Hay cambios sin guardar en Excel",
+                                   texto: "Guarda el libro en Excel (⌘S) si quieres conservarlos, o deshazlos, y vuelve a pulsar «Guardar como TERMINADO».")
+                return
+            }
+            self.pregunta = Pregunta(titulo: "¿Guardar como TERMINADO?",
+                                     texto: "Se guarda «\(self.nombreTerminado)» junto al original (si ya existe, no se pisa: se añade « (2)»). Después se cierra en Excel y se borran la copia de trabajo, su copia « (2)» y la carpeta «(pasos)» con todas las versiones. El original del autor no se toca. No se puede deshacer.",
+                                     boton: "Guardar y borrar") {
+                self.tarea("Guardar como TERMINADO") { id in
+                    await self.cerrarEnExcel(trabajo)
+                    guard let r = await self.llamarMotor(["terminar", trabajo.path], registro: id),
+                          let hecho = r.terminado else { return false }
+                    let url = URL(fileURLWithPath: hecho)
+                    self.anotar(id, "Guardado: \(url.lastPathComponent)")
+                    (r.borrados ?? []).forEach { self.anotar(id, "Borrado: \($0)") }
+                    self.trabajo = nil
+                    self.pasos = []
+                    self.actual = 0
+                    self.comparacion = []
+                    NSWorkspace.shared.activateFileViewerSelecting([url])
+                    return true
+                }
+            }
+        }
+    }
+
     /// Tras cada cambio, la copia de trabajo recargada en Excel, a la derecha de la app y encuadrada en el gráfico.
+    /// Las copias de trabajo son dos, «X maquetado.xlsx» y «X maquetado (2).xlsx», con la misma versión: al
+    /// cambiar de versión, Excel abre la que no está abierta antes de cerrar la otra, y su ventana no desaparece
+    /// (Excel no puede abrir dos veces el mismo archivo ni dos libros que se llamen igual).
+    /// La posición y el tamaño de la ventana guardados en el libro (workbookView de xl/workbook.xml, en
+    /// veinteavos de punto) pasan a ser `sitio` = {izquierda, arriba, derecha, abajo}.
+    static func fijarVentana(_ archivo: URL, _ sitio: [Int]) async {
+        guard sitio.count == 4 else { return }
+        let lectura = await ejecutar("/usr/bin/unzip", ["-p", archivo.path, "xl/workbook.xml"], espera: 10)
+        guard lectura.texto.contains("<workbookView") else { return }
+        let valores = ["xWindow": sitio[0] * 20, "yWindow": sitio[1] * 20,
+                       "windowWidth": (sitio[2] - sitio[0]) * 20, "windowHeight": (sitio[3] - sitio[1]) * 20]
+        var xml = lectura.texto
+        guard let vista = xml.range(of: #"<workbookView\b[^>]*>"#, options: .regularExpression) else { return }
+        var etiqueta = String(xml[vista])
+        for (nombre, valor) in valores {
+            if let r = etiqueta.range(of: #"\b\#(nombre)="[^"]*""#, options: .regularExpression) {
+                etiqueta.replaceSubrange(r, with: "\(nombre)=\"\(valor)\"")
+            } else {
+                etiqueta = etiqueta.replacingOccurrences(of: "<workbookView", with: "<workbookView \(nombre)=\"\(valor)\"")
+            }
+        }
+        xml.replaceSubrange(vista, with: etiqueta)
+        let carpeta = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try? FileManager.default.createDirectory(at: carpeta.appendingPathComponent("xl"), withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: carpeta) }
+        guard (try? xml.write(to: carpeta.appendingPathComponent("xl/workbook.xml"), atomically: true, encoding: .utf8)) != nil else { return }
+        _ = await ejecutar("/usr/bin/zip", ["-q", archivo.path, "xl/workbook.xml"], espera: 10, carpeta: carpeta)
+    }
+
+    static func copiaB(_ ruta: URL) -> URL {
+        ruta.deletingLastPathComponent().appendingPathComponent(ruta.deletingPathExtension().lastPathComponent + " (2).xlsx")
+    }
+
     private func mostrar(_ id: UUID) async -> Bool {
         await mostrarEnExcel(id, recargar: true)
     }
@@ -467,12 +603,19 @@ final class Taller: ObservableObject {
     /// con una ventana «Abrir» que el Organizador visual escondía. Sin `recargar` solo coloca y encuadra.
     private func mostrarEnExcel(_ id: UUID, recargar: Bool) async -> Bool {
         guard let paso = pasoActual, let ruta = trabajo else { return false }
+        // La segunda copia, con la misma versión: es la que se abre si la primera está abierta
+        if recargar { try? Data(contentsOf: ruta).write(to: Taller.copiaB(ruta)) }
         let sitio = await colocarVentanas()
         guard sitio.count == 4 else { return false }
         if !recargar { zoomExcel = nil }
         let zoom = zoomExcel.flatMap { $0.sitio == sitio ? $0.zoom : nil } ?? 0
         // Un 4 % de margen alrededor de la retícula
         let medidas = [Int(reticula.ancho * 1.04), Int(reticula.alto * 1.04)]
+        // Excel abre cada libro donde dice el propio archivo: se escribe ahí el sitio, y la ventana nace colocada
+        // (si no, asomaba un momento encima de la app antes de ir a su sitio)
+        if recargar {
+            for archivo in [ruta, Taller.copiaB(ruta)] { await Taller.fijarVentana(archivo, sitio) }
+        }
         let guion = """
         on run argv
             set ruta to item 1 of argv
@@ -482,21 +625,32 @@ final class Taller: ObservableObject {
             set z to (item 8 of argv) as integer
             set recargar to (item 9 of argv) is "si"
             set arrancar to (item 10 of argv) is "si"
+            set rutaB to item 11 of argv
+            set organizador to (item 12 of argv) is "si"
             tell application "Microsoft Excel"
                 -- Recién arrancado en segundo plano, Excel no enseña sus ventanas hasta que se le activa
                 if arrancar then activate
-                set wb to missing value
+                -- La copia que está abierta (una de las dos que se alternan)
+                set viejo to missing value
                 -- Por número: «repeat with … in every workbook» da error de parámetros
                 repeat with i from 1 to (count workbooks)
-                    if full name of workbook i is ruta then set wb to workbook i
+                    set nombre to full name of workbook i
+                    if nombre is ruta or nombre is rutaB then set viejo to workbook i
                 end repeat
-                if wb is not missing value and recargar then
-                    close wb saving no
-                    set wb to missing value
-                end if
-                if wb is missing value then
+                if recargar then
+                    -- Se abre la otra copia (ya con la versión elegida) y, colocada, se cierra la vieja: así siempre
+                    -- hay una ventana de Excel a la vista. Con el Organizador visual, Excel delante: la ventana nueva
+                    -- nace en el grupo de la app y no en uno aparte
+                    set nueva to ruta
+                    if viejo is not missing value then
+                        if full name of viejo is ruta then set nueva to rutaB
+                        if organizador then activate
+                    end if
+                    set wb to open workbook workbook file name nueva update links do not update links
+                else if viejo is missing value then
                     set wb to open workbook workbook file name ruta update links do not update links
                 else
+                    set wb to viejo
                     activate object wb
                 end if
                 -- La hoja «Gráfico» o, si el autor la llamó de otra forma («G1»), la primera con gráficos
@@ -526,6 +680,7 @@ final class Taller: ObservableObject {
                 set scroll row of w to 1
                 set scroll column of w to 1
                 select range "A1" of active sheet
+                if recargar and viejo is not missing value then close viejo saving no
                 return z
             end tell
         end run
@@ -538,7 +693,12 @@ final class Taller: ObservableObject {
             anotar(id, "Excel tarda: si muestra una ventana «Abrir», pide permiso para «\(ruta.lastPathComponent)». Pulsa «Conceder acceso»: solo hace falta una vez por trabajo.")
         }
         let arrancar = NSRunningApplication.runningApplications(withBundleIdentifier: idExcel).isEmpty
-        let r = await osascript(guion, [ruta.path] + (sitio + medidas + [zoom]).map(String.init) + [recargar ? "si" : "no", arrancar ? "si" : "no"], espera: 120)
+        // Excel delante antes de abrir la otra copia solo si su ventana ya está con la app (en su grupo): así la
+        // nueva nace ahí. Si está en otro grupo, se abre sin más y luego se junta
+        let excelConLaApp = organizadorVisual && excelSeVe()
+        let r = await osascript(guion, [ruta.path] + (sitio + medidas + [zoom]).map(String.init)
+                                + [recargar ? "si" : "no", arrancar ? "si" : "no", Taller.copiaB(ruta).path, excelConLaApp ? "si" : "no"],
+                                espera: 120)
         vigilante.cancel()
         // La app vuelve delante para seguir con ⌘← y ⌘→, y con el Organizador visual se trae a su grupo la ventana
         // de Excel (que Excel crea en un grupo aparte, escondida en la tira de la izquierda)
@@ -591,8 +751,12 @@ final class Taller: ObservableObject {
                     NSApp.activate(ignoringOtherApps: true)
                     return ok
                 }
-                // Ya están juntas si se ven a la vez (durante la animación de cambio de grupo, solo se ve una)
-                if seVe(ventana) && seVe(propia) { return true }
+                // Ya están juntas si se ven a la vez y siguen viéndose al acabar la animación (durante el cambio de
+                // grupo se ven un momento las dos aunque estén en grupos distintos)
+                if seVe(ventana) && seVe(propia) {
+                    try? await Task.sleep(nanoseconds: 600_000_000)
+                    if seVe(ventana) && seVe(propia) { return true }
+                }
             }
             try? await Task.sleep(nanoseconds: 100_000_000)
         }
@@ -611,6 +775,15 @@ final class Taller: ObservableObject {
         end run
         """
         _ = await osascript(guion, sitio.map(String.init), espera: 10)
+    }
+
+    /// ¿Hay alguna ventana de Excel en pantalla a su tamaño?
+    private func excelSeVe() -> Bool {
+        guard let excel = NSRunningApplication.runningApplications(withBundleIdentifier: idExcel).first else { return false }
+        return (CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []).contains {
+            ($0[kCGWindowOwnerPID as String] as? pid_t) == excel.processIdentifier && ($0[kCGWindowLayer as String] as? Int) == 0
+                && ((($0[kCGWindowBounds as String] as? [String: Any])?["Width"] as? Double) ?? 0) > 300
+        }
     }
 
     /// ¿La ventana `numero` está en pantalla a su tamaño (no como miniatura de la tira)?
@@ -645,12 +818,12 @@ final class Taller: ObservableObject {
             tell application "Microsoft Excel"
                 repeat with i from (count workbooks) to 1 by -1
                     set ruta to full name of workbook i
-                    if ruta is item 1 of argv or ruta starts with item 2 of argv then close workbook i saving no
+                    if ruta is item 1 of argv or ruta is item 3 of argv or ruta starts with item 2 of argv then close workbook i saving no
                 end repeat
             end tell
         end run
         """
-        _ = await osascript(guion, [trabajo.path, carpeta], espera: 20)
+        _ = await osascript(guion, [trabajo.path, carpeta, Taller.copiaB(trabajo).path], espera: 20)
     }
 
     func verEnExcel() {
@@ -659,6 +832,88 @@ final class Taller: ObservableObject {
 
     func colocarExcel() {
         tarea("Colocar Excel") { id in await self.mostrarEnExcel(id, recargar: false) }
+    }
+
+    /// Líneas guía activadas a mano en Excel: Excel les pone su formato (negro, 0,75 pt) y no guarda otro para
+    /// las desactivadas (los gráficos de los autores no tienen hoja de estilo), así que se les da el de la guía
+    /// (pág. 16: blanco matiz 5, 0,5 pt) en el libro abierto. Solo a las que no lo tienen ya. Devuelve
+    /// «corregidas/activadas», o «sin libro».
+    private static let guionLineasGuia = """
+    on run argv
+        set ruta to item 1 of argv
+        tell application "Microsoft Excel"
+            set wb to missing value
+            repeat with i from 1 to (count workbooks)
+                if full name of workbook i is ruta or full name of workbook i is item 2 of argv then set wb to workbook i
+            end repeat
+            if wb is missing value then return "sin libro"
+            set hechas to 0
+            set activas to 0
+            repeat with h from 1 to (count worksheets of wb)
+                set hoja to worksheet h of wb
+                repeat with k from 1 to (count chart objects of hoja)
+                    set c to chart of chart object k of hoja
+                    repeat with n from 1 to (count series of c)
+                        set s to series n of c
+                        try
+                            if has leader lines of s then
+                                set activas to activas + 1
+                                set lf to line format of chart format of leader lines of s
+                                set w to weight of lf
+                                if (w > 0.51 or w < 0.49) or (fore color of lf) is not {128, 128, 128} then
+                                    set weight of lf to 0.5
+                                    set fore color of lf to {128, 128, 128}
+                                    set hechas to hechas + 1
+                                end if
+                            end if
+                        end try
+                    end repeat
+                end repeat
+            end repeat
+            return (hechas as text) & "/" & (activas as text)
+        end tell
+    end run
+    """
+
+    func lineasGuia() {
+        guard let ruta = trabajo else { return }
+        tarea("Líneas guía") { id in
+            let r = await osascript(Taller.guionLineasGuia, [ruta.path, Taller.copiaB(ruta).path], espera: 60)
+            guard r.ok else {
+                self.anotar(id, "⚠ Excel no respondió (\(r.texto)).")
+                return false
+            }
+            if r.texto == "sin libro" {
+                self.anotar(id, "⚠ La copia de trabajo no está abierta en Excel: pulsa «Colocar Excel».")
+                return false
+            }
+            let partes = r.texto.split(separator: "/").map { Int($0) ?? 0 }
+            let (hechas, activas) = (partes.first ?? 0, partes.count > 1 ? partes[1] : 0)
+            if activas == 0 {
+                self.anotar(id, "No hay líneas guía activadas en ningún gráfico.")
+            } else {
+                self.anotar(id, hechas == 0 ? "Las líneas guía ya tenían el formato de la guía."
+                            : "Líneas guía de \(hechas) serie\(hechas == 1 ? "" : "s") en blanco matiz 5 y 0,5 pt (guía, pág. 16). "
+                              + "Están en el Excel abierto: guarda el libro (⌘S) para conservarlas; cambiar de versión las descarta.")
+            }
+            return true
+        }
+    }
+
+    /// Al volver a la app (desde Excel), se revisan solas las líneas guía del libro abierto: si alguna activada
+    /// no tiene el formato de la guía, se corrige y se anota. Sin tareas en marcha y con espera corta.
+    func revisarLineasGuia() {
+        guard let ruta = trabajo, enCurso == nil, excel else { return }
+        Task {
+            let r = await osascript(Taller.guionLineasGuia, [ruta.path, Taller.copiaB(ruta).path], espera: 8)
+            let hechas = r.ok ? Int(r.texto.split(separator: "/").first ?? "") ?? 0 : 0
+            guard hechas > 0 else { return }
+            self.tarea("Líneas guía (al volver a la app)") { id in
+                self.anotar(id, "Líneas guía activadas en Excel corregidas solas: \(hechas) serie\(hechas == 1 ? "" : "s") "
+                            + "en blanco matiz 5 y 0,5 pt (guía, pág. 16). Guarda el libro (⌘S) para conservarlas.")
+                return true
+            }
+        }
     }
 
     // MARK: Publicaciones
@@ -709,7 +964,10 @@ struct Ventana: View {
                         }
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.horizontal, 20)
-                        .padding(.bottom, 18)
+                        .padding(.bottom, 14)
+                        TarjetaTerminar(taller: taller)
+                            .padding(.horizontal, 20)
+                            .padding(.bottom, 18)
                     }
                 }
                 Divider()
@@ -1025,8 +1283,14 @@ struct TarjetaVersiones: View {
                 Button { taller.colocarExcel() } label: { Label("Colocar Excel", systemImage: "rectangle.split.2x1") }
                     .controlSize(.small)
                     .help("Pone Excel a la derecha de la app, en la hoja «Gráfico» y con el gráfico entero a la vista")
+                Button { taller.lineasGuia() } label: { Label("Líneas guía", systemImage: "line.diagonal") }
+                    .controlSize(.small)
+                    .help("Da el formato de la guía (blanco matiz 5, 0,5 pt) a las líneas guía que hayas activado a mano en Excel")
             }
             .disabled(taller.enCurso != nil || taller.pasos.isEmpty)
+            Label("Si activas líneas guía en Excel, vuelve a la app (se corrigen solas) o pulsa «Líneas guía», y guarda el libro (⌘S).",
+                  systemImage: "info.circle")
+                .font(.system(size: 10.5)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             if let p = taller.pasoActual, !p.detalle.isEmpty {
                 VStack(alignment: .leading, spacing: 5) {
                     Rotulo("Cambios de la versión \(p.n)")
@@ -1046,6 +1310,48 @@ struct TarjetaVersiones: View {
                 .padding(10)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(RoundedRectangle(cornerRadius: 10).fill(colorVersiones.opacity(0.06)))
+            }
+        }
+    }
+}
+
+struct TarjetaTerminar: View {
+    @ObservedObject var taller: Taller
+    let color = Color(red: 0.55, green: 0.33, blue: 0.85)
+
+    var body: some View {
+        Tarjeta(numero: "FINAL", titulo: "Terminar", lema: "Comprueba que no falte nada del original y guarda el resultado",
+                icono: "checkmark.seal", color: color, trabajando: taller.enCurso != nil) {
+            HStack(alignment: .top, spacing: 14) {
+                Accion(icono: "doc.text.magnifyingglass", titulo: "Comparar con el original",
+                       detalle: "Textos, cifras y datos de todas las hojas frente al Excel del autor (no la colocación): avisa de lo que falte y de los cambios de cifras, fechas, trimestres, mayúsculas… No crea versión",
+                       color: color, principal: taller.comparacion.isEmpty) { taller.comparar() }
+                Accion(icono: "checkmark.circle", titulo: "Guardar como TERMINADO",
+                       detalle: taller.trabajo == nil ? "Guarda el resultado junto al original y borra las copias y las versiones"
+                           : "Guarda «\(taller.nombreTerminado)» junto al original y borra las copias de trabajo y la carpeta de versiones",
+                       color: color, principal: !taller.comparacion.isEmpty) { taller.terminar() }
+            }
+            .disabled(taller.trabajo == nil || taller.pasos.isEmpty || taller.enCurso != nil)
+            if !taller.comparacion.isEmpty {
+                VStack(alignment: .leading, spacing: 5) {
+                    Rotulo("Comparación con el original (versión \(taller.actual), lo guardado)")
+                    ForEach(taller.comparacion, id: \.self) { linea in
+                        let aviso = linea.hasPrefix("Aviso")
+                        let cambio = linea.hasPrefix("Cambio")
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Image(systemName: aviso ? "exclamationmark.triangle.fill" : cambio ? "arrow.left.arrow.right" : "circle.fill")
+                                .font(.system(size: aviso || cambio ? 10 : 4))
+                                .foregroundStyle(aviso ? Color.red : cambio ? Color.orange : color)
+                            Text(linea).font(.system(size: 11.5, weight: aviso ? .bold : .regular))
+                                .foregroundStyle(aviso ? Color.red : Color.primary)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .textSelection(.enabled)
+                        }
+                    }
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 10).fill(color.opacity(0.06)))
             }
         }
     }
