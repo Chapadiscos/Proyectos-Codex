@@ -17,6 +17,13 @@ maqueta en «Graficos Illus BdE», que no se toca desde aquí).
 - Siempre el mismo archivo porque Excel (aislado) pide permiso archivo a archivo: con cada versión en su
   propio archivo, cada paso nuevo era un archivo nuevo y Excel pedía permiso con una ventana «Abrir»
   («Conceder acceso») que el Organizador visual escondía. Ahora se pide una vez por trabajo.
+- Sin «Conceder acceso» (2026-11-05): con el permiso de **Accesibilidad**, la app abre los libros como desde
+  el Finder (`open -a`), y así macOS da a Excel permiso para ese archivo sin preguntar. Abierto así, Excel
+  pregunta por los vínculos externos («No actualizar / Actualizar»): la app pulsa sola «No actualizar»
+  mientras abre (`noActualizarVinculos`, por Accesibilidad), porque los vínculos externos no se actualizan
+  nunca. Sin Accesibilidad, se abre como antes (`open workbook … do not update links`, que sí pide acceso).
+  Excel guarda sus permisos archivo a archivo (`com.microsoft.Excel.securebookmarks.plist`, en su contenedor),
+  nunca por carpetas: por eso cada trabajo nuevo lo pedía.
 - La app habla con Excel dentro de sí misma (NSAppleScript); lanzar `osascript` en cada orden costaba
   segundos. No entra nunca en la carpeta de Office (`~/Library/Group Containers/UBF8T346G9.Office/`): es de
   otra app y macOS frena o pide permiso a quien entra (y como la app solo tiene firma local, la trata como
@@ -159,6 +166,11 @@ Las versiones hechas cuando retícula y textos eran dos pasos («Retícula y pas
      que ninguno estuviera así a propósito. No cuentan como cambio los negros escritos de otra forma (`tx1`,
      `dk1`, `black`, `windowText`); un `tx1` aclarado (gris) sí pasa a negro. La entrada invisible de la
      leyenda que pone el paso 2 (muestras anchas) sigue en blanco.
+   - FUENTES con fórmulas de Office (ecuaciones, como en «G_DO26XX_04»): el cuadro va dos veces dentro de
+     `<mc:AlternateContent>` (con la fórmula y en texto de reserva). Rehacer sus párrafos rompía el XML y Excel
+     daba el libro por dañado en todos los pasos; ahora solo se cambia la letra (Roboto Light 7 pt; el rótulo
+     en Medium, en las dos copias; las fórmulas, intactas) y se avisa para revisar a mano notas, líneas en
+     blanco y comillas (`fuentes_con_formulas`).
    - FUENTES, con las reglas de «Gráficos Illus BdE» (`setSourceFrameText` del generador V3):
      - rótulo FUENTE(S)/SOURCE(S)/NOTA(S) seguido de «:», «.» o espacio → en mayúsculas y con «: »; en inglés,
        FUENTE → SOURCE. FUENTE(S)/SOURCE(S) en Roboto Medium; NOTA(S) en Light. Si la primera línea no
@@ -348,6 +360,21 @@ Las versiones hechas cuando retícula y textos eran dos pasos («Retícula y pas
      grupos iguales, en el orden del archivo); los dibujados, siempre al 80 %. No entran en el orden de colores.
      Probado en Excel con una banda añadida al G_Trim_03 (no hay archivo de prueba con sombreados).
    - Pendiente: datos proyectados (fondo de otro color).
+
+### Sin eje vertical, valor sobre cada barra (apartado «Excepciones a los gráficos», en la tarjeta de los pasos)
+
+Para los gráficos de barras verticales que lo pidan (modelo: «G_DO26XX_04 TERMINADO ORIGINAL»). Motor:
+`sin_eje_vertical`; deja una versión nueva sobre la elegida (después de «Tamaño y colocación»; mejor al final).
+
+- El eje de valores vertical se borra, sin líneas de división ni marcas (`quitar_eje_vertical`).
+- Cada serie de barras lleva su valor encima («fuera, al final»), en Roboto 6 pt negra, con los decimales de
+  los datos del autor y separador de miles (como el TERMINADO: 0,33 y 29,67).
+- Si dos etiquetas vecinas quedan casi a la misma altura y se tocan (las barras son más estrechas que los
+  números), se apartan en horizontal lo justo, cada una hacia su lado (`separar_etiquetas_barras`).
+- El trazado empieza al principio de la columna (ya no hay números a la izquierda) y las unidades van a su
+  borde izquierdo (las de dentro del gráfico y las de la hoja).
+- Barras apiladas: aviso y sin tocar (Excel no admite «fuera, al final» en cada tramo). Si el gráfico tiene
+  además líneas o áreas a la vista, aviso. Sin ningún panel de barras verticales sin apilar, error.
 
 ### Terminar (tarjeta «Terminar», debajo de los pasos)
 

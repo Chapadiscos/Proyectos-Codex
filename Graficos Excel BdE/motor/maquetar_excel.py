@@ -736,7 +736,8 @@ def textos(z, estado):
                 detalle.append(f"  «{final.group(0).strip()}» al final del título, en Roboto Regular")
         elif tipo == "fuentes":
             a, notas = maquetar_fuentes(a, estado["idioma"])
-            detalle.append(f"Fuentes «{corto}»: Roboto Light 7 pt" + "".join(f"; {n}" for n in notas))
+            detalle.append(f"Fuentes «{corto}»: Roboto Light 7 pt" + "".join(f"; {n}" for n in notas if not n.startswith("Aviso")))
+            detalle += [n for n in notas if n.startswith("Aviso")]
         elif tipo == "unidades":
             a = fijar_letra(a, 700, ROBOTO)
             detalle.append(f"Unidades en la hoja «{corto}»: Roboto Regular 7 pt")
@@ -1090,6 +1091,49 @@ PPR_NOTA_LETRA = (f'<a:pPr marL="{SANGRIA_NOTA}" indent="-{SANGRIA_NOTA}" algn="
 EN_INGLES = {"FUENTE": "SOURCE", "FUENTES": "SOURCES"}
 
 
+RE_FORMULA = re.compile(r'<a14:m>.*?</a14:m>', re.S)
+
+
+def fuentes_con_formulas(ancla, idioma):
+    """FUENTES con fórmulas de Office (ecuaciones: el cuadro va dos veces, con la fórmula y en texto de
+    reserva, dentro de <mc:AlternateContent>). Rehacer los párrafos rompía el XML y Excel daba el libro por
+    dañado («G_DO26XX_04»): aquí solo se cambia la letra (Roboto Light 7 pt; el rótulo, en Medium; las
+    fórmulas no se tocan) y se avisa para revisar el resto a mano."""
+    trozos, ultimo = [], 0
+    for m in RE_FORMULA.finditer(ancla):
+        trozos.append(fijar_letra(ancla[ultimo:m.start()], 700, ROBOTO_LIGHT, True))
+        trozos.append(m.group(0))
+        ultimo = m.end()
+    trozos.append(fijar_letra(ancla[ultimo:], 700, ROBOTO_LIGHT, True))
+    ancla = "".join(trozos)
+    rotulos = []
+
+    def rotulo(mc):
+        # El rótulo de cada copia del cuadro (con fórmula y de reserva), en Roboto Medium y con «: »
+        cuerpo = mc.group(0)
+        r = re.search(r'<a:r>(<a:rPr\b.*?(?:/>|</a:rPr>))<a:t>([^<]*)</a:t></a:r>', cuerpo, re.S)
+        if not r:
+            return cuerpo
+        texto = html.unescape(r.group(2))
+        m = ROTULO.match(texto)
+        if not m:
+            return cuerpo
+        nombre = m.group(1).upper()
+        if idioma == "en":
+            nombre = EN_INGLES.get(nombre, nombre)
+        resto = texto[m.end():].lstrip()
+        rpr = r.group(1)
+        nuevo = (f'<a:r>{fijar_letra(rpr, 700, ROBOTO_MEDIUM, True) if not nombre.startswith("NOTA") else rpr}'
+                 f'<a:t>{nombre}:</a:t></a:r><a:r>{rpr}<a:t> {html.escape(resto, quote=False)}</a:t></a:r>')
+        rotulos.append(nombre + ":")
+        return cuerpo.replace(r.group(0), nuevo, 1)
+    ancla = re.sub(r'<xdr:txBody>.*?</xdr:txBody>', rotulo, ancla, flags=re.S)
+    notas = [f"rótulo {', '.join(dict.fromkeys(rotulos))}" if rotulos else "sin rótulo reconocido",
+             "Aviso: FUENTES lleva fórmulas: solo se ha cambiado la letra (las fórmulas, intactas); revisa a mano "
+             "las notas con letra, las líneas en blanco y las comillas"]
+    return ancla, notas
+
+
 def maquetar_fuentes(ancla, idioma):
     """El marco de FUENTES con las reglas de «Gráficos Illus BdE»:
     - Rótulo FUENTE(S)/SOURCE(S)/NOTA(S) en mayúsculas y con dos puntos; en inglés, FUENTE → SOURCE.
@@ -1099,6 +1143,8 @@ def maquetar_fuentes(ancla, idioma):
     - Una línea en blanco tras la fuente (salvo que siga una NOTA) y tras cada NOTA.
     Además, todo en Roboto Light 7 pt respetando el formato local del autor y, en castellano, comillas
     españolas y espacio (que no parte línea) entre la cifra y «%»; en inglés, «%» sin espacio."""
+    if "<mc:AlternateContent" in ancla or "oMath" in ancla:
+        return fuentes_con_formulas(ancla, idioma)
     quitar = todo_negrita(ancla)
     ancla = fijar_letra(ancla, 700, ROBOTO_LIGHT, quitar)
 
@@ -3054,8 +3100,10 @@ AIRE_ANILLO_ETIQUETA = 2       # del anillo a la etiqueta (pt)
 FILAS_BAJADA_TARTA = 2       # lo más que baja una tarta para que quepan sus etiquetas (filas de la retícula)
 LEJOS_DE_SU_PORCION = 4      # a partir de aquí (pt) la etiqueta lleva línea guía
 # Líneas guía de las etiquetas: blanco matiz 5, 0,5 pt (guía, pág. 16)
-LINEA_GUIA = ('<a:ln xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" w="6350" cap="flat"><a:solidFill>'
-              '<a:srgbClr val="FFFFFF"><a:lumMod val="50000"/></a:srgbClr></a:solidFill><a:miter lim="800000"/></a:ln>')
+# (Nombre propio: más abajo hay otra LINEA_GUIA, sin xmlns, que la pisaba y dejaba la capa de formas sin el
+# prefijo «a» declarado: XML mal formado en los pasos 2 y 3 de los anillos)
+LINEA_GUIA_CAPA = ('<a:ln xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" w="6350" cap="flat"><a:solidFill>'
+                   '<a:srgbClr val="FFFFFF"><a:lumMod val="50000"/></a:srgbClr></a:solidFill><a:miter lim="800000"/></a:ln>')
 SEPARACION_ETIQUETAS = 1.5   # aire mínimo entre los textos de dos etiquetas (pt)
 GIRO_MAXIMO_ETIQUETA = 30    # lo más que se gira una etiqueta a lo largo del anillo para no chocar (grados)
 
@@ -3419,7 +3467,7 @@ def linea_guia_grafico(x0, y0, x1, y1, ancho, alto, ident):
             '</cdr:nvCxnSpPr><cdr:spPr><a:xfrm xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"'
             f'{giro}><a:off x="0" y="0"/><a:ext cx="{round(abs(x1 - x0) * EMU_PT)}" cy="{round(abs(y1 - y0) * EMU_PT)}"/>'
             '</a:xfrm><a:prstGeom xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" prst="line">'
-            '<a:avLst/></a:prstGeom>' + LINEA_GUIA + '</cdr:spPr></cdr:cxnSp></cdr:relSizeAnchor>')
+            '<a:avLst/></a:prstGeom>' + LINEA_GUIA_CAPA + '</cdr:spPr></cdr:cxnSp></cdr:relSizeAnchor>')
 
 
 # ---------------------------------------------------------------- línea base
@@ -4411,6 +4459,220 @@ def paso5(trabajo, pid=None):
     detalle += aviso_separador_ingles(estado)
     return nuevo_paso(trabajo, TRAMAS_COLORES_LINEAS, cambios, detalle)
 
+# ---------------------------------------------------------------- herramienta: sin eje vertical
+
+SIN_EJE_VERTICAL = "Sin eje vertical, valor sobre cada barra"
+AIRE_TRAZADO_SIN_EJE = 1.0   # del borde del marco al trazado sin eje vertical (pt; en el TERMINADO, casi pegado)
+
+
+def quitar_eje_vertical(xml):
+    """Barras verticales sin eje vertical (como «G_DO26XX_04 TERMINADO ORIGINAL»): el eje de valores se borra
+    (sin líneas de división ni marcas) y cada barra lleva encima su valor, fuera al final, a 6 pt. Devuelve
+    (xml, notas, hecho)."""
+    notas = []
+    grupos = [g for g in GRUPOS.finditer(xml) if g.group(1) in TIPOS_BARRAS and not es_horizontal(g.group(0))]
+    if not grupos:
+        return xml, ["no tiene barras verticales: sin tocar"], False
+    apiladas = [g for g in grupos if re.search(r'<c:grouping val="(stacked|percentStacked)"/>', g.group(0))]
+    if apiladas:
+        return xml, ["Aviso: barras apiladas: Excel no deja poner el valor «fuera, al final» de cada tramo; "
+                     "sin tocar"], False
+    # Ejes de valores verticales a la vista: borrados, sin líneas de división ni marcas
+    def eje(m):
+        a = m.group(0)
+        if not re.search(r'<c:axPos val="[lr]"/>', a) or '<c:delete val="1"/>' in a:
+            return a
+        a = re.sub(r'<c:(major|minor)Gridlines\b.*?</c:\1Gridlines>|<c:(major|minor)Gridlines/>', "", a, flags=re.S)
+        a = re.sub(r'<c:delete val="\w+"/>', '<c:delete val="1"/>', a, count=1)
+        a = re.sub(r'<c:majorTickMark val="\w+"/>', '<c:majorTickMark val="none"/>', a, count=1)
+        notas.append("eje vertical borrado, sin líneas de división ni marcas")
+        return a
+    xml = re.sub(r'<c:valAx>.*?</c:valAx>', eje, xml, flags=re.S)
+    # Cada serie de barras, con su valor encima
+    etiquetas = ('<c:dLbls><c:spPr><a:noFill/><a:ln><a:noFill/></a:ln></c:spPr><c:txPr><a:bodyPr/><a:lstStyle/>'
+                 f'<a:p><a:pPr><a:defRPr sz="600" b="0">{NEGRO}<a:latin typeface="{ROBOTO}"/><a:ea typeface="{ROBOTO}"/>'
+                 '</a:defRPr></a:pPr><a:endParaRPr lang="es-ES"/></a:p></c:txPr><c:dLblPos val="outEnd"/>'
+                 '<c:showLegendKey val="0"/><c:showVal val="1"/><c:showCatName val="0"/><c:showSerName val="0"/>'
+                 '<c:showPercent val="0"/><c:showBubbleSize val="0"/></c:dLbls>')
+    con = []
+    for g in grupos:
+        bloque = g.group(0)
+        nuevo = bloque
+        for ser in re.findall(r'<c:ser>.*?</c:ser>', bloque, re.S):
+            if es_divisoria(ser) or es_muestra(ser) or clase_serie(g.group(1), ser) is None:
+                continue
+            # Los decimales de los datos del autor, con separador de miles (como en el TERMINADO: 0,33 y 29,67)
+            cache = re.search(r'<c:val>.*?<c:formatCode>([^<]*)</c:formatCode>', ser, re.S)
+            d = re.search(r'\.(0+)', html.unescape(cache.group(1))) if cache else None
+            pct = "%" if cache and "%" in cache.group(1) else ""
+            codigo = "#,##0" + ("." + d.group(1) if d else "") + pct
+            h = hijos(ser)
+            poner(h, ORDEN_SERIE[g.group(1)], "dLbls",
+                  etiquetas.replace("<c:dLbls>", f'<c:dLbls><c:numFmt formatCode="{codigo}" sourceLinked="0"/>', 1))
+            nuevo = nuevo.replace(ser, "<c:ser>" + "".join(t for _, t in h) + "</c:ser>", 1)
+            con.append(nombre_serie(ser))
+        xml = xml.replace(bloque, nuevo, 1)
+    notas.append("valor sobre cada barra (fuera, al final; Roboto 6 pt; con los decimales de los datos): "
+                 + ", ".join(f"«{c}»" for c in con))
+    # Líneas o áreas a la vista (no la línea base ni la serie invisible de la leyenda)
+    otras = [ser for g in GRUPOS.finditer(xml) if g.group(1) in ("lineChart", "scatterChart", "areaChart")
+             for ser in re.findall(r'<c:ser>.*?</c:ser>', g.group(0), re.S)
+             if clase_serie(g.group(1), ser, '<c:scatterStyle val="marker"/>' in g.group(0))]
+    if otras:
+        notas.append("Aviso: el gráfico tiene también líneas o áreas: sin eje vertical, comprueba que se entienden")
+    return xml, notas, True
+
+
+def separar_etiquetas_barras(xml, W, H, medir):
+    """Barras agrupadas con el valor encima: si dos etiquetas vecinas de la misma categoría quedan a casi la
+    misma altura y se tocan (las barras son más estrechas que los números), se apartan en horizontal lo justo,
+    cada una hacia su lado (como en el TERMINADO). Devuelve (xml, etiquetas movidas)."""
+    t = trazado_rel(xml)
+    grupo = next((g for g in GRUPOS.finditer(xml) if g.group(1) in TIPOS_BARRAS and not es_horizontal(g.group(0))), None)
+    if not t or not grupo or not medir:
+        return xml, 0
+    series = [s for s in re.findall(r'<c:ser>.*?</c:ser>', grupo.group(0), re.S) if "<c:dLbls>" in s]
+    if len(series) < 2:
+        return xml, 0
+    hueco = float(valor(re.search(r'<c:gapWidth val="[^"]+"/>', grupo.group(0)).group(0)) if '<c:gapWidth' in grupo.group(0) else 150)
+    valores = []
+    for s in series:
+        val = re.search(r'<c:val>.*?</c:val>', s, re.S)
+        valores.append({int(i): float(v) for i, v in re.findall(r'<c:pt idx="(\d+)"[^>]*>\s*<c:v>([^<]*)</c:v>', val.group(0) if val else "")
+                        if re.fullmatch(r'-?[\d.]+(E[-+]?\d+)?', v, re.I)})
+    ncat = max((max(v) + 1 for v in valores if v), default=0)
+    if not ncat:
+        return xml, 0
+    eje = next((e.group(0) for e in re.finditer(r'<c:valAx>.*?</c:valAx>', xml, re.S) if re.search(r'<c:axPos val="[lr]"/>', e.group(0))), "")
+    todos = [v for d in valores for v in d.values()]
+    mx = re.search(r'<c:max val="([^"]+)"/>', eje)
+    mn = re.search(r'<c:min val="([^"]+)"/>', eje)
+    tope = float(mx.group(1)) if mx else max(todos) * 1.1
+    base = float(mn.group(1)) if mn else min(0, min(todos))
+    alto_trazado, ancho_trazado = t[3] * H, t[2] * W
+    barra = ancho_trazado / ncat / (len(series) + hueco / 100)
+    codigos = [re.search(r'<c:dLbls>.*?<c:numFmt formatCode="([^"]*)"', s, re.S) for s in series]
+    desplaza = [dict() for _ in series]
+    for c in range(ncat):
+        presentes = [k for k in range(len(series)) if c in valores[k]]
+        if len(presentes) < 2:
+            continue
+        def ancho(k):
+            cod = html.unescape(codigos[k].group(1)) if codigos[k] else "General"
+            d = re.search(r'\.(0+)', cod)
+            texto = f"{valores[k][c]:,.{len(d.group(1)) if d else 0}f}"
+            return medir(texto, 6) + 1
+        # Centros de cada etiqueta, de izquierda a derecha; se empuja a la derecha lo que choca con la anterior
+        centros = {k: k * barra for k in presentes}
+        nuevos = dict(centros)
+        for a, b in zip(presentes, presentes[1:]):
+            dy = abs(valores[a][c] - valores[b][c]) * alto_trazado / (tope - base)
+            if dy >= 6 * INTERLINEA:
+                continue
+            falta = (ancho(a) + ancho(b)) / 2 + 1 - (nuevos[b] - nuevos[a])
+            if falta > 0:
+                for k in presentes[presentes.index(b):]:
+                    nuevos[k] += falta
+        # El grupo, centrado otra vez sobre sus barras
+        medio = sum(nuevos[k] - centros[k] for k in presentes) / len(presentes)
+        for k in presentes:
+            dx = nuevos[k] - centros[k] - medio
+            if abs(dx) > 0.2:
+                desplaza[k][c] = dx
+    movidas = 0
+    bloque = grupo.group(0)
+    nuevo_bloque = bloque
+    for k, s in enumerate(series):
+        if not desplaza[k]:
+            continue
+        dl = re.search(r'<c:dLbls>.*?</c:dLbls>', s, re.S).group(0)
+        general = [(n_, t_) for n_, t_ in hijos(dl) if n_ in ("numFmt", "spPr", "txPr", "dLblPos", "showLegendKey", "showVal",
+                                                           "showCatName", "showSerName", "showPercent", "showBubbleSize")]
+        propios = "".join(
+            f'<c:dLbl><c:idx val="{c}"/><c:layout><c:manualLayout><c:x val="{dx / W:.6f}"/><c:y val="0"/></c:manualLayout>'
+            '</c:layout>' + "".join(t_ for _, t_ in general) + '</c:dLbl>'
+            for c, dx in sorted(desplaza[k].items()))
+        nuevo_dl = dl.replace("<c:dLbls>", "<c:dLbls>" + propios, 1)
+        nuevo_bloque = nuevo_bloque.replace(s, s.replace(dl, nuevo_dl, 1), 1)
+        movidas += len(desplaza[k])
+    return xml.replace(bloque, nuevo_bloque, 1), movidas
+
+
+def sin_eje_vertical(trabajo, pid=None):
+    """Herramienta (botón de la app): en los paneles de barras verticales, el eje vertical se quita y cada barra
+    lleva su valor encima; el trazado se alarga hasta el principio de la columna (ya no hay números) y las
+    unidades van a su borde izquierdo. Deja una versión nueva."""
+    estado = leer_estado(trabajo)
+    _, pasos = nombres(trabajo)
+    base_archivo = pasos / estado["pasos"][estado["actual"]]["archivo"]
+    requiere(estado, ("Tamaño y colocación",), f"«{SIN_EJE_VERTICAL}»")
+    ret = CONFIG["reticula"]
+    with zipfile.ZipFile(PROYECTO / ret["archivo"]) as zr:
+        dibujo_ret = zr.read(dibujo_de_hoja(zr, ret["hoja"])).decode("utf-8")
+    anclas_ret = {nombre_forma(a.group(0)): a.group(0) for a in ANCLA.finditer(dibujo_ret)}
+    alto_pastilla = tamano(anclas_ret[ret["pastilla_modelo"]])[1]
+    ancho_ret = tamano(anclas_ret[ret["grupo"]], escala_grupo=True)[0]
+    cambios, detalle, hechos = {}, [], 0
+    medir = medidor()
+    with zipfile.ZipFile(base_archivo) as z:
+        ruta = dibujo_de_hoja(z, HOJA_GRAFICO)
+        dibujo = z.read(ruta).decode("utf-8")
+        relaciones = rels(z, ruta)
+        partes = list(partes_dibujo(dibujo))
+        caja = medidas_hoja(z, dibujo)
+        tipos = clasificar_textos(partes, caja, alto_pastilla, ancho_ret)
+        graficos = sorted((caja(a)[1], i, re.search(r'<c:chart\b[^>]*\br:id="([^"]+)"', a).group(1))
+                          for i, a in enumerate(partes) if ANCLA.fullmatch(a) and "<c:chart " in a)
+        for n, (_, ig, rid) in enumerate(graficos, 1):
+            ruta_graf = relaciones[rid][1]
+            xml = z.read(ruta_graf).decode("utf-8")
+            xml, notas, hecho = quitar_eje_vertical(xml)
+            if not hecho:
+                detalle += [(f"Aviso: panel {n}: " + t.split("Aviso: ", 1)[1]) if t.startswith("Aviso") else f"Panel {n}: {t}"
+                            for t in notas]
+                continue
+            hechos += 1
+            gx, gy, gw, gh = caja(partes[ig])
+            W, H = gw / EMU_PT, gh / EMU_PT
+            # El trazado empieza al principio de la columna: ya no hay números a la izquierda
+            t = trazado_rel(xml)
+            nuevo_x = AIRE_TRAZADO_SIN_EJE / W
+            if t:
+                fin = t[0] + t[2]
+                xml = re.sub(r'(<c:plotArea>\s*<c:layout>\s*<c:manualLayout>.*?<c:x val=")[^"]+("/>.*?<c:w val=")[^"]+(")',
+                             lambda m: f"{m.group(1)}{nuevo_x:.6f}{m.group(2)}{fin - nuevo_x:.6f}{m.group(3)}", xml,
+                             count=1, flags=re.S)
+            xml, movidas_et = separar_etiquetas_barras(xml, W, H, medir)
+            if movidas_et:
+                notas.append(f"{movidas_et} etiquetas apartadas a su lado para que no se monten con la de la barra vecina")
+            cambios[ruta_graf] = xml.encode("utf-8")
+            # Unidades, al borde izquierdo del trazado
+            movidas = []
+            ruta_formas = next((d for tp, d in rels(z, ruta_graf).values() if tp.endswith("/chartUserShapes")), None)
+            if ruta_formas:
+                formas = z.read(ruta_formas).decode("utf-8")
+                for u in unidades_de(formas, xml):
+                    x0, y0, x1, y1 = caja_rel(u)
+                    formas, _ = colocar_rel(formas, u, nuevo_x * W, y0 * H, (nuevo_x + x1 - x0) * W, y1 * H, W, H)
+                    movidas.append(html.unescape(texto_forma(u)).strip())
+                cambios[ruta_formas] = formas.encode("utf-8")
+            for iu in [i for i, (tp, g) in tipos.items() if tp == "unidades" and g == ig]:
+                a = partes[iu]
+                l, _, _, _ = margenes(a)
+                xu, yu, wu, hu = caja(a)
+                partes[iu] = colocar(a, gx + round(nuevo_x * gw) - l, yu, wu, hu)
+                movidas.append(html.unescape(texto_forma(a)).strip())
+            if movidas:
+                notas.append("unidades al borde izquierdo del trazado: " + ", ".join(f"«{m}»" for m in movidas))
+            notas.append("el trazado empieza al principio de la columna (sin números a la izquierda)")
+            detalle += [(f"Aviso: panel {n}: " + t.split("Aviso: ", 1)[1]) if t.startswith("Aviso") else f"Panel {n}: {t}"
+                        for t in notas]
+        cambios[ruta] = "".join(partes).encode("utf-8")
+    if not hechos:
+        raise Fallo("Ningún panel tiene barras verticales sin apilar: no hay eje vertical que quitar")
+    return nuevo_paso(trabajo, SIN_EJE_VERTICAL, cambios, detalle)
+
+
 # ---------------------------------------------------------------- comparar con el original y terminar
 
 FORMATOS_INTERNOS = {0: "General", 1: "0", 2: "0.00", 3: "#,##0", 4: "#,##0.00", 9: "0%", 10: "0.00%",
@@ -4994,7 +5256,7 @@ def info(archivo):
 
 
 def main(args):
-    ordenes = {"empezar": empezar, "estado": lambda t: {"trabajo": t, **leer_estado(t)}, "ir": ir, "reiniciar": reiniciar, "paso1": paso1, "paso2": paso2, "paso3": paso3, "paso4": paso4, "paso5": paso5, "comparar": comparar, "terminar": terminar, "info": info,
+    ordenes = {"empezar": empezar, "estado": lambda t: {"trabajo": t, **leer_estado(t)}, "ir": ir, "reiniciar": reiniciar, "paso1": paso1, "paso2": paso2, "paso3": paso3, "paso4": paso4, "paso5": paso5, "comparar": comparar, "sin_eje_vertical": sin_eje_vertical, "terminar": terminar, "info": info,
                "publicaciones": lambda: {}, "guardar_publicacion": guardar_publicacion, "borrar_publicacion": borrar_publicacion, "paletas": paletas}
     if not args or args[0] not in ordenes:
         print(__doc__, file=sys.stderr)

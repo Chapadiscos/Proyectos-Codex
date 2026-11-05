@@ -92,6 +92,11 @@ struct PasoMaquetacion: Identifiable {
     let orden: String
 }
 
+/// Herramienta puntual (no es un paso de todos los gráficos): se aplica cuando hace falta, sobre la versión elegida
+let herramientaSinEje = PasoMaquetacion(id: 0, titulo: "Sin eje vertical, valor sobre cada barra",
+    detalle: "Para gráficos de barras verticales que lo necesiten: quita el eje vertical (y sus líneas de división), pone el valor encima de cada barra (6 pt, con los decimales de los datos) apartando las que se montan, y alarga el trazado hasta el principio de la columna. Después de «Tamaño y colocación»; mejor al final.",
+    icono: "chart.bar.doc.horizontal", orden: "sin_eje_vertical")
+
 let pasosMaquetacion = [
     PasoMaquetacion(id: 1, titulo: "Retícula, pastilla y textos",
                     detalle: "Retícula y pastilla del archivo de retículas, en A1 y al fondo, con el color de la publicación; todo en Roboto: Gráfico NN y título con el marco de la plantilla; paneles, ejes, leyendas (en minúscula salvo siglas), unidades, interior y fuentes con su cuerpo; fechas, números de los ejes, (Escala dcha.), trimestres y dirección del eje horizontal (guía, págs. 10 y 11)",
@@ -167,6 +172,44 @@ func ejecutar(_ programa: String, _ argumentos: [String], espera: TimeInterval, 
             continuacion.resume(returning: (ok, texto.trimmingCharacters(in: .whitespacesAndNewlines)))
         }
     }
+}
+
+/// Mientras se abre un libro como desde el Finder: si Excel pregunta por los vínculos externos, se pulsa «No
+/// actualizar» (regla: los vínculos externos no se actualizan nunca). Con Accesibilidad; hasta que se cancela.
+func noActualizarVinculos() async {
+    let titulos: Set<String> = ["No actualizar", "Don't Update", "Don’t Update"]
+    while !Task.isCancelled {
+        if let excel = NSRunningApplication.runningApplications(withBundleIdentifier: idExcel).first {
+            let app = AXUIElementCreateApplication(excel.processIdentifier)
+            var valor: CFTypeRef?
+            if AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &valor) == .success,
+               let ventanas = valor as? [AXUIElement] {
+                for ventana in ventanas {
+                    if let boton = buscarBoton(en: ventana, titulos: titulos, nivel: 0) {
+                        AXUIElementPerformAction(boton, kAXPressAction as CFString)
+                    }
+                }
+            }
+        }
+        try? await Task.sleep(nanoseconds: 150_000_000)
+    }
+}
+
+func buscarBoton(en elemento: AXUIElement, titulos: Set<String>, nivel: Int) -> AXUIElement? {
+    if nivel > 4 { return nil }
+    var rol: CFTypeRef?, titulo: CFTypeRef?, hijos: CFTypeRef?
+    AXUIElementCopyAttributeValue(elemento, kAXRoleAttribute as CFString, &rol)
+    if (rol as? String) == kAXButtonRole as String {
+        AXUIElementCopyAttributeValue(elemento, kAXTitleAttribute as CFString, &titulo)
+        if let t = titulo as? String, titulos.contains(t) { return elemento }
+        return nil
+    }
+    guard AXUIElementCopyAttributeValue(elemento, kAXChildrenAttribute as CFString, &hijos) == .success,
+          let lista = hijos as? [AXUIElement] else { return nil }
+    for hijo in lista {
+        if let b = buscarBoton(en: hijo, titulos: titulos, nivel: nivel + 1) { return b }
+    }
+    return nil
 }
 
 /// Cola propia para los AppleScript: NSAppleScript no admite dos a la vez.
@@ -402,7 +445,7 @@ final class Taller: ObservableObject {
     func hacer(_ paso: PasoMaquetacion) {
         guard let trabajo else { return }
         let lanzar = {
-            self.tarea("\(paso.id). \(paso.titulo)") { id in
+            self.tarea(paso.id > 0 ? "\(paso.id). \(paso.titulo)" : paso.titulo) { id in
                 guard let r = await self.llamarMotor([paso.orden, trabajo.path, self.publicacion], registro: id) else { return false }
                 self.aplicar(r)
                 self.pasoActual?.detalle.forEach { self.anotar(id, "• " + $0) }
@@ -618,6 +661,28 @@ final class Taller: ObservableObject {
             for archivo in [ruta, Taller.copiaB(ruta)] { await Taller.fijarVentana(archivo, sitio) }
         }
         let guion = """
+        -- Se abre como desde el Finder («open»): así macOS da a Excel permiso para ese archivo y no pregunta.
+        -- Con «open workbook» Excel solo recibe la ruta y pide «Conceder acceso» por cada archivo nuevo.
+        on abrirLibro(rutaLibro, comoFinder)
+            if not comoFinder then
+                tell application "Microsoft Excel" to return open workbook workbook file name rutaLibro update links do not update links
+            end if
+            do shell script "open -g -a 'Microsoft Excel' " & quoted form of rutaLibro
+            set nombreLibro to do shell script "basename " & quoted form of rutaLibro
+            tell application "Microsoft Excel"
+                repeat 600 times
+                    try
+                        repeat with i from 1 to (count workbooks)
+                            if full name of workbook i is rutaLibro or name of workbook i is nombreLibro then return workbook i
+                        end repeat
+                    end try
+                    delay 0.1
+                end repeat
+                -- Si no llega (otro nombre de la ruta), como antes
+                return open workbook workbook file name rutaLibro update links do not update links
+            end tell
+        end abrirLibro
+
         on run argv
             set ruta to item 1 of argv
             set sitio to {(item 2 of argv) as integer, (item 3 of argv) as integer, (item 4 of argv) as integer, (item 5 of argv) as integer}
@@ -628,6 +693,7 @@ final class Taller: ObservableObject {
             set arrancar to (item 10 of argv) is "si"
             set rutaB to item 11 of argv
             set organizador to (item 12 of argv) is "si"
+            set comoFinder to (item 13 of argv) is "si"
             tell application "Microsoft Excel"
                 -- Recién arrancado en segundo plano, Excel no enseña sus ventanas hasta que se le activa
                 if arrancar then activate
@@ -647,9 +713,9 @@ final class Taller: ObservableObject {
                         if full name of viejo is ruta then set nueva to rutaB
                         if organizador then activate
                     end if
-                    set wb to open workbook workbook file name nueva update links do not update links
+                    set wb to my abrirLibro(nueva, comoFinder)
                 else if viejo is missing value then
-                    set wb to open workbook workbook file name ruta update links do not update links
+                    set wb to my abrirLibro(ruta, comoFinder)
                 else
                     set wb to viejo
                     activate object wb
@@ -691,15 +757,23 @@ final class Taller: ObservableObject {
         let vigilante = Task { @MainActor in
             do { try await Task.sleep(nanoseconds: 2_500_000_000) } catch { return }
             NSRunningApplication.runningApplications(withBundleIdentifier: idExcel).first?.activate()
-            anotar(id, "Excel tarda: si muestra una ventana «Abrir», pide permiso para «\(ruta.lastPathComponent)». Pulsa «Conceder acceso»: solo hace falta una vez por trabajo.")
+            anotar(id, AXIsProcessTrusted()
+                   ? "Excel tarda: si muestra alguna ventana, mírala en Excel."
+                   : "Excel tarda: si muestra una ventana «Abrir», pide permiso para «\(ruta.lastPathComponent)». Pulsa «Conceder acceso». Para que no lo pida más, da permiso a «Gráficos Excel BdE» en Ajustes del Sistema → Privacidad y seguridad → Accesibilidad.")
         }
         let arrancar = NSRunningApplication.runningApplications(withBundleIdentifier: idExcel).isEmpty
         // Excel delante antes de abrir la otra copia solo si su ventana ya está con la app (en su grupo): así la
         // nueva nace ahí. Si está en otro grupo, se abre sin más y luego se junta
         let excelConLaApp = organizadorVisual && excelSeVe()
+        // Con Accesibilidad, el libro se abre como desde el Finder (sin «Conceder acceso») y la app pulsa sola
+        // «No actualizar» en el aviso de vínculos externos que Excel saca entonces (nunca se actualizan)
+        let comoFinder = AXIsProcessTrusted()
+        let vinculos = comoFinder ? Task.detached { await noActualizarVinculos() } : nil
         let r = await osascript(guion, [ruta.path] + (sitio + medidas + [zoom]).map(String.init)
-                                + [recargar ? "si" : "no", arrancar ? "si" : "no", Taller.copiaB(ruta).path, excelConLaApp ? "si" : "no"],
+                                + [recargar ? "si" : "no", arrancar ? "si" : "no", Taller.copiaB(ruta).path, excelConLaApp ? "si" : "no",
+                                   comoFinder ? "si" : "no"],
                                 espera: 120)
+        vinculos?.cancel()
         vigilante.cancel()
         // La app vuelve delante para seguir con ⌘← y ⌘→, y con el Organizador visual se trae a su grupo la ventana
         // de Excel (que Excel crea en un grupo aparte, escondida en la tira de la izquierda)
@@ -1248,6 +1322,12 @@ struct TarjetaMaquetar: View {
                 }
             }
             .disabled(taller.trabajo == nil || taller.publicacionActual == nil || taller.enCurso != nil)
+            Rotulo("Excepciones a los gráficos")
+            let colocado = taller.pasos.contains { $0.titulo == "Tamaño y colocación" && $0.n <= taller.actual }
+            let hechaSinEje = taller.pasos.contains { $0.titulo == herramientaSinEje.titulo && $0.n <= taller.actual }
+            Accion(icono: herramientaSinEje.icono, titulo: herramientaSinEje.titulo, detalle: herramientaSinEje.detalle,
+                   color: colorApp, principal: false, marca: hechaSinEje ? "checkmark.circle.fill" : nil) { taller.hacer(herramientaSinEje) }
+                .disabled(taller.trabajo == nil || taller.publicacionActual == nil || taller.enCurso != nil || !colocado)
             Label("Siguientes pasos: los iremos añadiendo", systemImage: "ellipsis")
                 .font(.system(size: 10.5)).foregroundStyle(.tertiary)
         }
