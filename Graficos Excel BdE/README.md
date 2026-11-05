@@ -426,6 +426,23 @@ Tartas, anillos y subgráficos (`pieChart`, `pie3DChart`, `doughnutChart`, `ofPi
 - Unidades de la hoja: solo las que están arriba (hasta 12 mm por debajo del borde del gráfico) y a la
   izquierda; el resto es texto interior.
 
+## Macros personales de Excel (Mac)
+
+`PERSONAL.XLSB` (Windows) adaptado a Mac en `macros/MacrosBdE.bas` (2026-11-05): 18 macros (tramas y colores
+de serie, líneas y marcadores, Roboto Light/Medium/Regular, «PlanosIngles») con sus atajos. Cambios para Mac:
+- El tema de colores BdE_2026 se carga en Mac desde la carpeta de temas de Office (`…/User Content.localized/
+  Themes.localized/Theme Colors/BdE_2026.xml`, sacada de `Application.StartupPath`); en Windows, de `Y:\` como
+  antes (`#If Mac`). Si no está, la macro sigue (`CargarTemaBdE`).
+- «PlanosIngles» ya no usa `VBScript.RegExp` (solo Windows): «Q3 2024» → «2024 Q3» con `TrimestreDetras`.
+- Textos con tilde en `ChrW(…)` (el editor de VBA de Mac no lee bien la codificación de un .bas).
+
+Instalado como libro personal de macros: «Personal Macro Workbook» (binario, oculto) en
+`~/Library/Group Containers/UBF8T346G9.Office/User Content.localized/Startup.localized/Excel/`; Excel lo abre
+al arrancar. Para cambiarlo: editor de VBA → «VBAProject (Personal Macro Workbook)» → quitar el módulo e
+importar el .bas de nuevo → ⌘S. Atajos: en Windows Ctrl+Mayús+letra; en Mac los muestra Herramientas › Macro ›
+Macros › Opciones. No mandar pulsaciones de teclado por System Events con el usuario delante: van a la ventana
+que tenga en primer plano.
+
 ## Publicaciones
 
 En `motor/publicaciones.json`:
