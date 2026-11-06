@@ -817,6 +817,7 @@ struct Ventana: View {
 
 struct BarraLateral: View {
     @ObservedObject var taller: Taller
+    @Environment(\.openWindow) private var abrirVentana
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -858,6 +859,11 @@ struct BarraLateral: View {
                     .disabled(taller.enCurso != nil)
                 }
                 Text("Estilos y maqueta con los que se importa y se corrige").font(.system(size: 10.5)).foregroundStyle(.tertiary)
+                Button { abrirVentana(id: "claude") } label: {
+                    Label("Afinar con Claude…", systemImage: "sparkles").frame(maxWidth: .infinity)
+                }
+                .disabled(taller.publicacionActual == nil)
+                .help("Conversa con Claude para dejar mejor definida esta publicación: su configuración y los estilos de su maqueta")
             }
 
             VStack(alignment: .leading, spacing: 8) {
@@ -1517,6 +1523,7 @@ final class Delegado: NSObject, NSApplicationDelegate {
 struct CrearPublicacionApp: App {
     @NSApplicationDelegateAdaptor(Delegado.self) private var delegado
     @StateObject private var taller = Taller()
+    @StateObject private var asistente = Asistente()
 
     var body: some Scene {
         Window("Crear Publicación", id: "principal") {
@@ -1524,6 +1531,11 @@ struct CrearPublicacionApp: App {
                 .frame(minWidth: 1100, minHeight: 700)
         }
         .defaultSize(width: 1240, height: 880)
+        Window("Afinar con Claude", id: "claude") {
+            VentanaClaude(taller: taller, asistente: asistente)
+                .frame(minWidth: 520, minHeight: 480)
+        }
+        .defaultSize(width: 680, height: 780)
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("Importar Word…") { taller.elegirWord() }.keyboardShortcut("i")
