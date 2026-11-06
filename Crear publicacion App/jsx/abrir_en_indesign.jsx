@@ -6,8 +6,10 @@
 
 #targetengine "formatear_word"
 
+var ARGS = arguments;      // dentro de una función, «arguments» son los de la función
+
 (function () {
-    var jsx = File(arguments[0]), nombre = arguments[1], publicacion = arguments[2];
+    var jsx = File(ARGS[0]), nombre = ARGS[1], publicacion = ARGS[2];
     if (!jsx.exists) return "No encuentro " + jsx.fsName;
     if (nombre) {
         var d = app.documents.itemByName(nombre);

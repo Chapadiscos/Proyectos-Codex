@@ -118,6 +118,53 @@ struct Pregunta: Identifiable {
     let hacer: () -> Void
 }
 
+/// Los pasos de un capítulo, en orden: la app lleva cuáles están hechos en cada documento para
+/// que no se quede ninguno sin hacer (como los pasos de «Gráficos Excel BdE»)
+enum PasoCapitulo: String, CaseIterable, Identifiable {
+    case galerada, seccion, marcas, correcciones, dudas, revisarDudas, cierre
+
+    var id: String { rawValue }
+    var orden: Int { PasoCapitulo.allCases.firstIndex(of: self)! }
+
+    var titulo: String {
+        switch self {
+        case .galerada: return "Galerada"
+        case .seccion: return "Sección"
+        case .marcas: return "Recorrer marcas"
+        case .correcciones: return "Correcciones"
+        case .dudas: return "Buscar dudas"
+        case .revisarDudas: return "Revisar dudas"
+        case .cierre: return "Finalizar"
+        }
+    }
+
+    var seccion: Seccion {
+        switch self {
+        case .galerada, .seccion, .marcas: return .galerada
+        case .correcciones, .dudas, .revisarDudas: return .tipografia
+        case .cierre: return .cierre
+        }
+    }
+
+    /// Se hacen en una ventana de InDesign: la app no sabe cuándo terminan y hay que confirmarlo
+    var seConfirma: Bool { self == .marcas || self == .revisarDudas || self == .cierre }
+}
+
+/// Marcador y prefijo de la primera sección de un documento (la cornisa suele tomarlos)
+struct SeccionDoc: Identifiable {
+    let id = UUID()
+    let documento: String
+    let marcador: String
+    let prefijo: String
+    let incluyePrefijo: Bool
+    let trasImportar: Bool
+
+    /// Número del capítulo según el nombre del documento: «2.9 Lipofilling.indd» → «2.9»
+    var numeroCapitulo: String? {
+        documento.range(of: #"^\d+(\.\d+)*"#, options: .regularExpression).map { String(documento[$0]) }
+    }
+}
+
 /// Word elegidos o arrastrados, a la espera de confirmar la publicación
 struct Importacion: Identifiable {
     let id = UUID()
@@ -245,6 +292,10 @@ final class Taller: ObservableObject {
     @Published var actualizando: Publicacion?
     @Published var informe: InformeActualizacion?
     @Published var importacion: Importacion?
+    @Published var seccion: SeccionDoc?
+    /// Pasos hechos de cada documento (nombre → paso → fecha) y el que espera confirmación
+    @Published var recorrido: [String: [String: Date]] = [:]
+    @Published var porConfirmar: [String: PasoCapitulo] = [:]
 
     private var proceso: Process?
     private var detenido = false
@@ -255,6 +306,8 @@ final class Taller: ObservableObject {
     init() {
         if let datos = UserDefaults.standard.data(forKey: "estados"),
            let e = try? JSONDecoder().decode([String: [String: Hecho]].self, from: datos) { estados = e }
+        if let datos = UserDefaults.standard.data(forKey: "recorrido"),
+           let r = try? JSONDecoder().decode([String: [String: Date]].self, from: datos) { recorrido = r }
         cargarPublicaciones()
         actualizarDocumentos()
         Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
@@ -627,8 +680,54 @@ final class Taller: ObservableObject {
         if let datos = try? JSONEncoder().encode(estados) { UserDefaults.standard.set(datos, forKey: "estados") }
     }
 
-    /// Abre una ventana del motor dentro de InDesign con el documento elegido delante
-    func abrirEnInDesign(_ jsx: String, _ titulo: String, _ seccion: Seccion) {
+    // MARK: Recorrido del capítulo
+
+    func hecho(_ p: PasoCapitulo, _ doc: String?) -> Bool {
+        guard let doc else { return false }
+        return recorrido[doc]?[p.rawValue] != nil
+    }
+
+    func marcar(_ p: PasoCapitulo, _ docs: [String], hecho: Bool = true) {
+        for doc in docs {
+            recorrido[doc, default: [:]][p.rawValue] = hecho ? Date() : nil
+            if porConfirmar[doc] == p { porConfirmar[doc] = nil }
+        }
+        if let datos = try? JSONEncoder().encode(recorrido) { UserDefaults.standard.set(datos, forKey: "recorrido") }
+    }
+
+    /// Documentos a los que afecta una acción: el elegido o todos los abiertos
+    var docsDestino: [String] { nombreDestino.map { [$0] } ?? documentos.map(\.nombre) }
+
+    func siguiente(_ doc: String?) -> PasoCapitulo? {
+        PasoCapitulo.allCases.first { !hecho($0, doc) }
+    }
+
+    /// «Ojo, faltan…» para los documentos con pasos anteriores sin hacer (solo los que lleva la app)
+    func pendientesAntes(_ p: PasoCapitulo) -> String {
+        let lineas = docsDestino.compactMap { doc -> String? in
+            guard recorrido[doc] != nil else { return nil }
+            let faltan = PasoCapitulo.allCases.filter { $0.orden < p.orden && !hecho($0, doc) }
+            return faltan.isEmpty ? nil : "«\(doc)»: " + faltan.map(\.titulo).joined(separator: ", ")
+        }
+        return lineas.isEmpty ? "" : "\n\nOjo, pasos anteriores sin hacer:\n" + lineas.joined(separator: "\n")
+    }
+
+    /// Lanza el paso (el botón «Siguiente» y los del recorrido)
+    func lanzar(_ p: PasoCapitulo) {
+        switch p {
+        case .galerada: elegirWord()
+        case .seccion: seccionDelDestino()
+        case .marcas: abrirEnInDesign("recorrer_marcas.jsx", "Recorrer marcas", .galerada, paso: .marcas)
+        case .correcciones: aplicarCorrecciones()
+        case .dudas: buscarDudas()
+        case .revisarDudas: abrirEnInDesign("revisar_dudas.jsx", "Revisar dudas", .tipografia, paso: .revisarDudas)
+        case .cierre: abrirEnInDesign("revisar_cierre.jsx", "Revisar cierre", .cierre, paso: .cierre)
+        }
+    }
+
+    /// Abre una ventana del motor dentro de InDesign con el documento elegido delante; si es un
+    /// paso del recorrido, queda esperando a que el usuario confirme que lo ha terminado
+    func abrirEnInDesign(_ jsx: String, _ titulo: String, _ seccion: Seccion, paso: PasoCapitulo? = nil) {
         guard enCurso == nil else {
             aviso = Aviso(titulo: "Hay un paso en marcha", texto: "Espera a que termine «\(ejecucionEnCurso?.titulo ?? "")».")
             return
@@ -654,6 +753,7 @@ final class Taller: ObservableObject {
             ejecuciones[i].texto += ok ? "La ventana está abierta en InDesign: sigue allí." : (r.texto.isEmpty ? "InDesign no ha respondido." : r.texto)
             ejecuciones[i].fin = Date()
             ejecuciones[i].ok = ok
+            if ok, let paso, !hecho(paso, documento) { porConfirmar[documento] = paso }
         }
     }
 
@@ -697,8 +797,64 @@ final class Taller: ObservableObject {
             " con «\(publicacionActual?.nombre ?? "")»"
         ejecutar(.galerada, titulo, accion: "Galerada montada", documento: i.nombre + ".indd",
                  programa: "importar.py", args: i.words.map(\.path) + ["--publicacion", publicacion]) { [weak self] ok in
-            if ok { self?.destino = .documento(i.nombre + ".indd") }
+            guard ok, let self else { return }
+            self.destino = .documento(i.nombre + ".indd")
+            // Galerada nueva: el recorrido del capítulo empieza de cero
+            self.recorrido[i.nombre + ".indd"] = nil
+            self.porConfirmar[i.nombre + ".indd"] = nil
+            self.marcar(.galerada, [i.nombre + ".indd"])
+            // La cornisa suele tomar el marcador y el prefijo de sección: preguntar si se cambian
+            self.pedirSeccion(i.nombre + ".indd", trasImportar: true)
         }
+    }
+
+    // MARK: Sección
+
+    private func guionSeccion(_ documento: String, _ extra: [String]) -> String {
+        let jsx = proyecto.appendingPathComponent("jsx/seccion.jsx").path
+        return """
+        with timeout of 60 seconds
+        tell application id "com.adobe.InDesign" to do script (POSIX file \(cadenaAS(jsx))) language javascript with arguments {\(([documento] + extra).map(cadenaAS).joined(separator: ", "))}
+        end timeout
+        """
+    }
+
+    /// Lee el marcador y el prefijo de sección del documento y abre la hoja para cambiarlos
+    func pedirSeccion(_ documento: String, trasImportar: Bool) {
+        Task {
+            let r = await osascript(guionSeccion(documento, ["leer"]), espera: 60)
+            let partes = r.texto.components(separatedBy: "\t")
+            guard r.ok, partes.count >= 2, !r.texto.hasPrefix("ERROR") else {
+                if !trasImportar { aviso = Aviso(titulo: "No se puede leer la sección", texto: r.texto.isEmpty ? "InDesign no responde." : r.texto) }
+                return
+            }
+            seccion = SeccionDoc(documento: documento, marcador: partes[0], prefijo: partes[1],
+                                 incluyePrefijo: partes.count > 2 && partes[2] == "true", trasImportar: trasImportar)
+        }
+    }
+
+    func seccionDelDestino() {
+        guard let a = argsDocumento(admiteTodos: false) else { return }
+        pedirSeccion(a[1], trasImportar: false)
+    }
+
+    func ponerSeccion(_ s: SeccionDoc, marcador: String, prefijo: String) {
+        Task {
+            let r = await osascript(guionSeccion(s.documento, ["poner", marcador, prefijo]), espera: 60)
+            var e = Ejecucion(seccion: .galerada, titulo: "Sección de «\(s.documento)»", accion: "Sección cambiada", documento: s.documento)
+            e.ok = r.ok && !r.texto.hasPrefix("ERROR")
+            e.texto = e.ok == true ? "Marcador de sección: «\(marcador)»\nPrefijo de sección: «\(prefijo)»\nLa numeración de páginas no cambia."
+                                   : (r.texto.isEmpty ? "InDesign no responde." : r.texto)
+            e.fin = Date()
+            ejecuciones.append(e)
+            vista = e.id
+            if e.ok == true { marcar(.seccion, [s.documento]) }
+        }
+    }
+
+    /// «Dejar como está» tras importar también cuenta como sección revisada
+    func dejarSeccion(_ s: SeccionDoc) {
+        if s.trasImportar { marcar(.seccion, [s.documento]) }
     }
 
     // MARK: Tipografía
@@ -711,24 +867,31 @@ final class Taller: ObservableObject {
 
     func aplicarCorrecciones() {
         guard let a = argsDocumento(admiteTodos: true) else { return }
+        let docs = docsDestino, faltan = pendientesAntes(.correcciones)
         pregunta = Pregunta(titulo: "¿Aplicar las correcciones seguras?",
-                            texto: "En \(textoDestino). Cada documento se deshace con un Cmd+Z.", boton: "Aplicar") { [weak self] in
+                            texto: "En \(textoDestino). Cada documento se deshace con un Cmd+Z." + faltan,
+                            boton: faltan.isEmpty ? "Aplicar" : "Aplicar igualmente") { [weak self] in
             guard let self else { return }
             self.ejecutar(.tipografia, "Aplicando correcciones en \(self.textoDestino)", accion: "Correcciones aplicadas",
-                          documento: self.nombreDestino, programa: "ortotipografia.py", args: a + ["--aplicar", "--maqueta", self.publicacion])
+                          documento: self.nombreDestino, programa: "ortotipografia.py", args: a + ["--aplicar", "--maqueta", self.publicacion]) { [weak self] ok in
+                if ok { self?.marcar(.correcciones, docs) }
+            }
         }
     }
 
     func buscarDudas() {
         guard let a = argsDocumento(admiteTodos: true) else { return }
+        let docs = docsDestino, faltan = pendientesAntes(.dudas)
         pregunta = Pregunta(titulo: "¿Buscar dudas?",
-                            texto: "En \(textoDestino). Se vuelven a marcar todas: lo que no hayas revisado de una pasada anterior vuelve a aparecer.",
-                            boton: "Buscar") { [weak self] in
+                            texto: "En \(textoDestino). Se vuelven a marcar todas: lo que no hayas revisado de una pasada anterior vuelve a aparecer." + faltan,
+                            boton: faltan.isEmpty ? "Buscar" : "Buscar igualmente") { [weak self] in
             guard let self else { return }
             var args = a + ["--marcar", "--maqueta", self.publicacion]
             if self.conClaude { args.append("--claude") }
             self.ejecutar(.tipografia, "Buscando dudas en \(self.textoDestino)" + (self.conClaude ? " (con Claude)" : ""),
-                          accion: "Dudas marcadas", documento: self.nombreDestino, programa: "dudas.py", args: args)
+                          accion: "Dudas marcadas", documento: self.nombreDestino, programa: "dudas.py", args: args) { [weak self] ok in
+                if ok { self?.marcar(.dudas, docs) }
+            }
         }
     }
 
@@ -736,9 +899,20 @@ final class Taller: ObservableObject {
 
     func cierre(aplicar: Bool) {
         guard let a = argsDocumento(admiteTodos: true) else { return }
-        ejecutar(.cierre, (aplicar ? "Finalizando " : "Simulando el cierre de ") + textoDestino,
-                 accion: aplicar ? "Capítulo finalizado" : "Cierre simulado", documento: nombreDestino,
-                 programa: "finalizar.py", args: a + (aplicar ? ["--aplicar"] : []) + ["--publicacion", publicacion])
+        let docs = docsDestino
+        let hacer = { [weak self] in
+            guard let self else { return }
+            self.ejecutar(.cierre, (aplicar ? "Finalizando " : "Simulando el cierre de ") + self.textoDestino,
+                          accion: aplicar ? "Capítulo finalizado" : "Cierre simulado", documento: self.nombreDestino,
+                          programa: "finalizar.py", args: a + (aplicar ? ["--aplicar"] : []) + ["--publicacion", self.publicacion]) { [weak self] ok in
+                if ok && aplicar { self?.marcar(.cierre, docs) }
+            }
+        }
+        // Finalizar sin confirmación (norma del usuario), salvo si quedan pasos sin hacer
+        let faltan = aplicar ? pendientesAntes(.cierre) : ""
+        if faltan.isEmpty { hacer() }
+        else { pregunta = Pregunta(titulo: "¿Finalizar con pasos sin hacer?", texto: "En \(textoDestino)." + faltan,
+                                   boton: "Finalizar igualmente", hacer: hacer) }
     }
 }
 
@@ -758,6 +932,7 @@ struct Ventana: View {
                 ScrollView {
                     VStack(spacing: 0) {
                         Cabecera(taller: taller)
+                        RecorridoCapitulo(taller: taller)
                         // Las tres tarjetas, a la altura de la más alta
                         HStack(alignment: .top, spacing: 14) {
                             ForEach(Seccion.allCases) { s in
@@ -809,6 +984,9 @@ struct Ventana: View {
         }
         .sheet(item: $taller.importacion) { i in
             HojaImportar(taller: taller, importacion: i)
+        }
+        .sheet(item: $taller.seccion) { s in
+            HojaSeccion(taller: taller, seccion: s)
         }
     }
 }
@@ -1025,6 +1203,111 @@ struct Cabecera: View {
     }
 }
 
+// MARK: - Recorrido del capítulo
+
+/// Los siete pasos del capítulo elegido: hechos (✓), el siguiente resaltado y un botón para
+/// lanzarlo. Con clic derecho se marca o desmarca un paso a mano.
+struct RecorridoCapitulo: View {
+    @ObservedObject var taller: Taller
+
+    var body: some View {
+        if let doc = taller.nombreDestino {
+            let sig = taller.siguiente(doc)
+            let conocido = taller.recorrido[doc] != nil
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 0) {
+                    ForEach(PasoCapitulo.allCases) { p in
+                        PasoRecorrido(paso: p, hecho: taller.hecho(p, doc), siguiente: p == sig,
+                                      esperando: taller.porConfirmar[doc] == p) { taller.lanzar(p) }
+                            .contextMenu {
+                                if taller.hecho(p, doc) {
+                                    Button("Marcar como pendiente") { taller.marcar(p, [doc], hecho: false) }
+                                } else {
+                                    Button("Marcar como hecho") { taller.marcar(p, [doc]) }
+                                }
+                            }
+                        if p != PasoCapitulo.allCases.last {
+                            Rectangle()
+                                .fill(taller.hecho(p, doc) ? p.seccion.color.opacity(0.6) : Color.primary.opacity(0.12))
+                                .frame(height: 2)
+                                .frame(maxWidth: .infinity)
+                                .padding(.bottom, 18)
+                        }
+                    }
+                }
+                HStack(spacing: 10) {
+                    if let p = taller.porConfirmar[doc] {
+                        Label("¿Has terminado «\(p.titulo)» en InDesign?", systemImage: "hourglass")
+                            .font(.system(size: 12, weight: .medium))
+                        Button("Marcar como hecho") { taller.marcar(p, [doc]) }
+                            .controlSize(.small)
+                    } else if let s = sig {
+                        Text(conocido ? "Siguiente paso:" : "Este documento no se importó con la app: marca con clic derecho lo que ya esté hecho, o sigue por:")
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Button { taller.lanzar(s) } label: {
+                            Label(s.titulo, systemImage: "arrow.right.circle.fill")
+                        }
+                        .controlSize(.small)
+                        .tint(s.seccion.color)
+                        .buttonStyle(.borderedProminent)
+                        .disabled(taller.enCurso != nil)
+                    } else {
+                        Label("Capítulo terminado: todos los pasos hechos", systemImage: "checkmark.seal.fill")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Seccion.cierre.color)
+                    }
+                    Spacer()
+                }
+            }
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 14).fill(Color(nsColor: .controlBackgroundColor)))
+            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.primary.opacity(0.07)))
+            .padding(.horizontal, 20)
+            .padding(.bottom, 14)
+        }
+    }
+}
+
+struct PasoRecorrido: View {
+    let paso: PasoCapitulo
+    let hecho: Bool
+    let siguiente: Bool
+    let esperando: Bool
+    let hacer: () -> Void
+
+    var body: some View {
+        let color = paso.seccion.color
+        Button(action: hacer) {
+            VStack(spacing: 5) {
+                ZStack {
+                    Circle()
+                        .fill(hecho ? AnyShapeStyle(color.gradient) : AnyShapeStyle(Color.clear))
+                        .overlay(Circle().strokeBorder(hecho ? Color.clear : (siguiente || esperando ? color : Color.primary.opacity(0.2)),
+                                                       lineWidth: siguiente || esperando ? 2.5 : 1.5))
+                    if hecho {
+                        Image(systemName: "checkmark").font(.system(size: 12, weight: .bold)).foregroundStyle(.white)
+                    } else if esperando {
+                        Image(systemName: "hourglass").font(.system(size: 11, weight: .semibold)).foregroundStyle(color)
+                    } else {
+                        Text("\(paso.orden + 1)").font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(siguiente ? color : Color.secondary)
+                    }
+                }
+                .frame(width: 26, height: 26)
+                Text(paso.titulo)
+                    .font(.system(size: 10.5, weight: siguiente ? .semibold : .regular))
+                    .foregroundStyle(hecho || siguiente ? Color.primary : Color.secondary)
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(hecho ? "Hecho · clic para repetirlo, clic derecho para desmarcarlo" : "Clic para hacerlo · clic derecho para marcarlo como hecho")
+    }
+}
+
 // MARK: - Tarjetas
 
 struct TarjetaSeccion: View {
@@ -1106,26 +1389,28 @@ struct TarjetaSeccion: View {
                     return true
                 }
                 Accion(icono: "flag.2.crossed", titulo: "Recorrer marcas…", detalle: "Las dudas de la importación en orden de página, con su motivo",
-                       color: color, enInDesign: true) { taller.abrirEnInDesign("recorrer_marcas.jsx", "Recorrer marcas", .galerada) }
+                       color: color, enInDesign: true, hecho: taller.hecho(.marcas, taller.nombreDestino)) { taller.lanzar(.marcas) }
+                Accion(icono: "number.square", titulo: "Sección…", detalle: "Marcador y prefijo de sección, los que suele tomar la cornisa",
+                       color: color, hecho: taller.hecho(.seccion, taller.nombreDestino)) { taller.seccionDelDestino() }
             }
         case .tipografia:
             VStack(alignment: .leading, spacing: 4) {
                 Rotulo("Correcciones seguras")
                 Accion(icono: "eye", titulo: "Revisar una a una…", detalle: "Antes y después de cada corrección, para aceptarla u omitirla",
-                       color: color, enInDesign: true) { taller.abrirEnInDesign("revisar_correcciones.jsx", "Revisar correcciones", .tipografia) }
+                       color: color, enInDesign: true) { taller.abrirEnInDesign("revisar_correcciones.jsx", "Revisar correcciones", .tipografia, paso: .correcciones) }
                 Accion(icono: "number", titulo: "Contar cambios", detalle: "Lo que cambiaría cada regla, sin tocar nada",
                        color: color) { taller.contarCorrecciones() }
                 Accion(icono: "wand.and.stars", titulo: "Aplicar correcciones", detalle: "Todas las reglas seguras de golpe (Cmd+Z lo deshace)",
-                       color: color, principal: true) { taller.aplicarCorrecciones() }
+                       color: color, principal: true, hecho: taller.hecho(.correcciones, taller.nombreDestino)) { taller.aplicarCorrecciones() }
                 Rotulo("Dudas").padding(.top, 8)
                 Accion(icono: "questionmark.bubble", titulo: "Buscar dudas", detalle: "Tildes, palabras desconocidas, extranjerismos, cursivas…",
-                       color: color) { taller.buscarDudas() }
+                       color: color, hecho: taller.hecho(.dudas, taller.nombreDestino)) { taller.buscarDudas() }
                 Toggle(isOn: $taller.conClaude) {
                     Label("Con propuestas de Claude", systemImage: "sparkles").font(.system(size: 11.5))
                 }
                 .toggleStyle(.switch).controlSize(.mini).padding(.leading, 48)
                 Accion(icono: "list.bullet.rectangle", titulo: "Revisar dudas…", detalle: "Recorrerlas y cambiar u omitir cada una",
-                       color: color, enInDesign: true) { taller.abrirEnInDesign("revisar_dudas.jsx", "Revisar dudas", .tipografia) }
+                       color: color, enInDesign: true, hecho: taller.hecho(.revisarDudas, taller.nombreDestino)) { taller.lanzar(.revisarDudas) }
             }
         case .cierre:
             VStack(alignment: .leading, spacing: 4) {
@@ -1154,10 +1439,12 @@ struct TarjetaSeccion: View {
                 .padding(10)
                 .background(RoundedRectangle(cornerRadius: 10).fill(color.opacity(0.06)))
                 .padding(.bottom, 8)
-                Accion(icono: "eye", titulo: "Simular cierre", detalle: "Cuenta lo que cambiaría, sin tocar nada",
+                Accion(icono: "eye", titulo: "Revisar una a una…", detalle: "Cada cambio con su antes y después, para aplicarlo u omitirlo",
+                       color: color, enInDesign: true) { taller.abrirEnInDesign("revisar_cierre.jsx", "Revisar cierre", .cierre, paso: .cierre) }
+                Accion(icono: "number", titulo: "Simular cierre", detalle: "Cuenta lo que cambiaría, sin tocar nada",
                        color: color) { taller.cierre(aplicar: false) }
                 Accion(icono: "checkmark.seal.fill", titulo: "Finalizar capítulo", detalle: "Aplica el cierre (Cmd+Z lo deshace)",
-                       color: color, principal: true) { taller.cierre(aplicar: true) }
+                       color: color, principal: true, hecho: taller.hecho(.cierre, taller.nombreDestino)) { taller.cierre(aplicar: true) }
             }
         }
     }
@@ -1229,6 +1516,7 @@ struct Accion: View {
     let color: Color
     var principal = false
     var enInDesign = false
+    var hecho = false               // paso del recorrido ya hecho en este documento
     let hacer: () -> Void
     @State private var encima = false
     @Environment(\.isEnabled) private var activa
@@ -1247,6 +1535,10 @@ struct Accion: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 2)
+                if hecho {
+                    Image(systemName: "checkmark.circle.fill").font(.system(size: 13)).foregroundStyle(color)
+                        .help("Hecho en este documento")
+                }
                 if enInDesign {
                     Image(systemName: "arrow.up.forward.app").font(.system(size: 11)).foregroundStyle(.tertiary)
                         .help("Se abre en una ventana de InDesign")
@@ -1418,6 +1710,74 @@ struct HojaActualizar: View {
         }
         .padding(22)
         .frame(width: 560)
+    }
+}
+
+struct HojaSeccion: View {
+    @ObservedObject var taller: Taller
+    let seccion: SeccionDoc
+    @State private var marcador = ""
+    @State private var prefijo = ""
+    @Environment(\.dismiss) private var cerrar
+
+    var body: some View {
+        let color = Seccion.galerada.color
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10).fill(color.gradient)
+                    Image(systemName: "number.square").font(.system(size: 18, weight: .semibold)).foregroundStyle(.white)
+                }
+                .frame(width: 40, height: 40)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(seccion.trasImportar ? "¿Cambiar la sección del documento nuevo?" : "Sección del documento").font(.title3.bold())
+                    Text("«\(seccion.documento)» · la cornisa suele tomar estos valores").font(.callout).foregroundStyle(.secondary)
+                }
+            }
+            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 10) {
+                GridRow {
+                    Text("Marcador de sección").foregroundStyle(.secondary)
+                    TextField("", text: $marcador).textFieldStyle(.roundedBorder).frame(width: 240)
+                }
+                GridRow {
+                    Text("Prefijo de sección").foregroundStyle(.secondary)
+                    TextField("", text: $prefijo).textFieldStyle(.roundedBorder).frame(width: 240)
+                }
+            }
+            if let n = seccion.numeroCapitulo, n != marcador {
+                Button {
+                    // El número de la maqueta («1», «Capítulo 1», «1-») cambia por el del capítulo
+                    func cambiar(_ s: String) -> String {
+                        guard let r = s.range(of: #"\d+(\.\d+)*"#, options: .regularExpression) else { return s }
+                        return s.replacingCharacters(in: r, with: n)
+                    }
+                    marcador = seccion.marcador.isEmpty ? n : cambiar(seccion.marcador)
+                    prefijo = cambiar(seccion.prefijo)
+                } label: { Label("Usar el número del capítulo: \(n)", systemImage: "wand.and.stars") }
+                .controlSize(.small)
+            }
+            Text("Antes: marcador «\(seccion.marcador)», prefijo «\(seccion.prefijo)»\(seccion.incluyePrefijo ? " (se incluye en el número de página)" : ""). La numeración de páginas no cambia.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Spacer()
+                Button(seccion.trasImportar ? "Dejar como está" : "Cancelar", role: .cancel) {
+                    taller.dejarSeccion(seccion)
+                    cerrar()
+                }.keyboardShortcut(.cancelAction)
+                Button("Aplicar") {
+                    taller.ponerSeccion(seccion, marcador: marcador, prefijo: prefijo)
+                    cerrar()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(marcador == seccion.marcador && prefijo == seccion.prefijo)
+            }
+        }
+        .padding(22)
+        .frame(width: 500)
+        .onAppear {
+            marcador = seccion.marcador
+            prefijo = seccion.prefijo
+        }
     }
 }
 
