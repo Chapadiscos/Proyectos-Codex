@@ -284,9 +284,21 @@
         M.cargar(i);
     };
 
+    // Terminar: avisa a la app Crear Publicación de que el paso está hecho en este documento
+    // (una línea «documento<TAB>paso» en informes/pasos-terminados.txt, que la app lee y borra)
+    function avisarTerminado(doc, paso) {
+        try {
+            if (!doc || !doc.isValid) return;
+            Folder(RAIZ + "/informes").create();
+            var f = File(RAIZ + "/informes/pasos-terminados.txt");
+            f.encoding = "UTF-8"; f.lineFeed = "Unix";
+            f.open("a"); f.write(doc.name + "\t" + paso + "\n"); f.close();
+        } catch (e) {}
+    }
     // Terminar: se cierra sin tocar nada; al volver a abrirla se leen de nuevo las marcas que queden.
     bTerminar.onClick = function () {
         try { if (M.doc && M.doc.isValid) M.doc.select(NothingEnum.NOTHING); } catch (e) {}
+        avisarTerminado(M.doc, "marcas");
         M.destruir();
     };
 

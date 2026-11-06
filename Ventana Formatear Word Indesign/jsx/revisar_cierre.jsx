@@ -248,8 +248,20 @@
         C.cargar(0);
         if (errores.length) alert("No se pudieron hacer " + errores.length + ":\n" + errores.slice(0, 8).join("\n"));
     };
+    // Terminar: avisa a la app Crear Publicación de que el paso está hecho en este documento
+    // (una línea «documento<TAB>paso» en informes/pasos-terminados.txt, que la app lee y borra)
+    function avisarTerminado(doc, paso) {
+        try {
+            if (!doc || !doc.isValid) return;
+            Folder(RAIZ + "/informes").create();
+            var f = File(RAIZ + "/informes/pasos-terminados.txt");
+            f.encoding = "UTF-8"; f.lineFeed = "Unix";
+            f.open("a"); f.write(doc.name + "\t" + paso + "\n"); f.close();
+        } catch (e) {}
+    }
     bTerminar.onClick = function () {
         try { if (C.doc && C.doc.isValid) C.doc.select(NothingEnum.NOTHING); } catch (e) {}
+        avisarTerminado(C.doc, "cierre");
         C.destruir();
     };
 

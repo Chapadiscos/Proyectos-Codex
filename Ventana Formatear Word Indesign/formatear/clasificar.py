@@ -11,7 +11,7 @@ RE_AUTORES = re.compile(r'^\s*Autor(?:es|as|a)?\s*:\s*', re.I)
 # También con el número del ladillo escrito delante: «5. BIBLIOGRAFÍA»
 RE_BIBLIO = re.compile(r'^\s*(?:\d+(?:\.\d+)*\.?\s+)?(bibliograf[ií]a|referencias?(\s+bibliogr[aá]ficas?)?)\s*\.?\s*:?\s*$', re.I)
 RE_IDEAS = re.compile(r'^\s*ideas\s+b[aá]sicas', re.I)
-RE_MATERIAL = re.compile(r'^\s*((leyendas?|pies?)\s+de\s+(las\s+)?(figuras|im[aá]genes)|figuras(\s+y\s+tablas)?|tablas(\s+y\s+figuras)?)\s*\.?\s*:?\s*$', re.I)
+RE_MATERIAL = re.compile(r'^\s*((leyendas?|pies?)(\s+de\s+(las\s+)?(figuras?|im[aá]genes))?|figuras(\s+y\s+tablas)?|tablas(\s+y\s+figuras)?)\s*\.?\s*:?\s*$', re.I)
 RE_FIGURA = re.compile(r'^\s*Fig(?:ura|s)?\.?\s*(\d+)\s*([A-Za-z])?\b', re.I)
 RE_ETIQUETAS = re.compile(r'^\s*(Fig(?:ura)?\.?\s*\d+\s*[A-Za-z]?\s*)+$', re.I)
 RE_TABLA = re.compile(r'^\s*Tabla\s+(\d+)', re.I)
@@ -206,6 +206,8 @@ def clasificar(doc, negritas_con_vineta='auto', cabecera='', ladillos_mayusculas
         elementos[:] = _cabecera_articulo(elementos)
     if quitar_filiaciones:
         _quitar_filiaciones(elementos)
+    _titulo_capitulo(elementos)
+    _pies_sin_rotulo(elementos)
     _titulos_bajo_tabla(elementos)
     _saltos_sobrantes(elementos)
     if ladillos_numerados:
@@ -224,6 +226,58 @@ def clasificar(doc, negritas_con_vineta='auto', cabecera='', ladillos_mayusculas
 def _es_title(estilo):
     """Estilo «Title» / «Título» (sin número) de Word: el título del documento."""
     return bool(re.match(r'^\s*(title|t[ií]tulo)\s*$', estilo or '', re.I))
+
+
+RE_NUM_TITULO = re.compile(r'^\s*\d+(?:\.\d+)*\.?\s+(?=\S)')
+
+
+def _titulo_capitulo(elementos):
+    """Título del capítulo. Si no se ha reconocido por su estilo y el primer párrafo va justo
+    antes de los autores («5.1 Técnicas de…» en «Normal» + «Autores: …»), es el título. Y el
+    título va sin la numeración del Word («4.1 Trabeculectomía…» → «Trabeculectomía…»): el
+    número del capítulo no se pone en la portadilla (norma para todas las publicaciones)."""
+    textos = [e for e in elementos if e.texto.strip()]
+    if not any(e.papel in ('titulo', 'capitulo') for e in textos[:3]) and len(textos) > 1 \
+            and textos[1].papel == 'autores' and textos[0].papel in ('texto', 'ladillo1', 'ladillo2', 'ladillo3') \
+            and len(textos[0].texto) <= 400:
+        t = textos[0]
+        t.papel = 'titulo'
+        t.notas.append('primer párrafo, justo antes de los autores: título del capítulo')
+        if t.texto.rstrip().endswith('.'):
+            t.trozos = _quitar_final(t.trozos, 1)
+    for e in textos[:3]:
+        if e.papel == 'titulo':
+            m = RE_NUM_TITULO.match(e.texto)
+            if m:
+                e.trozos = limpiar_bordes(quitar_inicio(e.trozos, m.end()))[0]
+                e.notas.append('quitado el número «%s» del título' % m.group(0).strip())
+            break
+
+
+RE_PIE_SERIE = re.compile(r'^\s*Fig(?:ura)?\.?\s*(\d+)\s*[A-Za-z]?\s*[.:\-–]\s*\S')
+
+
+def _pies_sin_rotulo(elementos):
+    """Pies de figura al final del texto sin rótulo («Figura 1. Blefarostato…», «Figura 2. …»):
+    una serie de dos o más párrafos seguidos que empiezan por «Figura N.» con N creciente."""
+    k = 0
+    while k < len(elementos):
+        serie, j, ultimo = [], k, 0
+        while j < len(elementos) and elementos[j].papel == 'texto':
+            m = RE_PIE_SERIE.match(elementos[j].texto)
+            if not m or int(m.group(1)) < ultimo:
+                break
+            ultimo = int(m.group(1))
+            serie.append(elementos[j])
+            j += 1
+        if len(serie) >= 2:
+            for e in serie:
+                e.papel = 'pie_figura'
+                e.datos['figuras'] = ids_figura(e.texto)
+                e.notas.append('serie de pies «Figura N.» sin rótulo delante')
+            k = j
+        else:
+            k += 1
 
 
 def _nivel_titulo(estilo):

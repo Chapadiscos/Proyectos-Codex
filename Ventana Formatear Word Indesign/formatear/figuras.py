@@ -8,9 +8,23 @@ EXTENSIONES = ('.jpg', '.jpeg', '.png', '.tif', '.tiff', '.psd', '.eps', '.ai', 
 RE_ARCHIVO = re.compile(r'fig(?:ura)?\s*\.?\s*(\d+)\s*([a-z])?(?![a-z])', re.I)
 
 
+# Firmas de los formatos de imagen, para los archivos que llegan sin extensión («Figura 1»)
+FIRMAS = (b'\xff\xd8\xff', b'\x89PNG', b'II*\x00', b'MM\x00*', b'8BPS', b'%PDF')
+
+
+def _imagen_sin_extension(ruta):
+    if os.path.splitext(ruta)[1] or not os.path.isfile(ruta):
+        return False
+    try:
+        with open(ruta, 'rb') as f:
+            return f.read(4).startswith(FIRMAS)
+    except OSError:
+        return False
+
+
 def archivos_imagen(carpeta):
-    return sorted(f for f in os.listdir(carpeta)
-                  if f.lower().endswith(EXTENSIONES) and not f.startswith('.'))
+    return sorted(f for f in os.listdir(carpeta) if not f.startswith('.') and
+                  (f.lower().endswith(EXTENSIONES) or _imagen_sin_extension(os.path.join(carpeta, f))))
 
 
 def id_archivo(nombre):

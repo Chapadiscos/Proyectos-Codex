@@ -234,6 +234,8 @@
     var hueco = gBot.add("group"); hueco.alignment = ["fill", "center"];
     var bTodas = gBot.add("button", undefined, "Aceptar todas las propuestas");
     bTodas.helpTip = "Hace lo que propone Claude en todas las dudas pendientes (un solo Cmd+Z)";
+    var bTerminar = gBot.add("button", undefined, "Terminar");
+    bTerminar.helpTip = "Cierra la ventana y da el paso «Revisar dudas» por hecho en la app";
 
     var FORMATOS = ["", "cursiva", "negrita_cursiva", "redonda", "no_partir"];
 
@@ -361,6 +363,24 @@
         if (errores.length) alert("No se pudieron hacer " + errores.length + ":\n" + errores.slice(0, 8).join("\n"));
     };
 
+    // Terminar: avisa a la app Crear Publicación de que el paso está hecho en este documento
+    // (una línea «documento<TAB>paso» en informes/pasos-terminados.txt, que la app lee y borra)
+    function avisarTerminado(doc, paso) {
+        try {
+            if (!doc || !doc.isValid) return;
+            Folder(RAIZ + "/informes").create();
+            var f = File(RAIZ + "/informes/pasos-terminados.txt");
+            f.encoding = "UTF-8"; f.lineFeed = "Unix";
+            f.open("a"); f.write(doc.name + "\t" + paso + "\n"); f.close();
+        } catch (e) {}
+    }
+    // Terminar: se cierra sin tocar nada (las dudas que queden siguen marcadas en el texto)
+    bTerminar.onClick = function () {
+        try { if (R.doc && R.doc.isValid) R.doc.select(NothingEnum.NOTHING); } catch (e) {}
+        avisarTerminado(R.doc, "revisarDudas");
+        R.destruir();
+    };
+
     w.onActivate = function () {
         if (app.documents.length && (!R.doc || !R.doc.isValid || R.doc.id != app.activeDocument.id)) R.cargar();
     };
@@ -368,7 +388,7 @@
 
     // Para probar desde fuera (#targetengine "formatear_word"): R.lista, R.botones, R.sinPreguntar.
     R.lista = lista;
-    R.botones = { cambiar: bCambiar, omitir: bOmitir, diccionario: bDic, todas: bTodas };
+    R.botones = { cambiar: bCambiar, omitir: bOmitir, diccionario: bDic, todas: bTodas, terminar: bTerminar };
     R.campos = { nuevo: nuevoTxt, formato: formato };
     R.destruir = function () { try { w.close(); } catch (e) {} $.global.revisorDudas = null; };
     R.cargar();

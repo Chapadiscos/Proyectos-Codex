@@ -127,6 +127,9 @@ function colocar(d, c) {
         // En la portadilla cabe menos: si sobra texto, más páginas como la segunda (lo mismo
         // que hace importar.jsx)
         var ultimo = principal.textContainers[principal.textContainers.length - 1], nuevas = 0;
+        // Con el origen en la página, los marcos de una página impar nueva caen fuera de ella:
+        // las páginas se añaden con el origen del pliego (como importar.jsx)
+        d.viewPreferences.rulerOrigin = RulerOrigin.SPREAD_ORIGIN;
         if (ultimo.overflows && d.pages.length > 1) {
             var pInt = d.pages[1], bi = pInt.bounds, plantilla = [], cols = pInt.textFrames.everyItem().getElements();
             cols.sort(function (x, y) { return x.geometricBounds[1] - y.geometricBounds[1]; });
