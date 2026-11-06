@@ -749,11 +749,19 @@ final class Taller: ObservableObject {
         Task {
             let r = await osascript(guion, espera: 300)
             guard let i = ejecuciones.firstIndex(where: { $0.id == e.id }) else { return }
-            let ok = r.ok && r.texto == "ok"
-            ejecuciones[i].texto += ok ? "La ventana está abierta en InDesign: sigue allí." : (r.texto.isEmpty ? "InDesign no ha respondido." : r.texto)
+            let ok = r.ok && (r.texto == "ok" || r.texto.hasPrefix("ok "))
+            let cuenta = ok && r.texto.hasPrefix("ok ") ? Int(r.texto.dropFirst(3)) : nil
+            if cuenta == 0 {
+                // Nada que recorrer (Recorrer marcas sin marcas): el paso queda hecho sin preguntar
+                ejecuciones[i].texto += "No hay ninguna marca en «\(documento)»: no hay nada que recorrer, el paso queda hecho."
+                if let paso { marcar(paso, [documento]) }
+            } else {
+                ejecuciones[i].texto += ok ? "La ventana está abierta en InDesign: sigue allí." + (cuenta.map { " (\($0) marcas)" } ?? "")
+                                           : (r.texto.isEmpty ? "InDesign no ha respondido." : r.texto)
+                if ok, let paso, !hecho(paso, documento) { porConfirmar[documento] = paso }
+            }
             ejecuciones[i].fin = Date()
             ejecuciones[i].ok = ok
-            if ok, let paso, !hecho(paso, documento) { porConfirmar[documento] = paso }
         }
     }
 
