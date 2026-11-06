@@ -231,6 +231,7 @@
         }
         M.doc = app.activeDocument;
         M.marcas = buscarMarcas(M.doc);
+        $.global.formatearWordCuenta = M.marcas.length;     // la app Crear Publicación lo lee
         motivos(M.doc, M.marcas);
         titulo.text = M.doc.name + ": " + M.marcas.length + " marcas";
         var cuenta = {}, nombres = [];

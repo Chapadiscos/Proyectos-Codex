@@ -33,7 +33,7 @@ class Trozo:
 class Parrafo:
     trozos: list
     estilo_word: str = ''
-    lista: tuple = None    # (numId, nivel, formato, símbolo) si tiene numeración de Word
+    lista: tuple = None    # (numId, nivel, formato, símbolo, empieza en) si tiene numeración de Word
     sangria: int = 0       # sangría izquierda efectiva en twips (1 cm = 567)
     imagenes: list = field(default_factory=list)   # rutas dentro del .docx
     origen: str = 'cuerpo'  # 'cuerpo' | 'nota final N'
@@ -126,18 +126,25 @@ class Documento:
             niveles = {}
             for lvl in a.findall(W + 'lvl'):
                 niveles[int(lvl.get(W + 'ilvl'))] = (_val(lvl, 'numFmt', ''), _val(lvl, 'lvlText', ''),
-                                                     _sangria(lvl.find(W + 'pPr')))
+                                                     _sangria(lvl.find(W + 'pPr')), int(_val(lvl, 'start', '1') or 1))
             abstractos[a.get(W + 'abstractNumId')] = niveles
             if _val(a, 'numStyleLink'):
                 enlaces[a.get(W + 'abstractNumId')] = _val(a, 'numStyleLink')
         num_abs = {n.get(W + 'numId'): _val(n, 'abstractNumId') for n in raiz.iter(W + 'num')}
+        # «Empieza en»: el del nivel (w:start) o el que lo cambia para este num (w:startOverride)
+        inicio = {}
+        for n in raiz.iter(W + 'num'):
+            for o in n.findall(W + 'lvlOverride'):
+                if _val(o, 'startOverride'):
+                    inicio[(n.get(W + 'numId'), int(o.get(W + 'ilvl')))] = int(_val(o, 'startOverride'))
         for nid, aid in num_abs.items():
             # Una lista que enlaza a un estilo de numeración toma los niveles del
             # num que ese estilo tiene asignado.
             if aid in enlaces and enlaces[aid] in self.estilos:
                 numpr = self.estilos[enlaces[aid]]['numpr']
                 aid = num_abs.get(_val(numpr, 'numId'), aid)
-            self.listas[nid] = abstractos.get(aid, {})
+            self.listas[nid] = {k: v[:3] + (inicio.get((nid, k), v[3]),)
+                                for k, v in abstractos.get(aid, {}).items()}
 
     # ---- cuerpo ---------------------------------------------------------
     def _leer_cuerpo(self):
@@ -198,8 +205,8 @@ class Documento:
             nid = _val(numpr, 'numId')
             nivel = int(_val(numpr, 'ilvl', '0'))
             if nid and nid != '0':
-                fmt = self.listas.get(nid, {}).get(nivel, ('', '', None))
-                par.lista = (nid, nivel, fmt[0], fmt[1])
+                fmt = self.listas.get(nid, {}).get(nivel, ('', '', None, 1))
+                par.lista = (nid, nivel, fmt[0], fmt[1], fmt[3])     # …, empieza en
                 if fmt[2] is not None:
                     par.sangria = fmt[2]
         directa = _sangria(ppr)

@@ -6,6 +6,7 @@ InDesign coloca el ICML aplicando los estilos del documento que tengan el mismo 
 """
 import re
 import unicodedata
+from dataclasses import replace
 from xml.sax.saxutils import escape, quoteattr
 
 from . import citas as mod_citas
@@ -60,6 +61,28 @@ def ref_condicion(nombre):
 
 LISTA = ('lista_num', 'vineta', 'texto_vineta')
 NIVEL_LADILLO = {'ladillo1': 1, 'titulo_bibliografia': 1, 'ladillo2': 2, 'ladillo3': 3}
+
+
+SANGRAR_AQUI = '\ue007'     # marca interna: en el ICML, el carácter «Sangrar aquí» (<?ACE 7?>)
+RE_NUMERO_LADILLO = re.compile(r'^\s*\d+(?:\.\d+)*\.?\s+(?=\S)')
+
+
+def sangrar_tras_numero(trozos):
+    """«3. Pasos» → «3. ⟨Sangrar aquí⟩Pasos»: si el ladillo pasa a otra línea, se alinea con el
+    texto y no con el número (norma para todas las publicaciones)."""
+    m = RE_NUMERO_LADILLO.match(''.join(t.texto for t in trozos))
+    if not m:
+        return trozos
+    res, n = [], m.end()
+    for t in trozos:
+        if n is not None and n <= len(t.texto):
+            res.append(replace(t, texto=t.texto[:n] + SANGRAR_AQUI + t.texto[n:]))
+            n = None
+            continue
+        res.append(t)
+        if n is not None:
+            n -= len(t.texto)
+    return res
 
 
 def continua_numeracion(visibles, k):
@@ -152,7 +175,9 @@ class Generador:
         texto = t.texto.replace('\n', ' ')
         if t.duda:
             self.anotar(t.duda, texto)
-        return '<CharacterStyleRange%s>%s<Content>%s</Content></CharacterStyleRange>' % (attrs, nota, escape(texto))
+        contenido = '<Content>%s</Content>' % escape(texto)
+        contenido = contenido.replace(SANGRAR_AQUI, '<?ACE 7?>')     # dentro de <Content>, como InDesign
+        return '<CharacterStyleRange%s>%s%s</CharacterStyleRange>' % (attrs, nota, contenido)
 
     def anotar(self, motivo, texto):
         """Apunta una duda para la ventana «Recorrer marcas» (el nombre de la condición, ya con
@@ -241,6 +266,8 @@ class Generador:
             # (norma para todas las publicaciones)
             if anterior is not None and NIVEL_LADILLO.get(e.papel, 0) > NIVEL_LADILLO.get(anterior.papel, 9):
                 attrs += ' SpaceBefore="0"'
+            if e.papel in NIVEL_LADILLO:
+                trozos = sangrar_tras_numero(trozos)
             quitar = e.papel in SIN_NEGRITA
             partes.append(self.parrafo_xml(estilo, trozos, e.dudas, attrs, ultimo=k == len(visibles) - 1,
                                            quitar_negrita=quitar, numerada=e.papel == 'lista_num'))
@@ -423,7 +450,7 @@ ALFABETOS_RAROS = ('HEBREW', 'ARABIC', 'CYRILLIC', 'CJK', 'HANGUL', 'THAI', 'DEV
 
 def _caracter_raro(c):
     """Caracteres que en un texto en español suelen ser un error del autor o de Word."""
-    if c in '\t\n\u2028':
+    if c in '\t\n\u2028' + SANGRAR_AQUI:     # la marca de «Sangrar aquí» es nuestra
         return False
     cat = unicodedata.category(c)
     if cat in ('Co', 'Cn', 'Cc', 'Cs'):

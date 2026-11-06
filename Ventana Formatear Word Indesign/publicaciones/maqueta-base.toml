@@ -99,6 +99,9 @@ rango_minimo = 3      # 3,4,5 → 3-5 ; 3,4 → 3,4
 guion        = "–"    # raya corta (norma para todas las publicaciones)
 
 [reglas]
+# Autores: solo nombre y apellidos; las filiaciones (llamadas voladas, centro de trabajo,
+# párrafos de filiación de debajo) se quitan. Es la norma para todas las publicaciones.
+quitar_filiaciones = true
 # Negritas cortas que en Word llevan viñeta: "auto" decide por capítulo (ladillo si
 # detrás suele ir texto corrido, viñeta en negrita si detrás suelen ir viñetas);
 # "ladillo" o "vineta" lo fuerzan para toda la publicación.

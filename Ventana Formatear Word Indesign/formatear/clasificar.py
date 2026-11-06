@@ -128,12 +128,14 @@ def _expandir_figuras(bloques):
 
 
 def clasificar(doc, negritas_con_vineta='auto', cabecera='', ladillos_mayusculas=False,
-               ladillos_estilo_word=False, ladillos_numerados=False):
+               ladillos_estilo_word=False, ladillos_numerados=False, quitar_filiaciones=True):
     """Devuelve (elementos, modo): modo es cómo se han tratado las negritas con viñeta.
     cabecera="articulo": el Word empieza con título, autores, resumen… de un artículo de revista.
     ladillos_mayusculas: una línea corta toda en mayúsculas, aunque no vaya en negrita, es ladillo.
     ladillos_estilo_word: los párrafos con estilo «Título 2/3/4» de Word son ladillos 1/2/3
-    aunque no vayan en negrita; ladillos_numerados: con su número de Word («1. Indicación»)."""
+    aunque no vayan en negrita; ladillos_numerados: con su número de Word («1. Indicación»).
+    quitar_filiaciones: de los autores solo quedan nombres y apellidos (sin llamadas voladas ni
+    centro de trabajo, ni los párrafos de filiación de debajo)."""
     elementos = []
     zona = 'texto'          # 'texto' | 'ideas' | 'bibliografia' | 'material'
     bloques = _expandir_figuras(doc.bloques)
@@ -202,15 +204,26 @@ def clasificar(doc, negritas_con_vineta='auto', cabecera='', ladillos_mayusculas
 
     if cabecera == 'articulo':
         elementos[:] = _cabecera_articulo(elementos)
+    if quitar_filiaciones:
+        _quitar_filiaciones(elementos)
     _titulos_bajo_tabla(elementos)
     _saltos_sobrantes(elementos)
+    if ladillos_numerados:
+        _ladillos_de_su_lista(elementos)
     _ladillos_en_listas(elementos)
     modo = _negritas_con_vineta(elementos, negritas_con_vineta)
-    _niveles_vinetas(elementos, modo)
     _caja_ladillos(elementos)
     if ladillos_numerados:
         _numerar_ladillos(elementos)
+    _numeradas_a_mano(elementos)
+    _niveles_vinetas(elementos, modo)
+    _ladillos_sin_signo_final(elementos)
     return elementos, modo
+
+
+def _es_title(estilo):
+    """Estilo «Title» / «Título» (sin número) de Word: el título del documento."""
+    return bool(re.match(r'^\s*(title|t[ií]tulo)\s*$', estilo or '', re.I))
 
 
 def _nivel_titulo(estilo):
@@ -226,21 +239,27 @@ def _titulos_word(bloques):
     es el ladillo 1, el siguiente el 2 y el siguiente el 3."""
     parrafos = [b for b in bloques if isinstance(b, Parrafo) and b.texto.strip()]
     titulo = None
+    if parrafos and _es_title(parrafos[0].estilo_word):
+        return parrafos[0], _rango_titulos(parrafos, parrafos[0])     # «Title»: el título
     for b in parrafos:
         n = _nivel_titulo(b.estilo_word)
         if n == 1:
             titulo = b
         if n or titulo:
             break
+    return titulo, _rango_titulos(parrafos, titulo)
+
+
+def _rango_titulos(parrafos, titulo):
     niveles = sorted({_nivel_titulo(b.estilo_word) for b in parrafos if b is not titulo} - {0})
-    return titulo, {n: min(k + 1, 3) for k, n in enumerate(niveles)}
+    return {n: min(k + 1, 3) for k, n in enumerate(niveles)}
 
 
 def _etiqueta_word(lista, contadores):
     """El número que Word muestra delante del párrafo («1.», «2.3.»), o '' si no es numérica."""
-    nid, nivel, formato, texto = (tuple(lista) + ('', ''))[:4]
+    nid, nivel, formato, texto, inicio = (tuple(lista) + ('', '', 1))[:5]
     c = contadores.setdefault(nid, {})
-    c[nivel] = c.get(nivel, 0) + 1
+    c[nivel] = c.get(nivel, (inicio or 1) - 1) + 1
     for n in [n for n in c if n > nivel]:
         del c[n]
     if formato != 'decimal':
@@ -248,14 +267,109 @@ def _etiqueta_word(lista, contadores):
     return re.sub(r'%(\d)', lambda m: str(c.get(int(m.group(1)) - 1, 1)), texto or '%1.')
 
 
+LADILLOS = ('ladillo1', 'ladillo2', 'ladillo3', 'titulo_bibliografia')
+RE_NUM_LADILLO = re.compile(r'^\s*(\d{1,2})\s*[.:]\s+(?=\S)')
+
+
+def _ladillos_de_su_lista(elementos):
+    """Negrita corta en la misma lista numerada de Word que un ladillo de título («1.
+    Indicación» con «Título 1» y «2. Material quirúrgico» con «Párrafo de lista»): otro ladillo
+    de la serie, con su número."""
+    listas = {e.datos['lista'][0] for e in elementos
+              if e.datos.get('nivel_titulo') and e.papel in LADILLOS and e.datos.get('etiqueta_word')}
+    for e in elementos:
+        l = e.datos.get('lista')
+        if l and l[0] in listas and e.datos.get('etiqueta_word') and e.papel in ('negrita_lista', 'vineta', 'lista_num') \
+                and negrita(e.trozos) > 0.9 and len(e.texto) <= 120:
+            e.papel = 'ladillo1'
+            e.datos['de_lista'] = True
+            e.notas.append('negrita en la lista numerada de los ladillos: ladillo')
+
+
 def _numerar_ladillos(elementos):
-    """Los ladillos que en el Word son «Título N» numerados llevan delante su número."""
+    """Los ladillos que en el Word son «Título N» numerados llevan delante su número, y su
+    nivel es el del número («3.» ladillo 1, «3.1.» ladillo 2) aunque el autor mezcle estilos.
+    Una negrita con el número siguiente escrito a mano («4: Concepto clave:») también es
+    ladillo de la serie."""
+    ultimo = 0          # último número de primer nivel de la serie
     for e in elementos:
         etiqueta = e.datos.get('etiqueta_word')
-        if e.datos.get('nivel_titulo') and etiqueta and e.trozos and \
-                e.papel in ('ladillo1', 'ladillo2', 'ladillo3', 'titulo_bibliografia'):
+        if (e.datos.get('nivel_titulo') or e.datos.get('de_lista')) and etiqueta and e.trozos and e.papel in LADILLOS:
             e.trozos = [replace(e.trozos[0], texto=etiqueta + ' ', nota=0, duda='')] + e.trozos
             e.notas.append('número del Word «%s» conservado' % etiqueta)
+            partes = [x for x in etiqueta.split('.') if x.strip()]
+            if e.papel != 'titulo_bibliografia' and all(x.strip().isdigit() for x in partes):
+                nuevo = 'ladillo%d' % min(len(partes), 3)
+                if nuevo != e.papel:
+                    e.notas.append('%s por su número (el estilo de Word era de otro nivel)' % nuevo)
+                    e.papel = nuevo
+                if len(partes) == 1:
+                    ultimo = int(partes[0])
+            continue
+        m = RE_NUM_LADILLO.match(e.texto)
+        if ultimo and m and int(m.group(1)) == ultimo + 1 and e.papel in ('texto', 'ladillo2', 'ladillo3') \
+                and negrita(e.trozos) > 0.9 and len(e.texto) <= 120:
+            e.trozos = [replace(e.trozos[0], texto='%s. ' % m.group(1), nota=0, duda='')] + quitar_inicio(e.trozos, m.end())
+            e.papel = 'ladillo1'
+            e.notas = [n for n in e.notas if not n.startswith('frase de entrada')]
+            e.notas.append('negrita con el número siguiente de los ladillos («%s»): ladillo 1' % m.group(0).strip())
+            ultimo += 1
+
+
+def _ladillos_sin_signo_final(elementos):
+    """Norma para todas las publicaciones: un ladillo no termina en signo de puntuación
+    («Indicación:» → «Indicación», «Material.» → «Material»). Se quedan «?», «!», «…» y los
+    cierres de paréntesis o comillas, que son parte del texto."""
+    for e in elementos:
+        if e.papel not in LADILLOS:
+            continue
+        texto = e.texto.rstrip()
+        fin = len(texto) - len(texto.rstrip('.:,;'))
+        if fin and not texto.endswith('...') and texto[:-fin].strip() and not re.fullmatch(r'[\d.\s]*', texto[:-fin]):
+            e.trozos = _quitar_final(e.trozos, fin)
+            e.notas.append('quitado «%s» al final del ladillo' % texto[-fin:])
+
+
+RE_PASO = re.compile(r'^\s*(\d{1,2})\s*[-.)]\s*(?=[^\W\d_])')
+
+
+def _numeradas_a_mano(elementos):
+    """Pasos numerados a mano («1-Vitrectomía…», «2- Elección…») en párrafos normales: lista
+    numerada (sin el número escrito; lo pone InDesign). Solo si empiezan en 1 y hay al menos
+    dos; si se salta un número, duda (InDesign numera seguido)."""
+    k = 0
+    while k < len(elementos):
+        e = elementos[k]
+        m = RE_PASO.match(e.texto)
+        if e.papel != 'texto' or not m or m.group(1) != '1' or negrita(e.trozos) > 0.5:
+            k += 1
+            continue
+        serie, j, n = [k], k + 1, 1
+        while j < len(elementos):
+            x = elementos[j]
+            if x.papel in CORTAN_LISTA:
+                break
+            mx = RE_PASO.match(x.texto)
+            if x.papel == 'texto' and mx and n < int(mx.group(1)) <= n + 2 and negrita(x.trozos) <= 0.5:
+                serie.append(j)
+                n = int(mx.group(1))
+            j += 1
+        if len(serie) < 2:
+            k += 1
+            continue
+        esperado = 1
+        for i in serie:
+            x = elementos[i]
+            mx = RE_PASO.match(x.texto)
+            numero = int(mx.group(1))
+            x.papel = 'lista_num'
+            x.datos['falsa'] = 'num'
+            x.trozos = quitar_inicio(x.trozos, mx.end())
+            x.notas.append('número escrito a mano «%s» convertido en lista numerada' % mx.group(0).strip())
+            if numero != esperado:
+                x.dudas.append('en el Word es el %d: falta el %d (InDesign numera seguido)' % (numero, esperado))
+            esperado = numero + 1
+        k = serie[-1] + 1
 
 
 def _papel(el, b, texto, zona, hubo_capitulo, antes_de_tabla, previos, ladillos_mayusculas=False):
@@ -318,6 +432,11 @@ def _papel(el, b, texto, zona, hubo_capitulo, antes_de_tabla, previos, ladillos_
         el.papel = 'pie_figura'
         el.datos['figuras'] = ids_figura(texto)
         return
+    if zona == 'material' and re.match(r'^\s*Fig(?:ura)?\.?\s*[:.\-–]', texto, re.I):
+        el.papel = 'pie_figura'
+        el.datos['sin_numero'] = True
+        el.dudas.append('pie de figura sin número en el Word')
+        return
     if zona == 'material' and ult and ult.papel == 'pie_figura' and not RE_FIGURA.match(texto):
         el.papel = 'pie_figura'
         el.dudas.append('parece continuación del pie anterior')
@@ -363,9 +482,13 @@ def _papel(el, b, texto, zona, hubo_capitulo, antes_de_tabla, previos, ladillos_
         if ''.join(x.texto for x in t).rstrip().endswith('.'):
             el.trozos = _quitar_final(t, 1)
         return
-    if ult and ult.papel == 'titulo' and ult.datos.get('titulo_word') and parece_autores(texto):
+    if ult and ult.papel == 'titulo' and ult.datos.get('titulo_word') and not el.datos.get('nivel_titulo') \
+            and parece_autores(texto):
         el.papel = 'autores'            # los nombres, en su párrafo justo debajo del título
         return
+    if el.datos.get('nivel_titulo') and corto and RE_VINETA_FALSA.match(texto) and not b.lista:
+        el.datos['nivel_titulo'] = 0    # «- Plataforma…» con estilo de título: es una viñeta más
+        el.notas.append('estilo de Word «%s», pero empieza por «%s»: viñeta' % (b.estilo_word, texto.strip()[0]))
     if el.datos.get('nivel_titulo') and corto:
         el.papel = 'ladillo%d' % el.datos['nivel_titulo']
         el.notas.append('estilo de Word «%s»' % b.estilo_word)
@@ -451,6 +574,110 @@ def parece_autores(texto):
     pal = re.findall(r'[^\W\d_]+', texto)
     pal = [p for p in pal if p.lower() not in MINUSCULAS_NOMBRE]
     return bool(pal) and sum(p[0].isupper() for p in pal) / len(pal) > 0.8
+
+
+# ---- filiaciones de los autores ---------------------------------------------------------
+RE_MARCA_SUP = re.compile(r'^[\d\s,;*†‡§#a-z]+$')       # llamadas voladas: «1,2», «*», «a»
+RE_CORRESPONDENCIA = re.compile(r'correspondencia|correo|e-?mail|@', re.I)
+RE_EMAIL = re.compile(r'\S+@\S+')
+
+
+def es_centro(texto):
+    """Nombra un centro de trabajo: «Hospital…», «Clínica Baviera», «Servicio de…» (con
+    inicial mayúscula: «relevancia clínica» o el ladillo «RELEVANCIA CLÍNICA» no lo son) o un
+    correo electrónico."""
+    if RE_EMAIL.search(texto):
+        return True
+    return any(m.group()[0].isupper() and not m.group().isupper() for m in RE_CENTRO.finditer(texto))
+
+
+RE_SEPARADOR = re.compile(r'\s*(?:[,;]|\s[–—-]\s|\.\s)\s*')
+
+
+def _filtrar(trozos, quitar):
+    """Los trozos sin los caracteres de las posiciones de `quitar` (conservan su formato)."""
+    res, pos = [], 0
+    for t in trozos:
+        txt = ''.join(c for k, c in enumerate(t.texto, pos) if k not in quitar)
+        pos += len(t.texto)
+        if txt:
+            if res and replace(res[-1], texto='') == replace(t, texto=''):
+                res[-1] = replace(res[-1], texto=res[-1].texto + txt)
+            else:
+                res.append(replace(t, texto=txt))
+    return res
+
+
+def _quitar_tramos(trozos, patron, cond=lambda m: True):
+    texto = ''.join(t.texto for t in trozos)
+    quitar = set()
+    for m in re.finditer(patron, texto):
+        if cond(m):
+            quitar.update(range(m.start(), m.end()))
+    return _filtrar(trozos, quitar) if quitar else trozos
+
+
+def solo_nombres(trozos):
+    """«Alex Fonollosa,¹˒² Roberto Rodríguez (Hospital Cruces), Ana Gil, Servicio de
+    Oftalmología, Hospital X» → «Alex Fonollosa, Roberto Rodríguez, Ana Gil»: sin llamadas
+    voladas, sin paréntesis con el centro (o con números) y, en cada grupo separado por «;»,
+    sin lo que va desde el primer tramo que es un centro de trabajo."""
+    pos, quitar = 0, set()
+    for t in trozos:                                    # llamadas voladas
+        if t.pos == 'sup' and RE_MARCA_SUP.match(t.texto):
+            quitar.update(range(pos, pos + len(t.texto)))
+        pos += len(t.texto)
+    trozos = _filtrar(trozos, quitar)
+    trozos = _quitar_tramos(trozos, r'\s*\(([^()]*)\)',
+                            lambda m: es_centro(m.group(1)) or re.fullmatch(r'[\d\s,*]+', m.group(1)))
+    texto = ''.join(t.texto for t in trozos)
+    quitar = set()
+    for grupo in re.finditer(r'[^;]+', texto):          # cada grupo de autores, hasta «;»
+        a = grupo.start()
+        for m in list(RE_SEPARADOR.finditer(texto, grupo.start(), grupo.end())) + [None]:
+            fin = m.start() if m else grupo.end()
+            if es_centro(texto[a:fin]):          # desde su separador hasta el «;»
+                quitar.update(range(desde if a > grupo.start() else a, grupo.end()))
+                break
+            desde, a = fin, m.end() if m else fin
+    if quitar:          # los grupos ya solo tienen nombres: «Juan Pérez; Ana Gil» → con coma
+        trozos = [replace(t, texto=t.texto.replace(';', ',')) for t in _filtrar(trozos, quitar)]
+    # Limpieza: sin espacios dobles ni antes de coma, ni separadores al principio o al final
+    trozos = _quitar_tramos(trozos, r'\s+(?=[,;])|(?<=\s)\s+|^[\s,;.]+|[\s,;.:]+$')
+    return trozos
+
+
+def _es_filiacion(e):
+    t = e.texto.strip()
+    if not t or len(t) > 400 or e.papel in ('titulo', 'capitulo', 'tabla', 'imagen', 'titulo_bibliografia'):
+        return False
+    if e.trozos and e.trozos[0].pos == 'sup' and RE_MARCA_SUP.match(e.trozos[0].texto):
+        return bool(RE_CENTRO.search(t))        # «¹HOSPITAL…», con su llamada delante
+    return es_centro(t) and len(t) < 250
+
+
+def _quitar_filiaciones(elementos):
+    """Norma para todas las publicaciones: de los autores solo interesan nombre y apellidos,
+    no dónde trabajan. Se limpian los párrafos de autores y se quitan los de filiación que
+    van justo debajo (en las revistas, el «centro», salvo la dirección de correspondencia)."""
+    k = 0
+    while k < min(len(elementos), 12):
+        e = elementos[k]
+        if e.papel == 'centro' and not RE_CORRESPONDENCIA.search(e.texto):
+            del elementos[k]
+            continue
+        if e.papel != 'autores':
+            k += 1
+            continue
+        antes = e.texto
+        e.trozos = solo_nombres(e.trozos)
+        if e.texto != antes.strip().rstrip('.,;:'):
+            e.notas.append('quitadas las filiaciones (antes: «%s»)' % antes.strip())
+        while k + 1 < len(elementos) and _es_filiacion(elementos[k + 1]) \
+                and not RE_CORRESPONDENCIA.search(elementos[k + 1].texto):
+            e.notas.append('quitada la filiación «%s»' % elementos[k + 1].texto.strip())
+            del elementos[k + 1]
+        k += 1
 
 
 def _con_texto(e, papel, texto):
@@ -783,9 +1010,15 @@ def _niveles_vinetas(elementos, modo):
                 continue
         if e.papel not in ('vineta', 'lista_num'):
             continue
+        if e.datos.get('falsa') == 'num':
+            e.nivel = 1             # paso numerado a mano: siempre el primer nivel
+            previo = e
+            continue
         if e.datos.get('falsa'):
             if previo is None:
                 e.nivel = 1
+            elif previo.datos.get('falsa') == 'num':
+                e.nivel = previo.nivel + 1      # viñeta bajo un paso numerado
             else:
                 e.nivel = previo.nivel + (0 if previo.datos.get('falsa') else 1)
             e.nivel = min(max(e.nivel, 1), 4)

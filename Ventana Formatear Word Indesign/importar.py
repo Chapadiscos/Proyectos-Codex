@@ -42,7 +42,8 @@ def leer_words(docxs, conf):
     opciones = dict(negritas_con_vineta=r.get('negritas_con_vineta', 'auto'),
                     ladillos_mayusculas=r.get('ladillos_mayusculas', False),
                     ladillos_estilo_word=r.get('ladillos_estilo_word', False),
-                    ladillos_numerados=r.get('ladillos_numerados', False))
+                    ladillos_numerados=r.get('ladillos_numerados', False),
+                    quitar_filiaciones=r.get('quitar_filiaciones', True))
     leidos = []
     for d in docxs:
         doc = Documento(d)
@@ -316,12 +317,18 @@ def preparar(docxs, conf, destino_dir, nombre):
     return ruta, manifiesto
 
 
+def texto_applescript(x):
+    """Cadena de AppleScript entre comillas. No json.dumps: escribe «í» como \\u00ed, que
+    AppleScript no entiende (error -2741 con capítulos como «4.1 Trabeculectomía…»)."""
+    return '"%s"' % str(x).replace('\\', '\\\\').replace('"', '\\"')
+
+
 def lanzar_indesign(manifiesto):
     jsx = os.path.join(AQUI, 'jsx', 'importar.jsx')
     script = ('with timeout of 1800 seconds\n'
               'tell application id "com.adobe.InDesign" to do script (POSIX file %s) '
               'language javascript with arguments {%s}\nend timeout') % (
-                  json.dumps(jsx), json.dumps(manifiesto))
+                  texto_applescript(jsx), texto_applescript(manifiesto))
     r = subprocess.run(['osascript', '-e', script], capture_output=True, text=True)
     return (r.stdout + r.stderr).replace('\r', '\n').strip()
 

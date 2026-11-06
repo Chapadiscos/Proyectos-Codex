@@ -106,6 +106,9 @@ rango_minimo = 3      # 3,4,5 → 3-5 ; 3,4 → 3,4
 guion        = "–"    # raya corta (norma para todas las publicaciones)
 
 [reglas]
+# Filiaciones: esta revista lleva el centro de trabajo de los autores (Portadilla/Centro),
+# así que no se quitan (la norma general, quitar_filiaciones = true, solo deja los nombres).
+quitar_filiaciones = false
 # Negritas cortas que en Word llevan viñeta: "auto" decide por capítulo (ladillo si
 # detrás suele ir texto corrido, viñeta en negrita si detrás suelen ir viñetas);
 # "ladillo" o "vineta" lo fuerzan para toda la publicación.
