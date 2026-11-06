@@ -322,6 +322,20 @@ final class Taller: ObservableObject {
         if enCurso != nil { ahora = Date() }
         tictac += 1
         if tictac % 4 == 0 && NSApp.isActive { actualizarDocumentos() }
+        if tictac % 2 == 0 { leerPasosTerminados() }
+    }
+
+    /// Pasos que las ventanas del motor dan por hechos con su botón «Terminar» (Recorrer marcas,
+    /// Revisar dudas, Revisar cierre): una línea «documento<TAB>paso» en informes/pasos-terminados.txt
+    private func leerPasosTerminados() {
+        let ruta = motor.appendingPathComponent("informes/pasos-terminados.txt")
+        guard let texto = try? String(contentsOf: ruta, encoding: .utf8) else { return }
+        try? FileManager.default.removeItem(at: ruta)
+        for linea in texto.split(separator: "\n") {
+            let partes = linea.split(separator: "\t", maxSplits: 1).map(String.init)
+            guard partes.count == 2, let paso = PasoCapitulo(rawValue: partes[1]) else { continue }
+            marcar(paso, [partes[0]])
+        }
     }
 
     // MARK: Documentos de InDesign
