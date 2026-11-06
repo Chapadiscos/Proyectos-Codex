@@ -5,7 +5,7 @@
 # Los estilos dentro de grupos se escriben «Grupo/Estilo», como en el panel de InDesign.
 
 maqueta   = "publicaciones/maquetas/Mini Monografía SECOIR.indd"
-maquetado = "/Volumes/MACLINE SERVER/LIBROS/MINI MONOGRAFIA SECOIR 2027/Maqueta base Mini Monografia SECOIR 2027.indd"
+maquetado = "/Volumes/MACLINE SERVER/LIBROS/MINI MONOGRAFIA SECOIR 2027/Secciones/Seccion 1 - Polo Anterior y Cornea.indd"
 
 [parrafo]
 # Galerada: título y autores van al principio del texto con estos estilos; la portadilla
@@ -16,14 +16,17 @@ ladillo1            = "Ladillos/Ladillo 1"
 ladillo2            = "Ladillos/Ladillo 2"
 ladillo3            = "Ladillos/Ladillo 3"
 texto               = "Texto base"
-texto_vineta        = "Texto base - Viñeta"        # texto corrido dentro de una sección de viñetas
 vineta1             = "Viñetas/Viñeta 1 (•)"
 vineta2             = "Viñetas/Viñeta 2 (-)"
 vineta3             = "Viñetas/Viñeta 3 (>)"
 vineta4             = "Viñetas/Viñeta 4 (»)"
-# Las listas numeradas de Word van con el estilo de viñeta de su nivel y numeración local.
-titulo_ideas        = "Ideas basicas/titulo Ideas basicas"
-texto_ideas         = "Ideas basicas/Texto Ideas"
+# Las listas numeradas de Word van con estos estilos (6 mm para el número: «10.» no desplaza el
+# texto); cada nivel vuelve a empezar en 1 tras un elemento numerado del nivel superior.
+# Los niveles 3 y 4 numerados usan la viñeta de su nivel con numeración.
+# Sin estilo propio en la maqueta (no los usa SECOIR): el texto dentro de una lista y el
+# de ideas básicas van con Texto base, y el título de ideas básicas con el ladillo 2.
+vineta_num1         = "Viñetas/Viñeta 1 (Numero)"
+vineta_num2         = "Viñetas/Viñeta 2 (Numero)"
 titulo_bibliografia = "Ladillos/Ladillo 1"
 bibliografia        = "Bibliografia"
 titulo_tabla        = "Tabla/Titulo tabla"
@@ -106,3 +109,29 @@ guion        = "–"    # raya corta (norma para todas las publicaciones)
 # detrás suele ir texto corrido, viñeta en negrita si detrás suelen ir viñetas);
 # "ladillo" o "vineta" lo fuerzan para toda la publicación.
 negritas_con_vineta = "auto"
+# Los autores de SECOIR marcan los ladillos con el estilo «Título 2» (y «Título 3»…) de Word,
+# numerados («1. INDICACIÓN»): son ladillos aunque no vayan en negrita, y conservan su número.
+# El primer «Título 1» es el título del capítulo (Portadilla/Titulo).
+ladillos_estilo_word = true
+ladillos_numerados   = true
+
+# Reglas de ortotipografía propias de esta publicación: se suman a las comunes de
+# publicaciones/ortotipografia.toml (paso 2, Tipografía), con su misma sintaxis.
+[[regla]]
+nombre      = "Pterigium en cursiva"
+descripcion = "Término latino: siempre en cursiva en esta publicación (no en los grupos sin cursiva: ladillos, portadilla, bibliografía)"
+buscar      = '(?i)\bpterigium\b'
+estilo      = "cursiva"
+ejemplo     = "pterigium → pterigium en cursiva"
+
+# Cabecera de la portadilla: al importar se coloca el elemento de la Biblioteca en la primera
+# página (margen izquierdo, a «y» mm del borde superior) y recibe el título y los autores del
+# capítulo, que ya no quedan en el texto; lo demás de la cabecera, como esté en la Biblioteca.
+# Los marcos de texto de esa página empiezan en la guía, a «texto_desde» mm.
+[portadilla]
+biblioteca  = "/Volumes/MACLINE SERVER/LIBROS/MINI MONOGRAFIA SECOIR 2027/MIni Monografia SECOIR.indl"
+elemento    = "Cabecera"
+y           = 26
+texto_desde = 85
+# Estilo de carácter para el título en la cabecera: lo toman las cornisas (variable de encabezado)
+estilo_caracter_titulo = "Titulo capitulo"

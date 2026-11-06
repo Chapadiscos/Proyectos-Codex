@@ -38,10 +38,15 @@ def main():
     ap.add_argument('--aplicar', action='store_true', help='hace los cambios (sin esto solo simula)')
     ap.add_argument('--detalle', action='store_true', help='al simular, enseña todos los casos')
     ap.add_argument('--publicacion', default=os.path.join(AQUI, 'publicaciones', 'maqueta-base.toml'))
+    ap.add_argument('--exportar', default='', help='escribe los datos del cierre en este JSON y termina (ventana «Revisar cierre»)')
     args = ap.parse_args()
 
     with open(args.publicacion, 'rb') as f:
         conf = tomllib.load(f)
+    if args.exportar:
+        with open(args.exportar, 'w', encoding='utf-8') as f:
+            json.dump({'excluir': estilos_excluidos(conf)}, f, ensure_ascii=False)
+        return
     with tempfile.NamedTemporaryFile('w', suffix='.json', delete=False, encoding='utf-8') as f:
         json.dump({'excluir': estilos_excluidos(conf)}, f, ensure_ascii=False)
         ruta = f.name

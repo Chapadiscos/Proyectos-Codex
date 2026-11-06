@@ -8,7 +8,8 @@ from .docx import Parrafo, Tabla, Trozo
 
 RE_CAPITULO = re.compile(r'^\s*Cap[ií]tulo\s+(\d+)\s*[.:\-–]?\s*(.*)$', re.I | re.S)
 RE_AUTORES = re.compile(r'^\s*Autor(?:es|as|a)?\s*:\s*', re.I)
-RE_BIBLIO = re.compile(r'^\s*(bibliograf[ií]a|referencias(\s+bibliogr[aá]ficas)?)\s*\.?\s*:?\s*$', re.I)
+# También con el número del ladillo escrito delante: «5. BIBLIOGRAFÍA»
+RE_BIBLIO = re.compile(r'^\s*(?:\d+(?:\.\d+)*\.?\s+)?(bibliograf[ií]a|referencias?(\s+bibliogr[aá]ficas?)?)\s*\.?\s*:?\s*$', re.I)
 RE_IDEAS = re.compile(r'^\s*ideas\s+b[aá]sicas', re.I)
 RE_MATERIAL = re.compile(r'^\s*((leyendas?|pies?)\s+de\s+(las\s+)?(figuras|im[aá]genes)|figuras(\s+y\s+tablas)?|tablas(\s+y\s+figuras)?)\s*\.?\s*:?\s*$', re.I)
 RE_FIGURA = re.compile(r'^\s*Fig(?:ura|s)?\.?\s*(\d+)\s*([A-Za-z])?\b', re.I)
@@ -126,14 +127,19 @@ def _expandir_figuras(bloques):
     return res
 
 
-def clasificar(doc, negritas_con_vineta='auto', cabecera='', ladillos_mayusculas=False):
+def clasificar(doc, negritas_con_vineta='auto', cabecera='', ladillos_mayusculas=False,
+               ladillos_estilo_word=False, ladillos_numerados=False):
     """Devuelve (elementos, modo): modo es cómo se han tratado las negritas con viñeta.
     cabecera="articulo": el Word empieza con título, autores, resumen… de un artículo de revista.
-    ladillos_mayusculas: una línea corta toda en mayúsculas, aunque no vaya en negrita, es ladillo."""
+    ladillos_mayusculas: una línea corta toda en mayúsculas, aunque no vaya en negrita, es ladillo.
+    ladillos_estilo_word: los párrafos con estilo «Título 2/3/4» de Word son ladillos 1/2/3
+    aunque no vayan en negrita; ladillos_numerados: con su número de Word («1. Indicación»)."""
     elementos = []
     zona = 'texto'          # 'texto' | 'ideas' | 'bibliografia' | 'material'
     bloques = _expandir_figuras(doc.bloques)
     hubo_capitulo = False
+    contadores = {}         # numId → {nivel: cuenta}, para el número que pone Word a cada párrafo
+    titulo_word, rango_titulos = _titulos_word(bloques) if ladillos_estilo_word else (None, {})
 
     def siguiente_es_tabla(k):
         for b in bloques[k + 1:]:
@@ -173,6 +179,12 @@ def clasificar(doc, negritas_con_vineta='auto', cabecera='', ladillos_mayusculas
                 el.notas.append('quitado el sangrado con tabuladores/espacios')
             el.datos['lista'] = b.lista if not n_linea else None
             el.datos['sangria'] = b.sangria
+            if b.lista and not n_linea:
+                el.datos['etiqueta_word'] = _etiqueta_word(b.lista, contadores)
+            # Estilos de título de Word: el del capítulo, o el nivel de ladillo que le toca
+            if b is titulo_word and not n_linea:
+                el.datos['titulo_word'] = True
+            el.datos['nivel_titulo'] = rango_titulos.get(_nivel_titulo(b.estilo_word), 0)
             _papel(el, b, texto, zona, hubo_capitulo, siguiente_es_tabla(k), elementos, ladillos_mayusculas)
             if el.papel == 'capitulo':
                 hubo_capitulo = True
@@ -185,6 +197,8 @@ def clasificar(doc, negritas_con_vineta='auto', cabecera='', ladillos_mayusculas
             elif zona == 'bibliografia' and el.papel in ('ladillo1', 'ladillo2', 'ladillo3'):
                 zona = 'texto'
             elementos.append(el)
+            if 'detras' in el.datos:            # p. ej. los autores que venían con el título
+                elementos.append(el.datos.pop('detras'))
 
     if cabecera == 'articulo':
         elementos[:] = _cabecera_articulo(elementos)
@@ -194,7 +208,54 @@ def clasificar(doc, negritas_con_vineta='auto', cabecera='', ladillos_mayusculas
     modo = _negritas_con_vineta(elementos, negritas_con_vineta)
     _niveles_vinetas(elementos, modo)
     _caja_ladillos(elementos)
+    if ladillos_numerados:
+        _numerar_ladillos(elementos)
     return elementos, modo
+
+
+def _nivel_titulo(estilo):
+    """«heading 2» / «Título 2» de Word → 2; otro estilo → 0."""
+    m = re.match(r'^\s*(heading|t[ií]tulo)\s*(\d)\s*$', estilo or '', re.I)
+    return int(m.group(2)) if m else 0
+
+
+def _titulos_word(bloques):
+    """(párrafo del título del capítulo, {nivel de título de Word: nivel de ladillo}).
+    El título es el primer «Título 1» si no hay texto antes. Cada autor usa los niveles a su
+    manera (Título 2 para los ladillos, o Título 1 como el título): el nivel más alto que queda
+    es el ladillo 1, el siguiente el 2 y el siguiente el 3."""
+    parrafos = [b for b in bloques if isinstance(b, Parrafo) and b.texto.strip()]
+    titulo = None
+    for b in parrafos:
+        n = _nivel_titulo(b.estilo_word)
+        if n == 1:
+            titulo = b
+        if n or titulo:
+            break
+    niveles = sorted({_nivel_titulo(b.estilo_word) for b in parrafos if b is not titulo} - {0})
+    return titulo, {n: min(k + 1, 3) for k, n in enumerate(niveles)}
+
+
+def _etiqueta_word(lista, contadores):
+    """El número que Word muestra delante del párrafo («1.», «2.3.»), o '' si no es numérica."""
+    nid, nivel, formato, texto = (tuple(lista) + ('', ''))[:4]
+    c = contadores.setdefault(nid, {})
+    c[nivel] = c.get(nivel, 0) + 1
+    for n in [n for n in c if n > nivel]:
+        del c[n]
+    if formato != 'decimal':
+        return ''
+    return re.sub(r'%(\d)', lambda m: str(c.get(int(m.group(1)) - 1, 1)), texto or '%1.')
+
+
+def _numerar_ladillos(elementos):
+    """Los ladillos que en el Word son «Título N» numerados llevan delante su número."""
+    for e in elementos:
+        etiqueta = e.datos.get('etiqueta_word')
+        if e.datos.get('nivel_titulo') and etiqueta and e.trozos and \
+                e.papel in ('ladillo1', 'ladillo2', 'ladillo3', 'titulo_bibliografia'):
+            e.trozos = [replace(e.trozos[0], texto=etiqueta + ' ', nota=0, duda='')] + e.trozos
+            e.notas.append('número del Word «%s» conservado' % etiqueta)
 
 
 def _papel(el, b, texto, zona, hubo_capitulo, antes_de_tabla, previos, ladillos_mayusculas=False):
@@ -218,7 +279,14 @@ def _papel(el, b, texto, zona, hubo_capitulo, antes_de_tabla, previos, ladillos_
         return
     if RE_BIBLIO.match(texto):
         el.papel = 'titulo_bibliografia'
-        if texto.rstrip().endswith(('.', ':')):
+        m = RE_BIBLIO.match(texto)
+        if not m.group(1).lower().startswith('bibliograf'):
+            # «Referencia», «Referencias (bibliográficas)» → «Bibliografía» (norma para todas
+            # las publicaciones); el número de delante, si lo hay, se queda
+            antes = _quitar_final(t, len(texto) - m.start(1)) if m.start(1) else []
+            el.trozos = antes + [replace(t[0], texto=(' ' if antes else '') + 'Bibliografía', nota=0, duda='')]
+            el.notas.append('«%s» unificado a «Bibliografía»' % m.group(1))
+        elif texto.rstrip().endswith(('.', ':')):
             el.trozos = _quitar_final(t, 1)
         return
     if RE_IDEAS.match(texto) and corto:
@@ -276,6 +344,31 @@ def _papel(el, b, texto, zona, hubo_capitulo, antes_de_tabla, previos, ladillos_
             return
     if zona == 'ideas':
         el.papel = 'texto_ideas'
+        return
+    # Estilos de título de Word, si la publicación lo pide: el primer «Título 1» es el título del
+    # capítulo (Portadilla/Titulo, sin el punto final) y «Título 2/3/4» son ladillos de su nivel,
+    # aunque no vayan en negrita.
+    if el.datos.get('titulo_word') and len(texto) <= 400:
+        el.papel = 'titulo'
+        el.notas.append('estilo de Word «%s»: título del capítulo' % b.estilo_word)
+        # «TÍTULO. Autores: …» en el mismo párrafo: los autores, en su párrafo detrás
+        m = re.search(r'\s*\bAutor(?:es|as|a)?\s*:\s*', texto, re.I)
+        if m and m.start() > 0:
+            autores = quitar_inicio(t, m.end())
+            if ''.join(x.texto for x in autores).rstrip().endswith('.'):
+                autores = _quitar_final(autores, 1)
+            el.datos['detras'] = Elemento('autores', autores, origen=el.origen, procedencia=el.procedencia,
+                                          notas=['venía en el párrafo del título, tras «Autores:»'])
+            t = el.trozos = _quitar_final(t, len(texto) - m.start())
+        if ''.join(x.texto for x in t).rstrip().endswith('.'):
+            el.trozos = _quitar_final(t, 1)
+        return
+    if ult and ult.papel == 'titulo' and ult.datos.get('titulo_word') and parece_autores(texto):
+        el.papel = 'autores'            # los nombres, en su párrafo justo debajo del título
+        return
+    if el.datos.get('nivel_titulo') and corto:
+        el.papel = 'ladillo%d' % el.datos['nivel_titulo']
+        el.notas.append('estilo de Word «%s»' % b.estilo_word)
         return
 
     subr = _letras(t, lambda x: x.u)

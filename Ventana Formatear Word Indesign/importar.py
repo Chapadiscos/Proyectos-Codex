@@ -22,6 +22,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import tomllib
 import zipfile
 
@@ -39,7 +40,9 @@ def leer_words(docxs, conf):
     origen), con origen = {id(elemento): Documento} para sacar las imágenes de cada Word."""
     r = conf.get('reglas', {})
     opciones = dict(negritas_con_vineta=r.get('negritas_con_vineta', 'auto'),
-                    ladillos_mayusculas=r.get('ladillos_mayusculas', False))
+                    ladillos_mayusculas=r.get('ladillos_mayusculas', False),
+                    ladillos_estilo_word=r.get('ladillos_estilo_word', False),
+                    ladillos_numerados=r.get('ladillos_numerados', False))
     leidos = []
     for d in docxs:
         doc = Documento(d)
@@ -339,6 +342,28 @@ def resaltar(documento, conf):
     return (res.stdout + res.stderr).replace('\r', '\n').strip()
 
 
+def cabecera(documento, conf):
+    """Cabecera de la portadilla desde la Biblioteca de la publicación ([portadilla]), con el
+    título y los autores del capítulo (jsx/colocar_cabecera.jsx)."""
+    p = conf.get('portadilla', {})
+    if not p.get('biblioteca'):
+        return ''
+    datos = {'biblioteca': p['biblioteca'], 'elemento': p.get('elemento', 'Cabecera'), 'y': p.get('y', 20),
+             'texto_desde': p.get('texto_desde', 0),
+             'estilos': {'titulo': conf['parrafo'].get('capitulo_titulo', ''), 'autores': conf['parrafo'].get('autores', ''),
+                         'caracter_titulo': p.get('estilo_caracter_titulo', '')}}
+    with tempfile.NamedTemporaryFile('w', suffix='.json', delete=False, encoding='utf-8') as f:
+        json.dump(datos, f, ensure_ascii=False)
+    jsx = os.path.join(AQUI, 'jsx', 'colocar_cabecera.jsx')
+    script = ('with timeout of 600 seconds\n'
+              'tell application id "com.adobe.InDesign" to do script (POSIX file "%s") '
+              'language javascript with arguments {"%s", "%s"}\nend timeout') % tuple(
+                  x.replace('\\', '\\\\').replace('"', '\\"') for x in (jsx, documento, f.name))
+    res = subprocess.run(['osascript', '-e', script], capture_output=True, text=True)
+    os.unlink(f.name)
+    return (res.stdout + res.stderr).replace('\r', '\n').strip()
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('rutas', nargs='+', help='carpeta del capítulo (con un solo Word) o los Word (.docx o .doc) del capítulo')
@@ -375,6 +400,9 @@ def main():
     if not args.solo_preparar:
         print(lanzar_indesign(ruta))
         print(resaltar(nombre + '.indd', conf))
+        hecho = cabecera(nombre + '.indd', conf)
+        if hecho:
+            print(hecho)
 
 
 if __name__ == '__main__':

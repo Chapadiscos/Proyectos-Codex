@@ -40,7 +40,9 @@ def main():
         reglas = tomllib.load(f)['regla']
     with open(args.maqueta, 'rb') as f:
         maqueta = tomllib.load(f)
-    estilos = {'caracter': maqueta.get('caracter', {}), 'por_grupo': maqueta.get('caracter_por_grupo', {})}
+    # Reglas propias de la publicación ([[regla]] en su .toml), detrás de las comunes
+    reglas += maqueta.get('regla', [])
+    estilos ={'caracter': maqueta.get('caracter', {}), 'por_grupo': maqueta.get('caracter_por_grupo', {})}
     # «@papel» en solo / excluir: el estilo de ese papel en la publicación. Si no lo tiene, la
     # regla con «solo» no se aplica en ningún párrafo.
     for rg in reglas:

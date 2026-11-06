@@ -58,10 +58,33 @@ def ref_condicion(nombre):
     return 'Condition/' + nombre
 
 
+LISTA = ('lista_num', 'vineta', 'texto_vineta')
+NIVEL_LADILLO = {'ladillo1': 1, 'titulo_bibliografia': 1, 'ladillo2': 2, 'ladillo3': 3}
+
+
+def continua_numeracion(visibles, k):
+    """¿El elemento numerado k sigue la cuenta de uno anterior? Solo si, dentro de la misma
+    lista, el anterior de su nivel o superior es numerado y de su mismo nivel; los de niveles
+    más profundos (sublistas) y el texto dentro de la lista no la cortan."""
+    n = max(visibles[k].nivel, 1)
+    for a in reversed(visibles[:k]):
+        if a.papel not in LISTA:
+            return False
+        if a.papel == 'texto_vineta' or max(a.nivel, 1) > n:
+            continue
+        return a.papel == 'lista_num' and max(a.nivel, 1) == n
+    return False
+
+
 class Generador:
     def __init__(self, conf):
         self.conf = conf
-        self.parrafo = conf['parrafo']
+        # Papeles que una publicación puede no tener: usan el estilo de otro (como propone
+        # nueva_publicacion.py al darla de alta)
+        self.parrafo = dict(conf['parrafo'])
+        for papel, otro in (('texto_vineta', 'texto'), ('texto_ideas', 'texto'), ('titulo_ideas', 'ladillo2')):
+            if not self.parrafo.get(papel):
+                self.parrafo[papel] = self.parrafo[otro]
         self.caracter = conf['caracter']
         self.usados_p, self.usados_c = set(), set()
         self.estilo_actual = ''
@@ -143,11 +166,33 @@ class Generador:
         return ('<Note><ParagraphStyleRange><CharacterStyleRange><Content>%s</Content>'
                 '</CharacterStyleRange></ParagraphStyleRange></Note>') % escape(texto)
 
-    def parrafo_xml(self, estilo, trozos, dudas=(), attrs='', ultimo=False, quitar_negrita=False):
+    def estilo_primera_palabra(self, trozos):
+        """Estilo de carácter de la primera palabra si la lleva entera («Anestesia» en negrita
+        al empezar un paso numerado), o None."""
+        for k, t in enumerate(trozos):
+            if not re.search(r'\w', t.texto):
+                if t.texto.strip():
+                    return None         # empieza por puntuación
+                continue
+            m = re.match(r'\s*\w+', t.texto)
+            if not m:
+                return None
+            entera = m.end() < len(t.texto) or k + 1 == len(trozos) or not re.match(r'\w', trozos[k + 1].texto)
+            return self.estilo_caracter(t) if entera else None
+        return None
+
+    def parrafo_xml(self, estilo, trozos, dudas=(), attrs='', ultimo=False, quitar_negrita=False, numerada=False):
         trozos = espacios(trozos)
         self.usados_p.add(estilo)
         self.estilo_actual = estilo
         cuerpo = []
+        # Lista numerada: el número lleva el estilo de carácter de la primera palabra (norma para
+        # todas las publicaciones: «1. Anestesia…» con «1.» también en negrita)
+        if numerada and not quitar_negrita:
+            car = self.estilo_primera_palabra(trozos)
+            if car:
+                cuerpo.append('<Properties><NumberingCharacterStyle type="object">%s</NumberingCharacterStyle></Properties>'
+                              % escape(ref_estilo('CharacterStyle', car)))
         duda_parrafo = ' · '.join(dudas)
         if duda_parrafo:
             self.anotar(duda_parrafo, ''.join(t.texto for t in trozos).replace('\n', ' '))
@@ -176,9 +221,13 @@ class Generador:
             if e.papel == 'vineta':
                 estilo = self.parrafo['vineta%d' % max(e.nivel, 1)]
             elif e.papel == 'lista_num':
-                estilo = self.parrafo['vineta%d' % max(e.nivel, 1)]
-                attrs = ' BulletsAndNumberingListType="NumberedList"'
-                if anterior is None or anterior.papel != 'lista_num':
+                # Estilo propio de lista numerada si la publicación lo tiene (más sitio para «10.»)
+                n = max(e.nivel, 1)
+                estilo = self.parrafo.get('vineta_num%d' % n) or self.parrafo['vineta%d' % n]
+                # Cada elemento con su nivel: un subnivel vuelve a empezar en 1 tras cada elemento
+                # numerado de nivel superior, y el superior sigue su cuenta tras la sublista.
+                attrs = ' BulletsAndNumberingListType="NumberedList" NumberingLevel="%d"' % n
+                if not continua_numeracion(visibles, k):
                     attrs += ' NumberingContinue="false"'
             elif e.papel == 'capitulo':
                 # Galerada: título y autores al principio del texto, con sus estilos, para
@@ -188,9 +237,13 @@ class Generador:
                 trozos = [replace(e.trozos[0], texto='%s. %s' % (e.datos['numero'], e.datos['titulo']), b=False, i=False)]
             else:
                 estilo = self.parrafo[ESTILO_DE.get(e.papel, e.papel)]
+            # Ladillos seguidos: el de nivel inferior, justo debajo de otro, sin espacio antes
+            # (norma para todas las publicaciones)
+            if anterior is not None and NIVEL_LADILLO.get(e.papel, 0) > NIVEL_LADILLO.get(anterior.papel, 9):
+                attrs += ' SpaceBefore="0"'
             quitar = e.papel in SIN_NEGRITA
             partes.append(self.parrafo_xml(estilo, trozos, e.dudas, attrs, ultimo=k == len(visibles) - 1,
-                                           quitar_negrita=quitar))
+                                           quitar_negrita=quitar, numerada=e.papel == 'lista_num'))
             anterior = e
         return self.documento(''.join(partes))
 
