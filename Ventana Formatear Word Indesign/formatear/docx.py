@@ -38,6 +38,7 @@ class Parrafo:
     imagenes: list = field(default_factory=list)   # rutas dentro del .docx
     origen: str = 'cuerpo'  # 'cuerpo' | 'nota final N'
     indice: int = 0
+    columnas: int = 0       # columnas de su sección de Word (0 = no se sabe)
 
     @property
     def texto(self):
@@ -170,10 +171,29 @@ class Documento:
         return {r.get('Id'): posixpath.normpath(posixpath.join('word', r.get('Target')))
                 for r in raiz.iter(REL + 'Relationship')}
 
+    def _cerrar_seccion(self, sectpr):
+        """Fin de una sección de Word (su w:sectPr va en el último párrafo, o al final del cuerpo):
+        sus párrafos y tablas apuntan cuántas columnas tiene."""
+        cols = sectpr.find(W + 'cols') if sectpr is not None else None
+        n = int(cols.get(W + 'num') or 1) if cols is not None else 1
+        for b in getattr(self, '_sin_seccion', []):
+            b.columnas = n
+        self._sin_seccion = []
+
     def _recorrer(self, contenedor, rels, origen):
+        if not hasattr(self, '_sin_seccion'):
+            self._sin_seccion = []
         for el in contenedor:
-            if el.tag == W + 'p':
-                self.bloques.append(self._parrafo(el, rels, origen))
+            if el.tag == W + 'sectPr' and origen == 'cuerpo':
+                self._cerrar_seccion(el)
+            elif el.tag == W + 'p':
+                par = self._parrafo(el, rels, origen)
+                self.bloques.append(par)
+                if origen == 'cuerpo':
+                    self._sin_seccion.append(par)
+                    ppr = el.find(W + 'pPr')
+                    if ppr is not None and ppr.find(W + 'sectPr') is not None:
+                        self._cerrar_seccion(ppr.find(W + 'sectPr'))
             elif el.tag == W + 'tbl':
                 filas, combinadas = [], []
                 for tr in el.findall(W + 'tr'):
@@ -188,6 +208,8 @@ class Documento:
                     combinadas.append(comb)
                 anchos = [int(g.get(W + 'w') or 0) for g in el.iter(W + 'gridCol')]
                 self.bloques.append(Tabla(filas, origen, combinadas=combinadas, anchos=anchos))
+                if origen == 'cuerpo':
+                    self._sin_seccion.append(self.bloques[-1])
             elif el.tag == W + 'sdt':
                 c = el.find(W + 'sdtContent')
                 if c is not None:

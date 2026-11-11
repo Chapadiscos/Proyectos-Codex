@@ -1,0 +1,139 @@
+# Configuración de «Monografias SEG», creada el 2026-11-11 a partir de su último maquetado:
+#   /Volumes/MACLINE SERVER/LIBROS/MONOGRAFIA SEG 2027/Maqueta base Monografia SEG 2027.indd
+# Revisa las líneas con «⚠». Para rehacer la maqueta desde un número más reciente:
+#   python3 nueva_publicacion.py <último .indd> --nombre "Monografias SEG"
+# Los estilos dentro de grupos se escriben «Grupo/Estilo», como en el panel de InDesign.
+
+maqueta   = "publicaciones/maquetas/Monografias SEG.indd"
+maquetado = "/Volumes/MACLINE SERVER/LIBROS/MONOGRAFIA SEG 2027/Maqueta base Monografia SEG 2027.indd"
+
+[parrafo]
+# Galerada: título y autores van al principio del texto con estos estilos; la portadilla
+# se monta a mano con el elemento de la Biblioteca de la publicación.
+capitulo_titulo     = "Portadilla/Titulo"
+autores             = "Portadilla/Autor\\/es"   # el estilo se llama «Autor/es» (la barra va escrita «\\/»)
+ladillo1            = "Ladillos/Ladillo 1"
+ladillo2            = "Ladillos/Ladillo 2"
+ladillo3            = "Ladillos/Ladillo 3"
+texto               = "Texto base"
+texto_vineta        = "Texto base"   # no hay estilo propio: el de texto
+vineta1             = "VIñetas/VIñeta 1 - Conclusiones (•)"
+vineta2             = "VIñetas/VIñeta 2 (—)"
+vineta3             = "VIñetas/VIñeta 3 (›)"
+vineta4             = "VIñetas/VIñeta 3 (›)"   # no hay estilo propio: el de vineta3
+# Listas numeradas: estilo propio en el primer nivel (en los capítulos maquetados, «VIñeta 1
+# (número)»); en los demás niveles, el de viñeta de su nivel con numeración.
+vineta_num1         = "VIñetas/VIñeta 1 (número)"
+titulo_ideas        = "Ladillos/Ladillo 2"   # no hay estilo propio: el de ladillo2
+texto_ideas         = "Texto base"   # no hay estilo propio: el de texto
+titulo_bibliografia = "Ladillos/Ladillo 1"
+bibliografia        = "BIbliografía"
+titulo_tabla        = "Tabla/Titulo Tabla"
+pie_tabla           = "Tabla/Pie tabla"            # dentro de la tabla, en la fila de pie
+pie_figura          = "Pie figura"
+celda_cabecera      = "Tabla/Cabecera Tabla"       # párrafos de la fila de cabecera
+celda               = "Tabla/Celda Izda"          # párrafos del resto de celdas
+# Casos clínicos (en el Word, a una columna): título, texto y pie de sus figuras. El recuadro
+# se monta a mano con los elementos «CC» de la Biblioteca.
+titulo_caso         = "Caso Clinico/Titulo Caso Clínico"
+texto_caso          = "Caso Clinico/Texto base - (Caso Clinico)"
+pie_figura_caso     = "Caso Clinico/Pie Figura - Caso Clinico"
+
+[caracter]
+negrita         = "85 Heavy"           # como en los capítulos maquetados
+cursiva         = "45 Book Oblique"
+negrita_cursiva = "85 Heavy Oblique"
+superindice     = "Super"
+no_partir       = "noPartir"   # palabras compuestas con guion que no se deben partir (Revisar dudas)
+etiqueta_figura = "Figura"   # «Figura 1.» al principio del pie
+simbolos        = "→←↔⇒"       # caracteres que la fuente del texto no tiene
+estilo_simbolos = "Symbol"
+simbolos_superindice = "™®℠℗"   # al importar van con el estilo de superíndice (Super); © no, va a tamaño normal
+
+# Estilos de párrafo cuya fuente no es la del texto: sus equivalentes de negrita y cursiva
+# (por grupo de estilos o nombre de estilo sin grupo). "" = no aplicar ese formato.
+[caracter_por_grupo]
+# Los grupos de estilos con otra fuente que necesiten su negrita y cursiva propias.
+"Portadilla"   = { negrita = "", cursiva = "", negrita_cursiva = "" }
+
+[tabla]
+estilo         = "Monografia SEG"
+celda_titulo   = "Titulo"  # el título de la tabla, en una primera fila de una sola celda
+celda_cabecera = "Cabecera"
+celda          = "Celda Izda"
+celda_pie      = "Pie tabla"   # fila de pie: las notas que en el Word van debajo de la tabla
+ancho          = 167      # mm: el ancho de la caja de texto
+
+[figuras]
+estilo_objeto = "Marco 80"
+ancho         = 80       # mm: el ancho de una columna
+filete        = 0.5       # pt: filete blanco entre las imágenes de una figura compuesta
+
+[resaltar]
+# Al importar se resaltan estas palabras con la condición indicada, para ver dónde se cita cada
+# figura, tabla, algoritmo… al colocarlos. Palabra entera y sin distinguir mayúsculas.
+# Para repetirlo en los documentos abiertos tras cambiar la lista: python3 resaltar.py
+condicion = "Risk word"           # la maqueta ya la trae; si no, se crea con este color
+color     = "GREEN"               # UIColors de InDesign
+palabras  = [
+    "Tabla",
+    "Figura",
+    "Fig.",
+    "Figs.",
+    "Vídeo",
+    "Video",
+    "Tablas",
+    "Figuras",
+    "Figure",
+    "Table",
+    "Algoritmo",
+    "Cuadro",
+    "Grafico",
+    "Gráfico",
+    "Graficos",
+    "gráficos",
+    "Tables",
+    "Cuadros",
+    "Imagen",
+    "Imágenes"
+]
+
+[dudas]
+notas = false     # además del texto condicional, una nota de InDesign con el motivo
+
+[citas]
+rango_minimo = 3      # 3,4,5 → 3-5 ; 3,4 → 3,4
+guion        = "–"    # raya corta (norma para todas las publicaciones)
+
+[reglas]
+# Autores: solo nombre y apellidos; las filiaciones (llamadas voladas, centro de trabajo,
+# párrafos de filiación de debajo) se quitan. Es la norma para todas las publicaciones.
+quitar_filiaciones = true
+# Negritas cortas que en Word llevan viñeta: "auto" decide por capítulo (ladillo si
+# detrás suele ir texto corrido, viñeta en negrita si detrás suelen ir viñetas);
+# "ladillo" o "vineta" lo fuerzan para toda la publicación.
+negritas_con_vineta = "auto"
+# Los Word de SEG empiezan con «CAPÍTULO N» (con el título detrás o en el párrafo siguiente) y
+# los autores: el título y los autores van a la cabecera; el número lo pone el libro.
+capitulo_a_titulo   = true
+# Ladillos en negrita numerados a mano («3.1 INTRODUCCIÓN», «1.- INTRODUCCIÓN»): en el libro van
+# sin número, con el nivel que dice el número («3.1» ladillo 1, «3.1.1» ladillo 2).
+ladillos_sin_numero = true
+# Ladillos escritos en mayúsculas sin negrita («TUMORES MELANOCÍTICOS», capítulo 9).
+ladillos_mayusculas = true
+# Figuras y tablas con el número del capítulo de su carpeta («Capitulo 15» → «Figura 15.3»),
+# aunque el Word traiga el de antes («Figura 16.3»: los capítulos se han renumerado).
+renumerar_figuras   = true
+# Casos clínicos: el autor los pone en secciones de Word a una columna; el texto, a dos.
+casos_por_columnas  = true
+
+# Cabecera de la portadilla desde la Biblioteca de la publicación: el elemento se coloca en la
+# primera página (margen izquierdo, a «y» mm del borde superior) y recibe el título y los autores
+# del capítulo; «PARTE N.» y «CAPÍTULO N» son variables (marcador de sección y número del libro).
+[portadilla]
+biblioteca = "/Volumes/MACLINE SERVER/LIBROS/MONOGRAFIA SEG 2027/Monografia SEG 2027.indl"
+elemento   = "Cabecera"
+y          = 27.433     # mm: el margen superior, como en los capítulos maquetados
+texto_desde = 91        # mm: el texto de la portadilla empieza aquí (plantilla del capítulo 09)
+# Estilo de carácter para el título en la cabecera: lo toma la variable «Encabezado» de la cornisa
+estilo_caracter_titulo = "Encabezado"

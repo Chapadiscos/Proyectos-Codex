@@ -30,7 +30,7 @@ AQUI = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, AQUI)
 
 from formatear.docx import Documento          # noqa: E402
-from formatear.clasificar import clasificar    # noqa: E402
+from formatear.clasificar import clasificar, renumerar_referencias    # noqa: E402
 from formatear import figuras, icml            # noqa: E402
 
 
@@ -43,7 +43,10 @@ def leer_words(docxs, conf):
                     ladillos_mayusculas=r.get('ladillos_mayusculas', False),
                     ladillos_estilo_word=r.get('ladillos_estilo_word', False),
                     ladillos_numerados=r.get('ladillos_numerados', False),
-                    quitar_filiaciones=r.get('quitar_filiaciones', True))
+                    quitar_filiaciones=r.get('quitar_filiaciones', True),
+                    capitulo_a_titulo=r.get('capitulo_a_titulo', False),
+                    ladillos_sin_numero=r.get('ladillos_sin_numero', False),
+                    casos_por_columnas=r.get('casos_por_columnas', False))
     leidos = []
     for d in docxs:
         doc = Documento(d)
@@ -120,6 +123,18 @@ def preparar(docxs, conf, destino_dir, nombre):
             convertidos[convertir_doc(d, destino_dir)] = d
     docxs = [next((c for c, o in convertidos.items() if o == d), d) for d in docxs]
     elementos, modo, origen, docxs = leer_words(docxs, conf)
+    # Figuras y tablas con el número del capítulo actual (el de la carpeta: «Capitulo 15»), aunque
+    # el Word traiga el de antes; los archivos de imagen se buscan con el número del Word.
+    viejo = nuevo = None
+    m_cap = re.search(r'\d+', nombre or '')
+    if conf.get('reglas', {}).get('renumerar_figuras') and m_cap:
+        nuevo = m_cap.group(0)
+        viejo = renumerar_referencias(elementos, nuevo)
+        if viejo:
+            print('Figuras y tablas: el Word las numera como capítulo %s; renumeradas como %s.x' % (viejo, nuevo))
+
+    def numero_nuevo(n):
+        return nuevo + n[len(viejo):] if viejo and n.startswith(viejo + '.') else n
     gen = icml.Generador(conf)
     por_id = figuras.indice_archivos(carpeta)
 
@@ -221,10 +236,11 @@ def preparar(docxs, conf, destino_dir, nombre):
                 trozos += [replace(x.trozos[0], texto=' ')] + list(x.trozos)
             pie = replace(e, trozos=trozos)
         salida_fig.append({
-            'buscar': re.match(r'\d+', ids[0]).group(0) if ids else '',
+            # Número de la figura para buscar su cita con GREP en InDesign («16.10» → «16\.10»)
+            'buscar': numero_nuevo(re.match(r'\d+(?:\.\d+)*', ids[0]).group(0)).replace('.', '\\.') if ids else '',
             # Sin número no hay cita «Figura N»: va a la página del párrafo de antes de la imagen.
             'buscar_texto': '' if ids else texto_vecino(f['k'] - 1, -1)[:40],
-            'nombre': 'Figura ' + ', '.join(ids) if ids else 'Figura sin número (párrafo %d)' % e.origen,
+            'nombre': 'Figura ' + ', '.join(numero_nuevo(i) for i in ids) if ids else 'Figura sin número (párrafo %d)' % e.origen,
             'archivos': archivos,
             'pie': escribir('figura_%02d.icml' % (n + 1), gen.pie_figura(pie)),
             'avisos': avisos + e.dudas,
@@ -268,7 +284,7 @@ def preparar(docxs, conf, destino_dir, nombre):
             pies.append(x)
         numero = titulo.datos.get('numero') if titulo else None
         salida_tab.append({
-            'buscar': numero or '',
+            'buscar': (numero or '').replace('.', '\\.'),      # para el GREP: «16.1» → «16\.1»
             'nombre': 'Tabla %s' % (numero or '(sin título)'),
             'icml': escribir('tabla_%02d.icml' % (len(salida_tab) + 1),
                              gen.tabla(titulo, e.tabla, pies, conf['tabla']['ancho'])),

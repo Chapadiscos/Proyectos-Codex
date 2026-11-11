@@ -15,6 +15,7 @@ NOMBRES = {
     'titulo': 'Título', 'titulo_ing': 'Título en inglés', 'centro': 'Centro', 'comunicacion': 'Comunicación',
     'titulo_resumen': 'Título resumen', 'resumen': 'Resumen', 'abstract': 'Abstract',
     'palabras_clave': 'Palabras clave', 'primer_texto': 'Primer párrafo',
+    'titulo_caso': 'Título caso clínico', 'texto_caso': 'Texto caso clínico',
 }
 COLORES = {
     'capitulo': '#7b1fa2', 'autores': '#7b1fa2', 'ladillo1': '#c62828', 'ladillo2': '#ef6c00',
@@ -24,6 +25,7 @@ COLORES = {
     'pie_figura': '#ad1457', 'imagen': '#ad1457', 'rotulo_material': '#bdbdbd', 'etiqueta_imagen': '#bdbdbd',
     'titulo': '#7b1fa2', 'titulo_ing': '#7b1fa2', 'centro': '#7b1fa2', 'comunicacion': '#7b1fa2',
     'titulo_resumen': '#00838f', 'resumen': '#00838f', 'abstract': '#00838f', 'palabras_clave': '#00838f',
+    'titulo_caso': '#4527a0', 'texto_caso': '#7e57c2',
     'primer_texto': '#9e9e9e',
 }
 OMITIDOS = ('rotulo_material', 'etiqueta_imagen')

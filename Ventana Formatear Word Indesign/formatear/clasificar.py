@@ -9,12 +9,12 @@ from .docx import Parrafo, Tabla, Trozo
 RE_CAPITULO = re.compile(r'^\s*Cap[ií]tulo\s+(\d+)\s*[.:\-–]?\s*(.*)$', re.I | re.S)
 RE_AUTORES = re.compile(r'^\s*Autor(?:es|as|a)?\s*:\s*', re.I)
 # También con el número del ladillo escrito delante: «5. BIBLIOGRAFÍA»
-RE_BIBLIO = re.compile(r'^\s*(?:\d+(?:\.\d+)*\.?\s+)?(bibliograf[ií]a|referencias?(\s+bibliogr[aá]ficas?)?)\s*\.?\s*:?\s*$', re.I)
+RE_BIBLIO = re.compile(r'^\s*(?:\d+(?:\.\d+)*\.?\s+)?(bibliograf[ií]a(\s+recomendada|\s+de\s+consulta)?|referencias?(\s+bibliogr[aá]ficas?)?)\s*\.?\s*:?\s*$', re.I)
 RE_IDEAS = re.compile(r'^\s*ideas\s+b[aá]sicas', re.I)
 RE_MATERIAL = re.compile(r'^\s*((leyendas?|pies?)(\s+de\s+(las\s+)?(figuras?|im[aá]genes))?|figuras(\s+y\s+tablas)?|tablas(\s+y\s+figuras)?)\s*\.?\s*:?\s*$', re.I)
-RE_FIGURA = re.compile(r'^\s*Fig(?:ura|s)?\.?\s*(\d+)\s*([A-Za-z])?\b', re.I)
-RE_ETIQUETAS = re.compile(r'^\s*(Fig(?:ura)?\.?\s*\d+\s*[A-Za-z]?\s*)+$', re.I)
-RE_TABLA = re.compile(r'^\s*Tabla\s+(\d+)', re.I)
+RE_FIGURA = re.compile(r'^\s*Fig(?:ura|s)?\.?\s*(\d+(?:\.\d+)*)\s*([A-Za-z])?\b', re.I)   # «Figura 3», «Figura 16.10A»
+RE_ETIQUETAS = re.compile(r'^\s*(Fig(?:ura)?\.?\s*\d+(?:\.\d+)*\s*[A-Za-z]?\s*)+$', re.I)
+RE_TABLA = re.compile(r'^\s*Tabla\s+(\d+(?:\.\d+)*)', re.I)   # «Tabla 4», «Tabla 16.1»
 RE_TABLA_TITULO = re.compile(r'^\s*Tabla\s+\d+\s*[.:\-–—]', re.I)   # «Tabla 2. …», no «Tabla 2 resume…»
 RE_VINETA_FALSA = re.compile(r'^\s*([-–—•·▪]|\.(?=\S))\s*')
 RE_NUM_MANUAL = re.compile(r'^\s*(\d{1,3})\s*[.)\-]?\s*')
@@ -128,14 +128,22 @@ def _expandir_figuras(bloques):
 
 
 def clasificar(doc, negritas_con_vineta='auto', cabecera='', ladillos_mayusculas=False,
-               ladillos_estilo_word=False, ladillos_numerados=False, quitar_filiaciones=True):
+               ladillos_estilo_word=False, ladillos_numerados=False, quitar_filiaciones=True,
+               capitulo_a_titulo=False, ladillos_sin_numero=False, casos_por_columnas=False):
     """Devuelve (elementos, modo): modo es cómo se han tratado las negritas con viñeta.
     cabecera="articulo": el Word empieza con título, autores, resumen… de un artículo de revista.
     ladillos_mayusculas: una línea corta toda en mayúsculas, aunque no vaya en negrita, es ladillo.
     ladillos_estilo_word: los párrafos con estilo «Título 2/3/4» de Word son ladillos 1/2/3
     aunque no vayan en negrita; ladillos_numerados: con su número de Word («1. Indicación»).
     quitar_filiaciones: de los autores solo quedan nombres y apellidos (sin llamadas voladas ni
-    centro de trabajo, ni los párrafos de filiación de debajo)."""
+    centro de trabajo, ni los párrafos de filiación de debajo).
+    capitulo_a_titulo: «CAPÍTULO 15» (con o sin el título detrás) no va en el texto: el título
+    del capítulo es el suyo o el párrafo siguiente, y los autores el de después.
+    ladillos_sin_numero: los ladillos numerados a mano («3.1 INTRODUCCIÓN», «1.- …») van sin el
+    número y con el nivel que dice («3.1» ladillo 1 y «3.1.1» ladillo 2 si todos empiezan por el
+    número del capítulo; si no, «1.-» ladillo 1 y «1.1» ladillo 2).
+    casos_por_columnas: en un Word con secciones de dos columnas (el texto), lo que va a una
+    columna con título propio, imagen y texto es un caso clínico (titulo_caso, texto_caso)."""
     elementos = []
     zona = 'texto'          # 'texto' | 'ideas' | 'bibliografia' | 'material'
     bloques = _expandir_figuras(doc.bloques)
@@ -153,7 +161,8 @@ def clasificar(doc, negritas_con_vineta='auto', cabecera='', ladillos_mayusculas
 
     for k, b in enumerate(bloques):
         if isinstance(b, Tabla):
-            elementos.append(Elemento('tabla', origen=b.indice, procedencia=b.origen, tabla=b))
+            elementos.append(Elemento('tabla', origen=b.indice, procedencia=b.origen, tabla=b,
+                                      datos={'columnas': getattr(b, 'columnas', 0)}))
             continue
         vacio = not b.texto.strip()
         if vacio and not b.imagenes:
@@ -162,7 +171,7 @@ def clasificar(doc, negritas_con_vineta='auto', cabecera='', ladillos_mayusculas
             continue
         if b.imagenes:
             elementos.append(Elemento('imagen', origen=b.indice, procedencia=b.origen,
-                                      imagenes=list(b.imagenes)))
+                                      imagenes=list(b.imagenes), datos={'columnas': b.columnas}))
             if vacio:
                 continue
 
@@ -173,6 +182,7 @@ def clasificar(doc, negritas_con_vineta='auto', cabecera='', ladillos_mayusculas
             if not texto.strip():
                 continue
             el = Elemento('texto', linea, origen=b.indice, procedencia=b.origen)
+            el.datos['columnas'] = b.columnas
             if n_linea and RE_VINETA_FALSA.match(texto):
                 el.notas.append('venía en el párrafo anterior, tras un salto de línea')
             elif n_linea:
@@ -204,9 +214,16 @@ def clasificar(doc, negritas_con_vineta='auto', cabecera='', ladillos_mayusculas
 
     if cabecera == 'articulo':
         elementos[:] = _cabecera_articulo(elementos)
+    _notas_de_maquetacion(elementos)
+    if capitulo_a_titulo:
+        _capitulo_a_titulo(elementos)
+    if ladillos_sin_numero:
+        _ladillos_sin_numero(elementos)
     if quitar_filiaciones:
         _quitar_filiaciones(elementos)
     _titulo_capitulo(elementos)
+    if casos_por_columnas:
+        _casos_por_columnas(elementos)
     _pies_sin_rotulo(elementos)
     _titulos_bajo_tabla(elementos)
     _saltos_sobrantes(elementos)
@@ -226,6 +243,111 @@ def clasificar(doc, negritas_con_vineta='auto', cabecera='', ladillos_mayusculas
 def _es_title(estilo):
     """Estilo «Title» / «Título» (sin número) de Word: el título del documento."""
     return bool(re.match(r'^\s*(title|t[ií]tulo)\s*$', estilo or '', re.I))
+
+
+RE_NOTA_MAQUETA = re.compile(r'(?i)\bc[oó]digos?\s+QR\b|\bal\s+maquetar\b|\bespacio\s+para\b')
+
+
+def _notas_de_maquetacion(elementos):
+    """Notas del autor para quien maqueta («ESPACIO PARA EL CÓDIGO QR DEL VIDEO 3.2», «AL MAQUETAR
+    HAY QUE DEJAR…»): no son ladillos; se quedan como texto con una duda (norma para todas)."""
+    for e in elementos:
+        if e.papel in ('ladillo1', 'ladillo2', 'ladillo3', 'texto') and RE_NOTA_MAQUETA.search(e.texto) \
+                and (mayusculas(e.texto) > 0.5 or e.papel != 'texto'):
+            e.papel = 'texto'
+            e.datos['nota_maqueta'] = True
+            e.dudas.append('nota del autor para la maquetación: ¿qué hay que poner aquí?')
+
+
+def _capitulo_a_titulo(elementos):
+    """«CAPÍTULO 3.- TÉCNICA GONIOSCÓPICA» → título «TÉCNICA GONIOSCÓPICA»; «CAPÍTULO 15» solo →
+    el título es el párrafo siguiente. Detrás, un párrafo de nombres propios son los autores."""
+    k = next((i for i, e in enumerate(elementos[:4]) if e.papel == 'capitulo'), None)
+    if k is None:
+        return
+    cap = elementos[k]
+    resto = re.sub(r'^[\s.:\-–—]+', '', cap.datos.get('titulo', ''))
+    if resto:
+        m = re.search(re.escape(resto[:20]), cap.texto)
+        cap.trozos = limpiar_bordes(quitar_inicio(cap.trozos, m.start() if m else len(cap.texto) - len(resto)))[0]
+        numero = cap.datos.get('numero', '')
+        cap.papel = 'titulo'
+        cap.datos = {}
+        cap.notas.append('«Capítulo %s» quitado: el número lo pone el libro' % numero)
+        sig = k + 1
+    else:
+        del elementos[k]
+        sig = next((i for i in range(k, min(k + 3, len(elementos))) if elementos[i].texto.strip()), None)
+        if sig is None:
+            return
+        t = elementos[sig]
+        t.papel = 'titulo'
+        t.datos.pop('versales', None)
+        t.notas.append('párrafo detrás de «CAPÍTULO N»: título del capítulo')
+        if t.texto.rstrip().endswith('.'):
+            t.trozos = _quitar_final(t.trozos, 1)
+        sig += 1
+    if sig < len(elementos) and elementos[sig].papel != 'autores' and parece_autores(elementos[sig].texto) \
+            and not RE_LADILLO_NUM.match(elementos[sig].texto) and not elementos[sig].papel.startswith('ladillo') \
+            and negrita(elementos[sig].trozos) < 0.9:
+        elementos[sig].papel = 'autores'
+        elementos[sig].notas.append('nombres detrás del título: autores')
+
+
+RE_LADILLO_NUM = re.compile(r'^\s*(\d+(?:\.\d+)*)\.?\s*(?:[-–—)]\s*)?(?=[^\W\d_])')
+
+
+def _ladillos_sin_numero(elementos):
+    """Ladillos con el número escrito a mano: fuera el número y nivel según el número. También
+    las negritas cortas numeradas que se habían quedado como texto («3.3 … PASOS A SEGUIR:»)."""
+    cands = []
+    for e in elementos:
+        m = RE_LADILLO_NUM.match(e.texto)
+        if not m:
+            continue
+        lad = e.papel in ('ladillo1', 'ladillo2', 'ladillo3')
+        entrada = e.papel == 'texto' and negrita(e.trozos) > 0.9 and len(e.texto) <= 160 \
+            and not e.datos.get('nota_maqueta')
+        if lad or entrada:
+            cands.append((e, m))
+    if not cands:
+        return
+    partes = [m.group(1).split('.') for _, m in cands]
+    base = 1 if all(len(p) >= 2 for p in partes) and len({p[0] for p in partes}) == 1 else 0
+    for e, m in cands:
+        nivel = min(max(len(m.group(1).split('.')) - base, 1), 3)
+        e.papel = 'ladillo%d' % nivel
+        e.trozos = limpiar_bordes(quitar_inicio(e.trozos, m.end()))[0]
+        e.notas = [n for n in e.notas if not n.startswith('frase de entrada')]
+        e.notas.append('número «%s» quitado: ladillo %d' % (m.group(1), nivel))
+
+
+def _casos_por_columnas(elementos):
+    """Casos clínicos marcados por el autor con secciones de Word: el texto va a dos columnas y
+    el caso, a una. Un título a una columna seguido de imagen, pie o texto a una columna es el
+    título del caso; si detrás viene texto a dos columnas, es un ladillo. El texto a una columna
+    (después del primer texto a dos) es texto del caso, y los pies de figura llevan su estilo."""
+    if not any(e.datos.get('columnas') == 2 for e in elementos):
+        return
+    inicio = next(i for i, e in enumerate(elementos) if e.datos.get('columnas') == 2)
+    titulos = ('ladillo1', 'ladillo2', 'ladillo3', 'texto')
+    for k in range(inicio, len(elementos)):
+        e = elementos[k]
+        if e.datos.get('columnas') != 1:
+            continue
+        sig = next((x for x in elementos[k + 1:] if x.papel == 'imagen' or x.texto.strip()), None)
+        if e.papel in titulos and (e.papel != 'texto' or negrita(e.trozos) > 0.9) and len(e.texto) <= 120 \
+                and (e.papel != 'texto' or not e.texto.rstrip().endswith('.')):
+            if sig is not None and sig.datos.get('columnas') == 1 and sig.papel in ('imagen', 'pie_figura', 'texto', 'etiqueta_imagen'):
+                e.papel = 'titulo_caso'
+                e.notas.append('a una columna en el Word, con imagen o texto detrás: título de caso clínico')
+                continue
+        if e.papel in ('texto', 'primer_texto', 'vineta', 'lista_num'):
+            e.papel = 'texto_caso'
+            e.nivel = 0
+            e.notas.append('a una columna en el Word: texto de caso clínico')
+        elif e.papel == 'pie_figura':
+            e.datos['caso'] = True
 
 
 RE_NUM_TITULO = re.compile(r'^\s*\d+(?:\.\d+)*\.?\s+(?=\S)')
@@ -254,7 +376,7 @@ def _titulo_capitulo(elementos):
             break
 
 
-RE_PIE_SERIE = re.compile(r'^\s*Fig(?:ura)?\.?\s*(\d+)\s*[A-Za-z]?\s*[.:\-–]\s*\S')
+RE_PIE_SERIE = re.compile(r'^\s*Fig(?:ura)?\.?\s*(\d+(?:\.\d+)*)\s*[A-Za-z]?\s*[.:\-–]\s*\S')
 
 
 def _pies_sin_rotulo(elementos):
@@ -262,12 +384,13 @@ def _pies_sin_rotulo(elementos):
     una serie de dos o más párrafos seguidos que empiezan por «Figura N.» con N creciente."""
     k = 0
     while k < len(elementos):
-        serie, j, ultimo = [], k, 0
+        serie, j, ultimo = [], k, ()
         while j < len(elementos) and elementos[j].papel == 'texto':
             m = RE_PIE_SERIE.match(elementos[j].texto)
-            if not m or int(m.group(1)) < ultimo:
+            n = tuple(int(x) for x in m.group(1).split('.')) if m else None     # «16.10» → (16, 10)
+            if not m or n < ultimo:
                 break
-            ultimo = int(m.group(1))
+            ultimo = n
             serie.append(elementos[j])
             j += 1
         if len(serie) >= 2:
@@ -594,12 +717,63 @@ def ids_figura(texto):
     """'Figura 5A. ... 5B: ...' → ['5A', '5B']; 'Figura 4 Algoritmo' → ['4']"""
     m = RE_FIGURA.match(texto)
     num, letra = m.group(1), (m.group(2) or '').upper()
-    if letra and not re.match(r'^\s*Fig(?:ura|s)?\.?\s*\d+\s*[A-Za-z]{2,}', texto, re.I):
+    if letra and not re.match(r'^\s*Fig(?:ura|s)?\.?\s*\d+(?:\.\d+)*\s*[A-Za-z]{2,}', texto, re.I):
         ids = [num + letra]
-        ids += [num + l.upper() for l in re.findall(r'(?:\b%s|[.;]\s*)([A-Za-z])\s*[:.]' % num, texto[m.end():])
+        ids += [num + l.upper() for l in re.findall(r'(?:\b%s|[.;]\s*)([A-Za-z])\s*[:.]' % re.escape(num), texto[m.end():])
                 if num + l.upper() not in ids]
         return ids
     return [num]
+
+
+# ---- renumerar figuras y tablas con el número del capítulo -----------------------
+# Una referencia: «Figura 16.10A», «Figuras 16.10A y 16.10B», «Tabla 16.1», «(Fig. 16.2)».
+RE_REFERENCIAS = re.compile(r'\b(Fig(?:ura)?s?\.?|Tablas?|V[ií]deos?|Algoritmos?)(\s*)'
+                            r'((?:\d+\.\d{1,2}(?!\d)[A-Za-z]?(?:\s*(?:,|y|e|-|–|a|al)\s*(?=\d))?)+)', re.I)
+
+
+def _sustituir(trozos, cambios):
+    """Cambia los tramos [(inicio, fin, texto nuevo)] del texto de los trozos; el texto nuevo
+    toma el formato del primer carácter del tramo."""
+    letras = [(c, t) for t in trozos for c in t.texto]
+    for ini, fin, nuevo in sorted(cambios, reverse=True):
+        t = letras[ini][1] if ini < len(letras) else trozos[-1]
+        letras[ini:fin] = [(c, t) for c in nuevo]
+    res = []
+    for c, t in letras:
+        if res and res[-1][1] is t:
+            res[-1][0].append(c)
+        else:
+            res.append(([c], t))
+    return [replace(t, texto=''.join(cs)) for cs, t in res]
+
+
+def renumerar_referencias(elementos, nuevo):
+    """Figuras y tablas numeradas con el capítulo del Word («Figura 16.3», el capítulo era el 16)
+    pasan al número del capítulo actual («Figura 15.3»). El capítulo antiguo es el que llevan los
+    pies y títulos de tabla; solo se cambian los números con ese prefijo detrás de «Figura»,
+    «Tabla», «Vídeo»… (no «16.000 pacientes»). Devuelve el número antiguo, o None."""
+    prefijos = [f.split('.')[0] for e in elementos if e.papel == 'pie_figura' for f in e.datos.get('figuras', []) if '.' in f]
+    prefijos += [e.datos['numero'].split('.')[0] for e in elementos
+                 if e.papel == 'titulo_tabla' and '.' in e.datos.get('numero', '')]
+    if not prefijos:
+        return None
+    viejo = max(set(prefijos), key=prefijos.count)
+    if viejo == str(nuevo):
+        return None
+    patron = re.compile(r'(?<![\d.,])%s\.(?=\d)' % re.escape(viejo))
+    for e in elementos:
+        texto = e.texto
+        cambios = []
+        for m in RE_REFERENCIAS.finditer(texto):
+            for n in patron.finditer(m.group(3)):
+                ini = m.start(3) + n.start()
+                cambios.append((ini, ini + len(viejo), str(nuevo)))
+        if cambios:
+            e.trozos = _sustituir(e.trozos, cambios)
+            e.notas.append('figuras y tablas %s.x renumeradas como %s.x' % (viejo, nuevo))
+        if e.papel == 'titulo_tabla' and e.datos.get('numero', '').startswith(viejo + '.'):
+            e.datos['numero'] = str(nuevo) + e.datos['numero'][len(viejo):]
+    return viejo
 
 
 # ---- cabecera de un artículo de revista ---------------------------------------
@@ -994,7 +1168,8 @@ def _caja_ladillos(elementos):
     la caja la pone el estilo. Se respetan las siglas que el texto usa en mayúsculas."""
     siglas, propios = set(), {}
     for e in elementos:
-        if e.papel in ('texto', 'vineta', 'lista_num', 'texto_vineta', 'texto_ideas', 'primer_texto', 'resumen'):
+        if e.papel in ('texto', 'vineta', 'lista_num', 'texto_vineta', 'texto_ideas', 'primer_texto', 'resumen') \
+                and mayusculas(e.texto) < 0.5:      # en un párrafo todo en mayúsculas no son siglas
             siglas.update(re.findall(r'\b[A-ZÁÉÍÓÚÜÑ]{2,}\b', e.texto))
             # Nombres propios: con mayúscula inicial en mitad de una frase («de Córdoba»).
             for m in re.finditer(r'(?<=[\w,;)»”] )([A-ZÁÉÍÓÚÜÑ][a-záéíóúüñ]+)\b|(?<=-)([A-ZÁÉÍÓÚÜÑ][a-záéíóúüñ]+)\b', e.texto):
@@ -1037,6 +1212,7 @@ def _caja_ladillos(elementos):
 
 
 CORTAN_LISTA = ('ladillo1', 'ladillo2', 'ladillo3', 'titulo_bibliografia', 'bibliografia', 'titulo_ideas',
+                'titulo_caso', 'texto_caso',
                 'texto_ideas', 'titulo_tabla', 'tabla', 'pie_tabla', 'pie_figura', 'imagen', 'rotulo_material',
                 'etiqueta_imagen', 'capitulo', 'autores', 'titulo', 'titulo_ing', 'centro', 'comunicacion',
                 'titulo_resumen', 'resumen', 'abstract', 'palabras_clave')

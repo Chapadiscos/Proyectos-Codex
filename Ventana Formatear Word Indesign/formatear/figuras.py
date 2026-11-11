@@ -5,7 +5,7 @@ import re
 import unicodedata
 
 EXTENSIONES = ('.jpg', '.jpeg', '.png', '.tif', '.tiff', '.psd', '.eps', '.ai', '.pdf')
-RE_ARCHIVO = re.compile(r'fig(?:ura)?\s*\.?\s*(\d+)\s*([a-z])?(?![a-z])', re.I)
+RE_ARCHIVO = re.compile(r'fig(?:ura)?\s*\.?\s*(\d+(?:\.\d+)*)\s*([a-z])?(?![a-z])', re.I)   # «Figura 15.10A.jpg»
 
 
 # Firmas de los formatos de imagen, para los archivos que llegan sin extensión («Figura 1»)
@@ -44,9 +44,26 @@ def indice_archivos(carpeta):
     return por_id
 
 
+def _otro_capitulo(fid, por_id):
+    """«16.10A» → «15.10A» si todos los archivos numerados llevan el mismo capítulo (15) y no es el
+    del Word; si no, None."""
+    if '.' not in fid:
+        return None
+    capitulos = {k.split('.')[0] for k in por_id if k and '.' in k}
+    if len(capitulos) != 1:
+        return None
+    cap = capitulos.pop()
+    return None if fid.split('.')[0] == cap else cap + fid[fid.index('.'):]
+
+
 def buscar_archivos(fid, texto_pie, por_id):
-    """Archivos sueltos para la figura fid ('5A', '4'...) y aviso, si lo hay."""
-    num = re.match(r'\d+', fid).group(0)
+    """Archivos sueltos para la figura fid ('5A', '4', '16.10A'...) y aviso, si lo hay."""
+    otro = _otro_capitulo(fid, por_id)
+    if otro and not por_id.get(fid) and not any(k and k[:-1] == fid and k[-1].isalpha() for k in por_id):
+        # El Word numera con otro capítulo que los archivos («Figura 16.10» ↔ «Figura 15.10.jpg»)
+        encontrados, aviso = buscar_archivos(otro, texto_pie, por_id)
+        return encontrados, ('el Word dice %s y el archivo es de la figura %s; ' % (fid, otro) + aviso).rstrip('; ')
+    num = re.match(r'\d+(?:\.\d+)*', fid).group(0)
     encontrados, aviso = por_id.get(fid, []), ''
     if not encontrados and fid != num:
         encontrados = por_id.get(num, [])

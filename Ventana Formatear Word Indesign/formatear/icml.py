@@ -38,7 +38,7 @@ SIN_CITAS = ('bibliografia', 'titulo_tabla', 'pie_figura', 'capitulo', 'autores'
 # Papel → clave de [parrafo] cuando no se llaman igual.
 ESTILO_DE = {'titulo': 'capitulo_titulo'}
 # En ladillos y títulos la negrita la pone el estilo.
-SIN_NEGRITA = ('ladillo1', 'ladillo2', 'ladillo3', 'titulo_bibliografia', 'titulo_ideas', 'autores',
+SIN_NEGRITA = ('ladillo1', 'ladillo2', 'ladillo3', 'titulo_bibliografia', 'titulo_ideas', 'titulo_caso', 'autores',
                'titulo', 'titulo_ing', 'titulo_resumen', 'centro', 'comunicacion')
 
 
@@ -105,7 +105,8 @@ class Generador:
         # Papeles que una publicación puede no tener: usan el estilo de otro (como propone
         # nueva_publicacion.py al darla de alta)
         self.parrafo = dict(conf['parrafo'])
-        for papel, otro in (('texto_vineta', 'texto'), ('texto_ideas', 'texto'), ('titulo_ideas', 'ladillo2')):
+        for papel, otro in (('texto_vineta', 'texto'), ('texto_ideas', 'texto'), ('titulo_ideas', 'ladillo2'),
+                            ('titulo_caso', 'ladillo2'), ('texto_caso', 'texto'), ('pie_figura_caso', 'pie_figura')):
             if not self.parrafo.get(papel):
                 self.parrafo[papel] = self.parrafo[otro]
         self.caracter = conf['caracter']
@@ -278,7 +279,7 @@ class Generador:
     def pie_figura(self, e):
         """Pie con «Figura N.» en el estilo de carácter de la etiqueta."""
         trozos = espacios(list(e.trozos))       # antes de separar la etiqueta («Figura 1B .»)
-        m = re.match(r'^\s*(Fig(?:ura|s)?\.?\s*\d+\s*[A-Za-z]?\s*[.:]?)', ''.join(t.texto for t in trozos))
+        m = re.match(r'^\s*(Fig(?:ura|s)?\.?\s*\d+(?:\.\d+)*\s*[A-Za-z]?\s*[.:]?)', ''.join(t.texto for t in trozos))
         etiqueta = self.caracter.get('etiqueta_figura')
         if m and etiqueta:
             from dataclasses import replace
@@ -298,14 +299,14 @@ class Generador:
             self.usados_c.add(etiqueta)
             etq = '<CharacterStyleRange AppliedCharacterStyle=%s><Content>%s</Content></CharacterStyleRange>' % (
                 quoteattr(ref_estilo('CharacterStyle', etiqueta)), escape(texto_etq))
-            estilo = self.parrafo['pie_figura']
+            estilo = self.parrafo['pie_figura_caso' if e.datos.get('caso') else 'pie_figura']
             self.usados_p.add(estilo)
             self.estilo_actual = estilo
             cuerpo = etq + ''.join(self.rango(replace(t, b=False)) for t in resto if t.texto)
             xml = '<ParagraphStyleRange AppliedParagraphStyle=%s>%s</ParagraphStyleRange>' % (
                 quoteattr(ref_estilo('ParagraphStyle', estilo)), cuerpo)
         else:
-            xml = self.parrafo_xml(self.parrafo['pie_figura'], trozos, ultimo=True)
+            xml = self.parrafo_xml(self.parrafo['pie_figura_caso' if e.datos.get('caso') else 'pie_figura'], trozos, ultimo=True)
         return self.documento(xml)
 
     def tabla(self, titulo, tabla, pies, ancho_mm):

@@ -19,8 +19,12 @@ function leerJSON(ruta) {
     return eval("(" + t + ")");
 }
 
-// «Grupo/Estilo» o «Estilo» → el nombre del estilo (sin grupo), para comparar
-function hoja(ruta) { var p = String(ruta || "").split("/"); return p[p.length - 1]; }
+// «Grupo/Estilo» o «Estilo» → el nombre del estilo (sin grupo), para comparar. Una barra del
+// propio nombre va escrita «\/» («Portadilla/Autor\/es» → «Autor/es»).
+function hoja(ruta) {
+    var p = String(ruta || "").replace(/\\\//g, "\uE000").split("/");
+    return p[p.length - 1].replace(/\uE000/g, "/");
+}
 
 // Ruta del documento al que pertenece un objeto
 function documentoDe(o) {

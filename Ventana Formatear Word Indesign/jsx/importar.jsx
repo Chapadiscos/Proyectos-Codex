@@ -145,12 +145,12 @@ function importar(m) {
             if (!huecos[pagina.id]) huecos[pagina.id] = [pagina.bounds[0], pagina.bounds[0]];
             return huecos[pagina.id];
         }
-        function sitio(pagina, ancho, alto) {
+        function sitio(pagina, ancho, alto, forzar) {
             var b = pagina.bounds, izq = pagina.side == PageSideOptions.LEFT_HAND;
             var col = columnas(pagina), doble = ancho > anchoCol, k, y;
             if (doble) { k = 0; y = Math.max(col[0], col[1]); }
             else { k = col[1] < col[0] ? 1 : 0; y = col[k]; }
-            if (y + alto > b[2] + mesa[1]) return null;
+            if (!forzar && y + alto > b[2] + mesa[1]) return null;
             var x = izq ? b[1] - MARGEN - (doble ? ancho : anchoCol) - k * (anchoCol + SEP)
                         : b[3] + MARGEN + k * (anchoCol + SEP);
             return { y: y, x: x, pagina: pagina, cols: doble ? [0, 1] : [k] };
@@ -166,7 +166,7 @@ function importar(m) {
         function acomodar(pieza, pagina, ancho) {
             var gb = pieza.geometricBounds, alto = gb[2] - gb[0], lista = candidatas(pagina), h = null;
             for (var i = 0; i < lista.length && !h; i++) h = sitio(lista[i], ancho, alto);
-            if (!h) h = sitio(pagina, ancho, 0);          // no cabe en ninguna: donde se cita
+            if (!h) h = sitio(pagina, ancho, alto, true); // no cabe en ninguna: donde se cita, aunque se salga de la mesa
             if (h.pagina.parent.id != pieza.parent.id) pieza.move(h.pagina.parent);
             pieza.move([h.x, h.y]);
             for (var i = 0; i < h.cols.length; i++) columnas(h.pagina)[h.cols[i]] = h.y + alto + 8;
@@ -293,7 +293,9 @@ function importar(m) {
             app.findTextPreferences.findWhat = texto.substr(0, 30);
             var r = historia.findText();
             app.findTextPreferences = NothingEnum.NOTHING;
-            if (r.length && r[0].parentTextFrames.length) pag = r[0].parentTextFrames[0].parentPage;
+            // Sin página (texto en un marco fuera de las páginas): la última, como si no se encontrara
+            if (r.length && r[0].parentTextFrames.length && r[0].parentTextFrames[0].parentPage)
+                pag = r[0].parentTextFrames[0].parentPage;
             return pag;
         }
         for (var i = 0; i < m.figuras.length; i++) {
