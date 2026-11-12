@@ -46,6 +46,7 @@ negrita_cursiva = "85 Heavy Oblique"
 superindice     = "Super"
 no_partir       = "noPartir"   # palabras compuestas con guion que no se deben partir (Revisar dudas)
 etiqueta_figura = "Figura"   # «Figura 1.» al principio del pie
+signo_figura    = ":"        # detrás del número de figura: «Figura 4.1:» (el Word trae «Figura 4.1.»)
 simbolos        = "→←↔⇒"       # caracteres que la fuente del texto no tiene
 estilo_simbolos = "Symbol"
 simbolos_superindice = "™®℠℗"   # al importar van con el estilo de superíndice (Super); © no, va a tamaño normal

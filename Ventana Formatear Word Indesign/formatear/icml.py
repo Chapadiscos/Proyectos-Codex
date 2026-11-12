@@ -296,6 +296,12 @@ class Generador:
                     resto.append(replace(t, texto=t.texto[n:]))
                     n = 0
             texto_etq = ''.join(t.texto for t in primero)
+            signo = self.caracter.get('signo_figura')
+            if signo:
+                # «Figura 4.1.» → «Figura 4.1:» (o el signo que pida la publicación)
+                texto_etq = re.sub(r'\s*[.:]?\s*$', '', texto_etq) + signo
+                if resto and not resto[0].texto[:1].isspace():
+                    resto[0] = replace(resto[0], texto=' ' + resto[0].texto)
             self.usados_c.add(etiqueta)
             etq = '<CharacterStyleRange AppliedCharacterStyle=%s><Content>%s</Content></CharacterStyleRange>' % (
                 quoteattr(ref_estilo('CharacterStyle', etiqueta)), escape(texto_etq))
