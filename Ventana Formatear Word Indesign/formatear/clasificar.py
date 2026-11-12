@@ -828,35 +828,43 @@ def renumerar_referencias(elementos, nuevo):
 
 def _tabla_sin_numero_de_capitulo(elementos):
     """«Tabla 4. Clasificación de Spaeth» entre la 4.3 y la 4.5 (o la última detrás de la 4.3):
-    al autor se le olvidó el número; pasa a 4.4, en el título y en las citas («tabla 4 y figuras
-    4.13…»), con duda. Solo si las demás tablas llevan todas «4.x» y el hueco es justo ese."""
+    al autor se le olvidó el número; pasa a 4.4, con duda. Solo si las demás tablas llevan todas
+    «4.x» y el hueco es justo ese. Después, las citas sin el número del capítulo («(tabla 3)»,
+    «figura 7») pasan a «tabla 4.3» si existe, con duda."""
     tablas = [e for e in elementos if e.papel == 'titulo_tabla' and e.datos.get('numero')]
     nums = [e.datos['numero'] for e in tablas]
     con_punto = [n for n in nums if '.' in n]
     caps = {n.split('.')[0] for n in con_punto}
-    if len(caps) != 1 or len(con_punto) < 2:
-        return
-    cap = caps.pop()
-    sueltas = [k for k, n in enumerate(nums) if n == cap]
-    if len(sueltas) != 1 or len(con_punto) != len(nums) - 1:
-        return
-    k = sueltas[0]
-    nuevo = '%s.%d' % (cap, k + 1)
-    if nuevo in nums or any(nums[i] != '%s.%d' % (cap, i + 1) for i in range(len(nums)) if i != k):
-        return
-    e = tablas[k]
-    m = RE_TABLA.match(e.texto)
-    e.trozos = _sustituir(e.trozos, [(m.start(1), m.end(1), nuevo)])
-    e.datos['numero'] = nuevo
-    e.dudas.append('el Word dice «Tabla %s»: numerada como %s' % (cap, nuevo))
-    cita = re.compile(r'\b(tabla)(\s+)%s(?![\d.,]\d|\d)' % re.escape(cap), re.I)
-    for x in elementos:
-        if x is e or x.papel == 'titulo_tabla':
+    if len(caps) == 1 and len(con_punto) >= 2 and len(con_punto) == len(nums) - 1:
+        cap = next(iter(caps))
+        k = nums.index(cap) if cap in nums else None
+        nuevo = '%s.%d' % (cap, k + 1) if k is not None else None
+        if nuevo and nuevo not in nums and all(nums[i] == '%s.%d' % (cap, i + 1) for i in range(len(nums)) if i != k):
+            e = tablas[k]
+            m = RE_TABLA.match(e.texto)
+            e.trozos = _sustituir(e.trozos, [(m.start(1), m.end(1), nuevo)])
+            e.datos['numero'] = nuevo
+            nums[k] = nuevo
+            e.dudas.append('el Word dice «Tabla %s»: numerada como %s' % (cap, nuevo))
+    figs = [f for e in elementos if e.papel == 'pie_figura' for f in e.datos.get('figuras', [])]
+    for palabra, lista in (('tabla', nums), ('figura', figs)):
+        if not lista or any('.' not in n for n in lista):
             continue
-        cambios = [(c.start(0) + len(c.group(1)) + len(c.group(2)), c.end(0), nuevo) for c in cita.finditer(x.texto)]
-        if cambios:
-            x.trozos = _sustituir(x.trozos, cambios)
-            x.dudas.append('el Word cita «tabla %s»: cambiada a %s' % (cap, nuevo))
+        caps = {n.split('.')[0] for n in lista}
+        if len(caps) != 1:
+            continue
+        cap = caps.pop()
+        existen = {n.split('.', 1)[1] for n in lista}
+        cita = re.compile(r'\b(%s)(\s+)(\d{1,2})(?![\d.,]?\d|[.,]?\s*[A-Za-z]?\d)(?![A-Za-z])' % palabra, re.I)
+        for x in elementos:
+            if x.papel in ('titulo_tabla', 'pie_figura'):
+                continue
+            cambios = [(c.start(3), c.end(3), '%s.%s' % (cap, c.group(3))) for c in cita.finditer(x.texto)
+                       if c.group(3) in existen]
+            if cambios:
+                x.trozos = _sustituir(x.trozos, cambios)
+                x.dudas.append('el Word cita %s sin el número del capítulo: cambiada a %s' % (
+                    palabra, ', '.join(c[2] for c in cambios)))
 
 
 # ---- cabecera de un artículo de revista ---------------------------------------
