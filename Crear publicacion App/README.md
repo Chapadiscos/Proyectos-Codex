@@ -3,7 +3,7 @@
 App de Mac (SwiftUI) para pasar un Word a InDesign en tres pasos independientes:
 
 1. **Galerada**: importar el Word (clic o arrastrar) y recorrer las marcas.
-2. **Tipografía**: revisar las correcciones una a una, contarlas o aplicarlas; buscar y revisar dudas (con Claude, si quieres).
+2. **Tipografía**: revisar las correcciones una a una (no hay «aplicar todas»: se revisan siempre) o contarlas; buscar y revisar dudas (con Claude, si quieres).
 3. **Cierre**: simular o finalizar el capítulo (puntuación con su formato, URLs y DOI enlazados).
 
 Tipografía y Cierre trabajan con el **documento activo** de InDesign, con **uno elegido** en la lista de abiertos (o con «Abrir documento…»), o con **todos los abiertos**.

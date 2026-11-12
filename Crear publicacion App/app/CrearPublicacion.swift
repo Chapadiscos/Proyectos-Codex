@@ -732,7 +732,7 @@ final class Taller: ObservableObject {
         case .galerada: elegirWord()
         case .seccion: seccionDelDestino()
         case .marcas: abrirEnInDesign("recorrer_marcas.jsx", "Recorrer marcas", .galerada, paso: .marcas)
-        case .correcciones: aplicarCorrecciones()
+        case .correcciones: abrirEnInDesign("revisar_correcciones.jsx", "Revisar correcciones", .tipografia, paso: .correcciones)
         case .dudas: buscarDudas()
         case .revisarDudas: abrirEnInDesign("revisar_dudas.jsx", "Revisar dudas", .tipografia, paso: .revisarDudas)
         case .cierre: abrirEnInDesign("revisar_cierre.jsx", "Revisar cierre", .cierre, paso: .cierre)
@@ -885,20 +885,6 @@ final class Taller: ObservableObject {
         guard let a = argsDocumento(admiteTodos: true) else { return }
         ejecutar(.tipografia, "Contando correcciones en \(textoDestino)", accion: "Correcciones contadas", documento: nombreDestino,
                  programa: "ortotipografia.py", args: a + ["--maqueta", publicacion])
-    }
-
-    func aplicarCorrecciones() {
-        guard let a = argsDocumento(admiteTodos: true) else { return }
-        let docs = docsDestino, faltan = pendientesAntes(.correcciones)
-        pregunta = Pregunta(titulo: "¿Aplicar las correcciones seguras?",
-                            texto: "En \(textoDestino). Cada documento se deshace con un Cmd+Z." + faltan,
-                            boton: faltan.isEmpty ? "Aplicar" : "Aplicar igualmente") { [weak self] in
-            guard let self else { return }
-            self.ejecutar(.tipografia, "Aplicando correcciones en \(self.textoDestino)", accion: "Correcciones aplicadas",
-                          documento: self.nombreDestino, programa: "ortotipografia.py", args: a + ["--aplicar", "--maqueta", self.publicacion]) { [weak self] ok in
-                if ok { self?.marcar(.correcciones, docs) }
-            }
-        }
     }
 
     func buscarDudas() {
@@ -1419,11 +1405,9 @@ struct TarjetaSeccion: View {
             VStack(alignment: .leading, spacing: 4) {
                 Rotulo("Correcciones seguras")
                 Accion(icono: "eye", titulo: "Revisar una a una…", detalle: "Antes y después de cada corrección, para aceptarla u omitirla",
-                       color: color, enInDesign: true) { taller.abrirEnInDesign("revisar_correcciones.jsx", "Revisar correcciones", .tipografia, paso: .correcciones) }
+                       color: color, principal: true, enInDesign: true, hecho: taller.hecho(.correcciones, taller.nombreDestino)) { taller.lanzar(.correcciones) }
                 Accion(icono: "number", titulo: "Contar cambios", detalle: "Lo que cambiaría cada regla, sin tocar nada",
                        color: color) { taller.contarCorrecciones() }
-                Accion(icono: "wand.and.stars", titulo: "Aplicar correcciones", detalle: "Todas las reglas seguras de golpe (Cmd+Z lo deshace)",
-                       color: color, principal: true, hecho: taller.hecho(.correcciones, taller.nombreDestino)) { taller.aplicarCorrecciones() }
                 Rotulo("Dudas").padding(.top, 8)
                 Accion(icono: "questionmark.bubble", titulo: "Buscar dudas", detalle: "Tildes, palabras desconocidas, extranjerismos, cursivas…",
                        color: color, hecho: taller.hecho(.dudas, taller.nombreDestino)) { taller.buscarDudas() }
