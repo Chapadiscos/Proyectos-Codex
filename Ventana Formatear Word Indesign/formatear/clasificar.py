@@ -231,6 +231,7 @@ def clasificar(doc, negritas_con_vineta='auto', cabecera='', ladillos_mayusculas
         _casos_por_figuras(elementos)
     _pies_sin_rotulo(elementos)
     _titulos_bajo_tabla(elementos)
+    _tabla_sin_numero_de_capitulo(elementos)
     _saltos_sobrantes(elementos)
     if ladillos_numerados:
         _ladillos_de_su_lista(elementos)
@@ -250,6 +251,8 @@ def _es_title(estilo):
     return bool(re.match(r'^\s*(title|t[ií]tulo)\s*$', estilo or '', re.I))
 
 
+# Frase final de un pie toda en mayúsculas, detrás del punto de la anterior
+RE_NOTA_EN_PIE = re.compile(r'(?<=[.)\]»”])\s+([^a-záéíóúüñ]{20,})$')
 RE_NOTA_MAQUETA = re.compile(r'(?i)\bc[oó]digos?\s+QR\b|\bal\s+maquetar\b|\bespacio\s+para\b')
 
 
@@ -263,6 +266,14 @@ def _notas_de_maquetacion(elementos):
                 and sig.papel == 'pie_figura' and sig.datos.get('figuras'):
             sig.dudas.append('nota del autor: «%s»' % e.texto.strip())
             del elementos[k]
+    for e in elementos:
+        # «… cámara anterior estrecha (B). ESTAS DOS IMAGENES: SI ES POSIBLE UNA AL LADO DE OTRA…»
+        # al final del pie: indicación para quien maqueta, fuera del pie y como duda de la figura
+        m = e.papel == 'pie_figura' and RE_NOTA_EN_PIE.search(e.texto.rstrip())
+        if m and len(re.findall(r'[^\W\d_]{2,}', m.group(1))) >= 4:
+            nota = m.group(1).strip()
+            e.trozos = _quitar_final(e.trozos, len(nota))
+            e.dudas.append('nota del autor: «%s»' % nota)
     for e in elementos:
         if e.papel in ('ladillo1', 'ladillo2', 'ladillo3', 'texto') and RE_NOTA_MAQUETA.search(e.texto) \
                 and (mayusculas(e.texto) > 0.5 or e.papel != 'texto'):
@@ -813,6 +824,39 @@ def renumerar_referencias(elementos, nuevo):
         if e.papel == 'titulo_tabla' and e.datos.get('numero', '').startswith(viejo + '.'):
             e.datos['numero'] = str(nuevo) + e.datos['numero'][len(viejo):]
     return viejo
+
+
+def _tabla_sin_numero_de_capitulo(elementos):
+    """«Tabla 4. Clasificación de Spaeth» entre la 4.3 y la 4.5 (o la última detrás de la 4.3):
+    al autor se le olvidó el número; pasa a 4.4, en el título y en las citas («tabla 4 y figuras
+    4.13…»), con duda. Solo si las demás tablas llevan todas «4.x» y el hueco es justo ese."""
+    tablas = [e for e in elementos if e.papel == 'titulo_tabla' and e.datos.get('numero')]
+    nums = [e.datos['numero'] for e in tablas]
+    con_punto = [n for n in nums if '.' in n]
+    caps = {n.split('.')[0] for n in con_punto}
+    if len(caps) != 1 or len(con_punto) < 2:
+        return
+    cap = caps.pop()
+    sueltas = [k for k, n in enumerate(nums) if n == cap]
+    if len(sueltas) != 1 or len(con_punto) != len(nums) - 1:
+        return
+    k = sueltas[0]
+    nuevo = '%s.%d' % (cap, k + 1)
+    if nuevo in nums or any(nums[i] != '%s.%d' % (cap, i + 1) for i in range(len(nums)) if i != k):
+        return
+    e = tablas[k]
+    m = RE_TABLA.match(e.texto)
+    e.trozos = _sustituir(e.trozos, [(m.start(1), m.end(1), nuevo)])
+    e.datos['numero'] = nuevo
+    e.dudas.append('el Word dice «Tabla %s»: numerada como %s' % (cap, nuevo))
+    cita = re.compile(r'\b(tabla)(\s+)%s(?![\d.,]\d|\d)' % re.escape(cap), re.I)
+    for x in elementos:
+        if x is e or x.papel == 'titulo_tabla':
+            continue
+        cambios = [(c.start(0) + len(c.group(1)) + len(c.group(2)), c.end(0), nuevo) for c in cita.finditer(x.texto)]
+        if cambios:
+            x.trozos = _sustituir(x.trozos, cambios)
+            x.dudas.append('el Word cita «tabla %s»: cambiada a %s' % (cap, nuevo))
 
 
 # ---- cabecera de un artículo de revista ---------------------------------------

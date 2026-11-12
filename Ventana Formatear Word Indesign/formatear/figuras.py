@@ -70,6 +70,34 @@ def _otro_capitulo(fid, por_id):
     return None if fid.split('.')[0] == cap else cap + fid[fid.index('.'):]
 
 
+# Preferencia cuando la misma imagen está en varios formatos: los de imagen antes que el PDF
+# (que suele ser la exportación de la presentación del autor)
+PREFERENCIA = ('.tif', '.tiff', '.psd', '.jpg', '.jpeg', '.png', '.eps', '.ai', '.pdf')
+
+
+def _mismo_en_varios_formatos(encontrados, aviso):
+    """«Figura 4.7.jpg» y «Figura 4.7.pdf»: es la misma figura en dos formatos, no una compuesta;
+    se usa uno, con aviso."""
+    grupos = {}
+    for f in encontrados:
+        grupos.setdefault(os.path.splitext(f)[0].strip().lower(), []).append(f)
+    if all(len(g) == 1 for g in grupos.values()):
+        return encontrados, aviso
+    res, dobles = [], []
+    for f in encontrados:
+        g = grupos[os.path.splitext(f)[0].strip().lower()]
+        if len(g) == 1:
+            res.append(f)
+        elif f not in dobles and not any(x in res for x in g):
+            elegido = min(g, key=lambda x: PREFERENCIA.index(os.path.splitext(x)[1].lower())
+                          if os.path.splitext(x)[1].lower() in PREFERENCIA else len(PREFERENCIA))
+            res.append(elegido)
+            dobles += g
+            aviso = (aviso + '; ' if aviso else '') + 'la misma imagen en varios formatos (%s): uso %s' % (
+                ', '.join(g), elegido)
+    return res, aviso
+
+
 def buscar_archivos(fid, texto_pie, por_id):
     """Archivos sueltos para la figura fid ('5A', '4', '16.10A'...) y aviso, si lo hay."""
     otro = _otro_capitulo(fid, por_id)
@@ -88,6 +116,7 @@ def buscar_archivos(fid, texto_pie, por_id):
             aviso = 'hay archivo de la figura entera (%s) y por partes (%s): elige' % (
                 ', '.join(encontrados), ', '.join(_partes(num, por_id)))
         encontrados = encontrados + _partes(num, por_id)
+    encontrados, aviso = _mismo_en_varios_formatos(encontrados, aviso)
     if not encontrados and 'algoritmo' in texto_pie.lower():
         encontrados = por_id.get('algoritmo', [])
     if not encontrados:
