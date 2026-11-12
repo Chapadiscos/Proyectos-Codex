@@ -350,10 +350,13 @@ class Generador:
         nfilas = len(tabla.filas)
         npie = 1 if pies else 0
         ntit = 1 if titulo is not None else 0     # el título, fila 0; la tabla de Word, debajo
+        # La primera fila del Word es cabecera si hay más; una tabla de una sola fila («Tabla 9.1»,
+        # una celda con la lista) va de cuerpo: InDesign no monta tablas sin filas de cuerpo.
+        ncab = 1 if nfilas > 1 else 0
         est_tabla = t.get('estilo', '')
         xml = ['<CharacterStyleRange AppliedCharacterStyle="%s"><Table Self="%s" HeaderRowCount="%d" FooterRowCount="%d" '
                'BodyRowCount="%d" ColumnCount="%d"%s TableDirection="LeftToRightDirection">' % (
-                   SIN_ESTILO, ident, 1 + ntit, npie, max(nfilas - 1, 0), ncol,
+                   SIN_ESTILO, ident, ncab + ntit, npie, nfilas - ncab, ncol,
                    (' AppliedTableStyle=%s' % quoteattr(ref_estilo('TableStyle', est_tabla))) if est_tabla else '')]
         for r in range(nfilas + npie + ntit):
             xml.append('<Row Self="%sRow%d" Name="%d" AutoGrow="true"/>' % (ident, r, r))
@@ -366,7 +369,7 @@ class Generador:
             xml.append('<Cell Self="%si0i0" Name="0:0" RowSpan="1" ColumnSpan="%d" AppliedCellStyle=%s>%s</Cell>' % (
                 ident, ncol, quoteattr(ref_estilo('CellStyle', est_celda)), contenido))
         for r, col, rowspan, span, parrafos in celdas:
-            cab = r == 0
+            cab = r == 0 and ncab
             est_celda = t.get('celda_cabecera' if cab else 'celda', '')
             est_par = self.parrafo['celda_cabecera' if cab else 'celda']
             ps = [p for p in parrafos] or []

@@ -71,7 +71,11 @@ function importar(m) {
     // de menú, que necesita el documento activo y el marco seleccionado.
     var d = app.open(destino, true);
     var res = [];
+    // Con el origen de las reglas «por página» (el de las maquetas de SEG) cada objeto se mide
+    // desde su página: las figuras de la mesa caían corridas una página, encima del texto.
+    var origen = d.viewPreferences.rulerOrigin;
     try {
+        d.viewPreferences.rulerOrigin = RulerOrigin.SPREAD_ORIGIN;
         d.viewPreferences.horizontalMeasurementUnits = MeasurementUnits.MILLIMETERS;
         d.viewPreferences.verticalMeasurementUnits = MeasurementUnits.MILLIMETERS;
 
@@ -205,7 +209,10 @@ function importar(m) {
             }
             var objetos = rects.slice(0);
             for (var i = 1; i < n; i++) {
-                var l = pliego.graphicLines.add({ geometricBounds: [y, x0 + i * w, y + h, x0 + i * w] });
+                // Los puntos, después de crearla: con geometricBounds en add() algunos filetes
+                // aparecían un ancho de página a la izquierda y el grupo invadía la página.
+                var l = pliego.graphicLines.add();
+                l.paths[0].entirePath = [[x0 + i * w, y], [x0 + i * w, y + h]];
                 l.strokeWeight = m.figura.filete + "pt";
                 try { l.strokeColor = d.swatches.itemByName("Paper"); } catch (e) {}
                 objetos.push(l);
@@ -332,6 +339,7 @@ function importar(m) {
         }
         res.push("Dudas marcadas: " + (dudas.length ? dudas.join(" · ") : "ninguna"));
         try { d.conditionalTextPreferences.showConditionIndicators = ConditionIndicatorMode.SHOW_INDICATORS; } catch (e) {}
+        try { d.viewPreferences.rulerOrigin = origen; } catch (e) {}
         d.save(destino);
     } catch (e) {
         res.push("ERROR: " + e + " (línea " + e.line + ")");
