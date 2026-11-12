@@ -5,7 +5,10 @@ import re
 import unicodedata
 
 EXTENSIONES = ('.jpg', '.jpeg', '.png', '.tif', '.tiff', '.psd', '.eps', '.ai', '.pdf')
-RE_ARCHIVO = re.compile(r'fig(?:ura)?\s*\.?\s*(\d+(?:\.\d+)*)\s*([a-z])?(?![a-z])', re.I)   # «Figura 15.10A.jpg»
+# «Figura 15.10A.jpg», «Figura 9.10AB.jpg» (dos partes en un archivo): el número entero, sin
+# recortarlo («9.10AB» no es la 9.1), y la letra o letras pegadas
+RE_ARCHIVO = re.compile(r'fig(?:ura)?\s*\.?\s*(\d+(?:\.\d+)*)(?![.]?\d)(?:\s*([a-z])|([a-z]{2,3}))?(?![a-z])', re.I)
+RE_NUM = re.compile(r'\d+(?:\.\d+)*')
 
 
 # Firmas de los formatos de imagen, para los archivos que llegan sin extensión («Figura 1»)
@@ -31,7 +34,7 @@ def id_archivo(nombre):
     base = os.path.splitext(nombre)[0]
     m = RE_ARCHIVO.search(base)
     if m:
-        return m.group(1) + (m.group(2) or '').upper()
+        return m.group(1) + (m.group(2) or m.group(3) or '').upper()
     if 'algoritmo' in base.lower():
         return 'algoritmo'
     return None
@@ -42,6 +45,17 @@ def indice_archivos(carpeta):
     for f in archivos_imagen(carpeta):
         por_id.setdefault(id_archivo(f), []).append(f)
     return por_id
+
+
+def _numero(k):
+    """«9.10AB» → «9.10»; None si el archivo no lleva número."""
+    m = RE_NUM.match(k or '')
+    return m.group(0) if m else None
+
+
+def _partes(num, por_id):
+    """Archivos de las partes de la figura num («9.10AB», «9.10C» para la 9.10)."""
+    return [f for k, fs in por_id.items() if k and k != num and _numero(k) == num for f in fs]
 
 
 def _otro_capitulo(fid, por_id):
@@ -59,17 +73,21 @@ def _otro_capitulo(fid, por_id):
 def buscar_archivos(fid, texto_pie, por_id):
     """Archivos sueltos para la figura fid ('5A', '4', '16.10A'...) y aviso, si lo hay."""
     otro = _otro_capitulo(fid, por_id)
-    if otro and not por_id.get(fid) and not any(k and k[:-1] == fid and k[-1].isalpha() for k in por_id):
+    if otro and not por_id.get(fid) and not _partes(fid, por_id):
         # El Word numera con otro capítulo que los archivos («Figura 16.10» ↔ «Figura 15.10.jpg»)
         encontrados, aviso = buscar_archivos(otro, texto_pie, por_id)
         return encontrados, ('el Word dice %s y el archivo es de la figura %s; ' % (fid, otro) + aviso).rstrip('; ')
-    num = re.match(r'\d+(?:\.\d+)*', fid).group(0)
+    num = RE_NUM.match(fid).group(0)
     encontrados, aviso = por_id.get(fid, []), ''
     if not encontrados and fid != num:
         encontrados = por_id.get(num, [])
         aviso = 'no hay archivo %s; uso el de la figura %s' % (fid, num) if encontrados else ''
-    if not encontrados and fid == num:
-        encontrados = [f for k, fs in por_id.items() if k and k[:-1] == num and k[-1].isalpha() for f in fs]
+    if fid == num and _partes(num, por_id):
+        if encontrados:
+            # «Figura 9.10.jpg» entera y también «9.10AB», «9.10C» por partes: van todos
+            aviso = 'hay archivo de la figura entera (%s) y por partes (%s): elige' % (
+                ', '.join(encontrados), ', '.join(_partes(num, por_id)))
+        encontrados = encontrados + _partes(num, por_id)
     if not encontrados and 'algoritmo' in texto_pie.lower():
         encontrados = por_id.get('algoritmo', [])
     if not encontrados:

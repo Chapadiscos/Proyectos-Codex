@@ -126,6 +126,9 @@ ladillos_mayusculas = true
 renumerar_figuras   = true
 # Casos clínicos: el autor los pone en secciones de Word a una columna; el texto, a dos.
 casos_por_columnas  = true
+# Capítulo-atlas (cap. 9): cada figura con un solo párrafo que la describe detrás → caso clínico
+# (pie de caso, descripción como texto de caso; «Quistes primarios» encima, título de caso).
+casos_por_figuras   = true
 
 # Cabecera de la portadilla desde la Biblioteca de la publicación: el elemento se coloca en la
 # primera página (margen izquierdo, a «y» mm del borde superior) y recibe el título y los autores

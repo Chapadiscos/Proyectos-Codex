@@ -46,7 +46,8 @@ def leer_words(docxs, conf):
                     quitar_filiaciones=r.get('quitar_filiaciones', True),
                     capitulo_a_titulo=r.get('capitulo_a_titulo', False),
                     ladillos_sin_numero=r.get('ladillos_sin_numero', False),
-                    casos_por_columnas=r.get('casos_por_columnas', False))
+                    casos_por_columnas=r.get('casos_por_columnas', False),
+                    casos_por_figuras=r.get('casos_por_figuras', False))
     leidos = []
     for d in docxs:
         doc = Documento(d)

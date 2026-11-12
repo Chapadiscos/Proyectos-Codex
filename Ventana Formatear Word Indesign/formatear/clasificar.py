@@ -129,7 +129,8 @@ def _expandir_figuras(bloques):
 
 def clasificar(doc, negritas_con_vineta='auto', cabecera='', ladillos_mayusculas=False,
                ladillos_estilo_word=False, ladillos_numerados=False, quitar_filiaciones=True,
-               capitulo_a_titulo=False, ladillos_sin_numero=False, casos_por_columnas=False):
+               capitulo_a_titulo=False, ladillos_sin_numero=False, casos_por_columnas=False,
+               casos_por_figuras=False):
     """Devuelve (elementos, modo): modo es cómo se han tratado las negritas con viñeta.
     cabecera="articulo": el Word empieza con título, autores, resumen… de un artículo de revista.
     ladillos_mayusculas: una línea corta toda en mayúsculas, aunque no vaya en negrita, es ladillo.
@@ -143,7 +144,9 @@ def clasificar(doc, negritas_con_vineta='auto', cabecera='', ladillos_mayusculas
     número y con el nivel que dice («3.1» ladillo 1 y «3.1.1» ladillo 2 si todos empiezan por el
     número del capítulo; si no, «1.-» ladillo 1 y «1.1» ladillo 2).
     casos_por_columnas: en un Word con secciones de dos columnas (el texto), lo que va a una
-    columna con título propio, imagen y texto es un caso clínico (titulo_caso, texto_caso)."""
+    columna con título propio, imagen y texto es un caso clínico (titulo_caso, texto_caso).
+    casos_por_figuras: si cada figura numerada lleva detrás un solo párrafo que la describe
+    (capítulo-atlas), cada figura con su descripción es un caso clínico."""
     elementos = []
     zona = 'texto'          # 'texto' | 'ideas' | 'bibliografia' | 'material'
     bloques = _expandir_figuras(doc.bloques)
@@ -224,6 +227,8 @@ def clasificar(doc, negritas_con_vineta='auto', cabecera='', ladillos_mayusculas
     _titulo_capitulo(elementos)
     if casos_por_columnas:
         _casos_por_columnas(elementos)
+    if casos_por_figuras:
+        _casos_por_figuras(elementos)
     _pies_sin_rotulo(elementos)
     _titulos_bajo_tabla(elementos)
     _saltos_sobrantes(elementos)
@@ -250,7 +255,14 @@ RE_NOTA_MAQUETA = re.compile(r'(?i)\bc[oó]digos?\s+QR\b|\bal\s+maquetar\b|\besp
 
 def _notas_de_maquetacion(elementos):
     """Notas del autor para quien maqueta («ESPACIO PARA EL CÓDIGO QR DEL VIDEO 3.2», «AL MAQUETAR
-    HAY QUE DEJAR…»): no son ladillos; se quedan como texto con una duda (norma para todas)."""
+    HAY QUE DEJAR…»): no son ladillos; se quedan como texto con una duda (norma para todas).
+    «Nota: …» entre la imagen y su pie numerado sale del texto y va de duda en la figura."""
+    for k in range(len(elementos) - 2, -1, -1):
+        e, sig = elementos[k], elementos[k + 1]
+        if e.papel == 'pie_figura' and e.datos.get('sin_numero') and re.match(r'(?i)\s*nota\s*:', e.texto) \
+                and sig.papel == 'pie_figura' and sig.datos.get('figuras'):
+            sig.dudas.append('nota del autor: «%s»' % e.texto.strip())
+            del elementos[k]
     for e in elementos:
         if e.papel in ('ladillo1', 'ladillo2', 'ladillo3', 'texto') and RE_NOTA_MAQUETA.search(e.texto) \
                 and (mayusculas(e.texto) > 0.5 or e.papel != 'texto'):
@@ -348,6 +360,33 @@ def _casos_por_columnas(elementos):
             e.notas.append('a una columna en el Word: texto de caso clínico')
         elif e.papel == 'pie_figura':
             e.datos['caso'] = True
+
+
+def _casos_por_figuras(elementos):
+    """Capítulo-atlas: cada figura numerada (imagen + «Figura 9.1. Título») lleva detrás un solo
+    párrafo que la describe y luego viene otra imagen, un ladillo o el final. Si es así en TODAS
+    (al menos tres), cada figura es un caso clínico: el pie con su estilo de caso, la descripción
+    como texto del caso y un ladillo de nivel 2 o 3 justo encima de una imagen, título de caso."""
+    if any(e.papel in ('titulo_caso', 'texto_caso') for e in elementos):
+        return
+    fin = ('imagen', 'ladillo1', 'ladillo2', 'ladillo3', 'titulo_bibliografia', 'rotulo_material')
+    pies = [k for k, e in enumerate(elementos) if e.papel == 'pie_figura' and e.datos.get('figuras')]
+    if len(pies) < 3:
+        return
+    for k in pies:
+        if k + 1 >= len(elementos) or elementos[k + 1].papel != 'texto' or elementos[k - 1].papel != 'imagen':
+            return
+        if k + 2 < len(elementos) and elementos[k + 2].papel not in fin:
+            return
+    for k in pies:
+        elementos[k].datos['caso'] = True
+        d = elementos[k + 1]
+        d.papel = 'texto_caso'
+        d.notas.append('párrafo que describe la figura: texto de caso clínico')
+    for k, e in enumerate(elementos[:-1]):
+        if e.papel in ('ladillo2', 'ladillo3') and elementos[k + 1].papel == 'imagen':
+            e.papel = 'titulo_caso'
+            e.notas.append('ladillo encima de una figura-caso: título de caso clínico')
 
 
 RE_NUM_TITULO = re.compile(r'^\s*\d+(?:\.\d+)*\.?\s+(?=\S)')
