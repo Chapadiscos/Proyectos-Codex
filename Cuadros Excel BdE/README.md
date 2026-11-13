@@ -124,4 +124,7 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
    - La línea que cierra cada bloque de sangrados (gris claro, como el resto) queda por revisar con más ejemplos.
    - Paso 2: si el autor escribió la FUENTE y las notas en celdas bajo el cuadro (DO, Memoria 3.2), el cuadro
      acaba antes y se avisa para pasarlas al cuadro de texto de FUENTES.
-5. **Terminar** (comparar con el original y guardar) — guardar hecho; comparar pendiente.
+5. **Terminar**: «Comparar con el original» (`comparar`, sin crear versión: datos de todas las hojas y textos de
+   las formas frente al Excel del autor; avisa en rojo de lo que falte y lista los cambios —sangrías, viñetas,
+   «TOTAL», puntos, comillas—) y «Guardar como TERMINADO» («ORIGINALES» → «TERMINADOS», junto al original; borra
+   copias y versiones).
