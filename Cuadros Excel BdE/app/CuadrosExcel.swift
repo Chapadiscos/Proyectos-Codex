@@ -99,16 +99,16 @@ struct PasoMaquetacion: Identifiable {
 
 let pasosMaquetacion = [
     PasoMaquetacion(id: 1, titulo: "Retícula, pastilla y textos",
-                    detalle: "Retícula y pastilla del archivo de retículas (hoja «Cuadro»), en A1 y al fondo, con el color de la publicación; Cuadro N (Roboto Regular 7 pt) y título (Roboto Medium 8,5 pt) con el marco de la plantilla; unidades (Roboto Light 6 pt) y FUENTES (Roboto Light 7 pt)",
+                    detalle: "Retícula y pastilla de la hoja «Cuadro» del archivo de retículas, en A1 y al fondo, con la pastilla en el matiz 1 de la publicación; Cuadro N (Roboto Regular 7 pt) y título (Roboto Medium 8,5 pt) con el marco de la plantilla: letras entre paréntesis, «(cont.)» o «(cont'd)» al final de párrafo en Regular y, si el título ocupa más líneas, la pastilla crece; unidades en Roboto Light 6 pt; FUENTES en Roboto Light 7 pt con las reglas de Gráficos (rótulo, notas con letra, punto final) en el ancho de la plantilla",
                     icono: "square.grid.3x3.topleft.filled", orden: "paso1"),
     PasoMaquetacion(id: 2, titulo: "Celdas",
-                    detalle: "Roboto Light 7,5 pt; alto de fila 14 (1 línea), 28 (2), 40 (3), 50 (4); primera columna a la izquierda y el resto al centro; centrado en altura en 1 línea y arriba en 2 o más; sangrías con 4, 8 o 12 espacios",
+                    detalle: "Anchos de columna hasta el borde derecho de la retícula: manda la primera columna (su texto más largo en una línea) y las demás, iguales si se puede (las de textos largos ganan ancho si no, las separaciones estrechas no se tocan); celdas en Roboto Light 7,5 pt (lo que iba en negrita, como los TOTAL, en Roboto Medium); alto de fila por líneas: 14 (1), 28 (2), 40 (3), 50 (4); cabecera: la primera a la izquierda y las demás al centro; primera columna a la izquierda con sangrías de 4, 8 o 12 espacios (sin viñetas; «Total» → «TOTAL», también en la cabecera); cifras al centro; textos cortos al centro y largos a la izquierda; centrado en altura, o arriba si la fila lleva textos de 2 o más líneas en los datos",
                     icono: "tablecells", orden: "paso2"),
     PasoMaquetacion(id: 3, titulo: "Cabeceras",
-                    detalle: "Fondo con el color de la publicación por nivel (cabecera 1 matiz 1, 2 matiz 2, 3 matiz 3 con texto blanco, 4 sólido); líneas blancas verticales entre cabeceras",
+                    detalle: "Fondo con el color de la publicación por nivel, desde la fila de abajo: cabecera 1 matiz 1, 2 matiz 2, 3 matiz 3 y 4 sólido (estas dos con el texto en blanco); líneas blancas finas entre celdas y entre niveles; la esquina de la primera columna solo si lleva texto; las columnas estrechas de separación, sin relleno",
                     icono: "rectangle.split.3x1", orden: "paso3"),
     PasoMaquetacion(id: 4, titulo: "Líneas y fondos",
-                    detalle: "Solo líneas horizontales: blanco matiz 2 entre filas y oscuras para separar conceptos; primera columna blanco matiz 1 con líneas blancas; títulos de bloque y TOTAL blanco matiz 2 (TOTAL blanco matiz 5 con texto blanco si el matiz 2 ya está usado)",
+                    detalle: "Líneas horizontales finas en blanco matiz 2 entre filas y oscura (matiz 5) encima de la fila TOTAL; primera columna en blanco matiz 1 con líneas blancas (sin línea entre conceptos sangrados); títulos de bloque y subtotales en blanco matiz 2; fila TOTAL en matiz 2, o en matiz 5 con el texto en blanco si el matiz 2 ya está usado; columna TOTAL en matiz 2 con línea blanca a la izquierda. Recuerda: otras líneas oscuras, a mano",
                     icono: "line.3.horizontal", orden: "paso4"),
 ]
 
@@ -522,14 +522,16 @@ final class Taller: ObservableObject {
     /// Volver a empezar desde el original del autor: se borran todas las versiones (se pregunta antes) y la
     /// copia de trabajo vuelve a ser la copia exacta.
     func reiniciar() {
-        guard let trabajo, pasos.count > 1 else { return }
+        guard let trabajo, !pasos.isEmpty else { return }
         pregunta = Pregunta(titulo: "¿Reiniciar desde el original?",
-                            texto: "Se borran las versiones 1 a \(pasos.count - 1) y se vuelve a la copia exacta del Excel del autor. No se puede deshacer.",
+                            texto: "Se cierra la copia en Excel sin guardar y se borra todo lo generado: las copias de trabajo («maquetado» y «maquetado (2)») y la carpeta «(pasos)» con todas las versiones. Después se empieza de nuevo desde el Excel del autor, como la primera vez. El original no se toca. No se puede deshacer.",
                             boton: "Reiniciar") {
             self.tarea("Reiniciar desde el original") { id in
+                await self.cerrarEnExcel(trabajo)
                 guard let r = await self.llamarMotor(["reiniciar", trabajo.path], registro: id) else { return false }
                 self.aplicar(r)
-                self.anotar(id, "Versiones borradas; de nuevo la copia exacta del original")
+                if let b = r.borrados, !b.isEmpty { self.anotar(id, "Borrado: " + b.joined(separator: ", ")) }
+                self.anotar(id, "Empezado de nuevo: copia exacta del original (versión 00)")
                 return await self.mostrar(id)
             }
         }
@@ -1303,8 +1305,7 @@ struct TarjetaVersiones: View {
                 Spacer()
                 Button { taller.reiniciar() } label: { Label("Reiniciar", systemImage: "arrow.counterclockwise") }
                     .controlSize(.small)
-                    .disabled(taller.pasos.count <= 1)
-                    .help("Vuelve a empezar desde el Excel del autor: borra todas las versiones")
+                    .help("Borra las copias de trabajo y todas las versiones y empieza de nuevo desde el Excel del autor")
                 Button { taller.colocarExcel() } label: { Label("Colocar Excel", systemImage: "rectangle.split.2x1") }
                     .controlSize(.small)
                     .help("Pone Excel a la derecha de la app, en la hoja del cuadro y con el cuadro entero a la vista")
