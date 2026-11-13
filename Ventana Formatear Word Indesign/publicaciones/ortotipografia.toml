@@ -59,7 +59,7 @@ buscar   = '(?<![\d.,/])0\.(?=\d)'
 cambiar  = '0,'
 excluir  = ["Bibliografia"]
 # Números de figura, tabla… («Figura 4.1», «tablas 4.2 y 4.3»): no son decimales en inglés
-excluir_antes = '\b(?:fig(?:ura)?s?|tablas?|v[ií]deos?|algoritmos?|cuadros?|gr[aá]ficos?|im[aá]gen(?:es)?|cap[ií]tulos?|apartados?|secci[oó]n(?:es)?|anexos?)\.?\s*(?:\d+(?:\.\d+)*[A-Za-z]?\s*(?:,|y|e|o|-|–|a|al)\s*)*'
+excluir_antes = '\b(?:fig(?:ura)?s?|tablas?|v[ií]deos?|algoritmos?|cuadros?|gr[aá]ficos?|im[aá]gen(?:es)?|cap[ií]tulos?|apartados?|secci[oó]n(?:es)?|anexos?)\.?[\s\u00a0\u2009\u202f]*(?:\d+(?:\.\d+)*[A-Za-z]?[\s\u00a0\u2009\u202f]*(?:,|y|e|o|-|–|a|al)[\s\u00a0\u2009\u202f]*)*'
 ejemplo  = "0.5 → 0,5"
 
 [[regla]]
@@ -69,14 +69,14 @@ buscar   = '(?<![\d.,/])([1-9]\d{0,2})\.(?=\d{1,2}(?![\d.]))'
 cambiar  = '$1,'
 excluir  = ["Bibliografia"]
 # Números de figura, tabla… («Figura 4.1», «tablas 4.2 y 4.3»): no son decimales en inglés
-excluir_antes = '\b(?:fig(?:ura)?s?|tablas?|v[ií]deos?|algoritmos?|cuadros?|gr[aá]ficos?|im[aá]gen(?:es)?|cap[ií]tulos?|apartados?|secci[oó]n(?:es)?|anexos?)\.?\s*(?:\d+(?:\.\d+)*[A-Za-z]?\s*(?:,|y|e|o|-|–|a|al)\s*)*'
+excluir_antes = '\b(?:fig(?:ura)?s?|tablas?|v[ií]deos?|algoritmos?|cuadros?|gr[aá]ficos?|im[aá]gen(?:es)?|cap[ií]tulos?|apartados?|secci[oó]n(?:es)?|anexos?)\.?[\s\u00a0\u2009\u202f]*(?:\d+(?:\.\d+)*[A-Za-z]?[\s\u00a0\u2009\u202f]*(?:,|y|e|o|-|–|a|al)[\s\u00a0\u2009\u202f]*)*'
 ejemplo  = "1.5 millones → 1,5 millones   ·   1.000 → sin cambio"
 
 [[regla]]
 nombre   = "Figs. → Figuras"
 descripcion = "Abreviatura de las llamadas a figura"
 buscar   = '\bFigs\.\s*(?=\d)'
-cambiar  = 'Figuras '
+cambiar  = 'Figuras~S'
 excluir  = ["Pie Figura"]
 ejemplo  = "(Figs. 5A y 5B) → (Figuras 5A y 5B)"
 
@@ -84,9 +84,16 @@ ejemplo  = "(Figs. 5A y 5B) → (Figuras 5A y 5B)"
 nombre   = "Fig. → Figura"
 descripcion = "Abreviatura de las llamadas a figura"
 buscar   = '\bFig\.\s*(?=\d)'
-cambiar  = 'Figura '
+cambiar  = 'Figura~S'
 excluir  = ["Pie Figura"]
 ejemplo  = "(Fig. 1) → (Figura 1)"
+
+[[regla]]
+nombre   = "Figura, Tabla… y su número"
+descripcion = "Espacio de no separación entre «Figura», «Tabla», «Vídeo»… y su número, para que no queden en líneas distintas. Si ya lo tiene, no la encuentra"
+buscar   = '(?i)\b(fig(?:ura)?s?\.?|tablas?|v[íi]deos?|algoritmos?|cuadros?|gr[aá]ficos?|im[aá]gen(?:es)?|anexos?|cap[íi]tulos?)(?: |~<|~s)(?=\d)'
+cambiar  = '$1~S'
+ejemplo  = "Figura 4.1, tabla 2, Vídeo 4.1 → con espacio de no separación"
 
 [[regla]]
 nombre   = "vs → vs."
