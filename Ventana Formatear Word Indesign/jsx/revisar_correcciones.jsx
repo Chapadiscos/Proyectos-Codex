@@ -3,6 +3,7 @@
 // con el antes y el después de cada una, para aceptarlas u omitirlas.
 // - Aceptar: hace esa corrección (un paso de deshacer). Solo se cambian los caracteres que
 //   cambian, así el resto conserva su formato (la cursiva dentro de unas comillas, por ejemplo).
+//   La ventana se queda en la corrección hecha, seleccionada en el documento, hasta pulsar Siguiente.
 // - Omitir: la deja como está; no vuelve a salir mientras la ventana siga abierta.
 // - Aceptar todas: las de la lista (todas o las de la regla elegida), en un paso de deshacer.
 // El «después» se calcula con la misma búsqueda GREP en un documento oculto: es exactamente lo
@@ -210,6 +211,7 @@
             }
             delta = nuevo.length - c.len;
         }
+        c.lenHecha = c.len + delta;
         // Las demás: las de detrás se mueven; las que pisan esta se quitan (con Actualizar vuelven
         // si aún hacen falta); a las del mismo párrafo se les recalcula el «después».
         var fin = c.ini + c.len, quedan = [];
@@ -270,7 +272,7 @@
     var bSig = gBot.add("button", undefined, "Siguiente ▶");
     var hueco = gBot.add("group"); hueco.alignment = ["fill", "center"];
     var bAceptar = gBot.add("button", undefined, "Aceptar");
-    bAceptar.helpTip = "Hace esta corrección (un Cmd+Z la deshace) y pasa a la siguiente";
+    bAceptar.helpTip = "Hace esta corrección (un Cmd+Z la deshace) y la enseña hecha; Siguiente pasa a la próxima";
     var bOmitir = gBot.add("button", undefined, "Omitir");
     bOmitir.helpTip = "La deja como está y pasa a la siguiente";
     var bTodas = gBot.add("button", undefined, "Aceptar todas");
@@ -317,6 +319,8 @@
 
     function mostrar() {
         var it = lb.selection;
+        pCmp.text = "Corrección";
+        C.proxima = undefined;
         bAceptar.enabled = bOmitir.enabled = bAnt.enabled = bSig.enabled = !!it;
         bTodas.enabled = C.vistas && C.vistas.length > 0;
         if (!it) { antes.text = despues.text = regla.text = ""; return; }
@@ -341,6 +345,28 @@
             var t = c.tipo == "ladillos" ? c.cont.characters[c.ini2].paragraphs[0] : rango(c);
             app.select(t);
             t.showText();
+        } catch (e) {}
+    }
+
+    // Tras Aceptar: la corrección hecha, seleccionada en el documento; Siguiente lleva a la próxima.
+    function mostrarHecha(c, textoAntes, proxima) {
+        C.rellenando = true;
+        lb.selection = null;
+        C.rellenando = false;
+        bAceptar.enabled = bOmitir.enabled = bAnt.enabled = false;
+        bSig.enabled = C.vistas.length > 0;
+        C.proxima = Math.min(proxima, C.vistas.length - 1);
+        pCmp.text = "Corrección hecha";
+        antes.text = textoAntes;
+        var hecha = { cont: c.cont, ini: c.ini, len: c.lenHecha || c.len };
+        var t = null;
+        try { t = rango(hecha); } catch (e) {}
+        if (c.tipo == "ladillos") despues.text = visible(c.texto) + "\n(sin espacio entre los dos)";
+        else despues.text = t ? contexto(hecha, String(t.contents)) : "(hecha)";
+        regla.text = "✓ " + c.regla.nombre + (C.vistas.length ? ". Pulsa «Siguiente ▶» para seguir." : ". No queda ninguna: pulsa «Terminar».");
+        try {
+            if (c.tipo == "ladillos") t = c.cont.characters[c.ini2].paragraphs[0];
+            if (t) { app.select(t); t.showText(); }
         } catch (e) {}
     }
 
@@ -388,19 +414,23 @@
     }
 
     filtro.onChange = function () { if (!C.rellenando) rellenar(0); };
-    lb.onChange = mostrar;
+    lb.onChange = function () { if (!C.rellenando) mostrar(); };
     bActualizar.onClick = function () { C.cargar(lb.selection ? lb.selection.index : 0); };
     bAnt.onClick = function () { if (lb.selection && lb.selection.index > 0) lb.selection = lb.selection.index - 1; };
-    bSig.onClick = function () { if (lb.selection && lb.selection.index < C.vistas.length - 1) lb.selection = lb.selection.index + 1; };
+    bSig.onClick = function () {
+        if (!lb.selection && C.proxima !== undefined && C.vistas.length) { lb.selection = C.proxima; return; }
+        if (lb.selection && lb.selection.index < C.vistas.length - 1) lb.selection = lb.selection.index + 1;
+    };
 
     bAceptar.onClick = function () {
         if (!lb.selection) return;
-        var i = lb.selection.index, c = C.vistas[i];
+        var i = lb.selection.index, c = C.vistas[i], textoAntes = antes.text;
         try { enUnPaso("Corrección: " + c.regla.nombre, function () { aplicar(c); }); }
         catch (e) { alert("No se pudo hacer la corrección: " + e); return; }
         // Se vuelve a buscar todo: una corrección puede crear otra o cambiar la de al lado
-        // («<25%» → «<25 %» y luego el punto final).
+        // («<25%» → «<25 %» y luego el punto final). La ventana se queda en la hecha.
         C.cargar(i);
+        mostrarHecha(c, textoAntes, i);
     };
     bOmitir.onClick = function () {
         if (!lb.selection) return;
@@ -433,8 +463,20 @@
         C.cargar(0);
         if (errores.length) alert("No se pudieron hacer " + errores.length + ":\n" + errores.slice(0, 8).join("\n"));
     };
+    // Para la app «Crear Publicación»: una línea «documento<TAB>paso» en informes/pasos-terminados.txt
+    function avisarTerminado(doc, paso) {
+        try {
+            if (!doc || !doc.isValid) return;
+            Folder(RAIZ.fsName + "/informes").create();
+            var f = File(RAIZ.fsName + "/informes/pasos-terminados.txt");
+            f.encoding = "UTF-8"; f.lineFeed = "Unix";
+            f.open("a"); f.write(doc.name + "\t" + paso + "\n"); f.close();
+        } catch (e) {}
+    }
     bTerminar.onClick = function () {
         try { if (C.doc && C.doc.isValid) C.doc.select(NothingEnum.NOTHING); } catch (e) {}
+        // Sin ninguna pendiente (aceptadas u omitidas): el paso Correcciones queda hecho en la app
+        if (C.doc && C.todas && !C.todas.length) avisarTerminado(C.doc, "correcciones");
         C.destruir();
     };
 

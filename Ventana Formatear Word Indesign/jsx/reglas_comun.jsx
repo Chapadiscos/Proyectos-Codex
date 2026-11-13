@@ -44,6 +44,8 @@ function hallazgos(d, rg, estilos) {
     var excl_texto = [], et = rg.excluir_texto || [];
     if (typeof et == "string") et = [et];
     for (var k = 0; k < et.length; k++) excl_texto.push(new RegExp(et[k]));
+    // «excluir_antes»: lo que va justo delante del hallazgo en su párrafo («Figura 4.1»: no es un decimal)
+    var excl_antes = rg.excluir_antes ? new RegExp("(?:" + rg.excluir_antes + ")$", "i") : null;
     opcionesGrep();
     app.findGrepPreferences = NothingEnum.NOTHING;
     app.findGrepPreferences.findWhat = rg.buscar;
@@ -57,6 +59,12 @@ function hallazgos(d, rg, estilos) {
             var txt = "";
             try { txt = hallados[i].paragraphs[0].contents.replace(/\r$/, ""); } catch (e) {}
             for (var k = 0; k < excl_texto.length; k++) if (excl_texto[k].test(txt)) fuera = true;
+        }
+        if (!fuera && excl_antes) {
+            try {
+                var par = hallados[i].paragraphs[0], o = hallados[i].index - par.index;
+                if (excl_antes.test(String(par.contents).substring(Math.max(0, o - 80), o))) fuera = true;
+            } catch (e) {}
         }
         if (!fuera && rg.estilo) {
             // Regla de estilo de carácter: solo cuenta lo que aún no lo tiene.

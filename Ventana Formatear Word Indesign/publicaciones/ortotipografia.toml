@@ -54,10 +54,12 @@ ejemplo  = "“conjuntivitis” → «conjuntivitis»"
 
 [[regla]]
 nombre   = "Coma decimal (0.x)"
-descripcion = "Punto decimal → coma; fuera de la bibliografía (DOI, volúmenes…)"
+descripcion = "Punto decimal → coma; fuera de la bibliografía (DOI, volúmenes…) y de «Figura 4.1», «Tabla 4.2»…"
 buscar   = '(?<![\d.,/])0\.(?=\d)'
 cambiar  = '0,'
 excluir  = ["Bibliografia"]
+# Números de figura, tabla… («Figura 4.1», «tablas 4.2 y 4.3»): no son decimales en inglés
+excluir_antes = '\b(?:fig(?:ura)?s?|tablas?|v[ií]deos?|algoritmos?|cuadros?|gr[aá]ficos?|im[aá]gen(?:es)?|cap[ií]tulos?|apartados?|secci[oó]n(?:es)?|anexos?)\.?\s*(?:\d+(?:\.\d+)*[A-Za-z]?\s*(?:,|y|e|o|-|–|a|al)\s*)*'
 ejemplo  = "0.5 → 0,5"
 
 [[regla]]
@@ -66,6 +68,8 @@ descripcion = "Con 3 decimales no se toca: 1.000 es separador de millar"
 buscar   = '(?<![\d.,/])([1-9]\d{0,2})\.(?=\d{1,2}(?![\d.]))'
 cambiar  = '$1,'
 excluir  = ["Bibliografia"]
+# Números de figura, tabla… («Figura 4.1», «tablas 4.2 y 4.3»): no son decimales en inglés
+excluir_antes = '\b(?:fig(?:ura)?s?|tablas?|v[ií]deos?|algoritmos?|cuadros?|gr[aá]ficos?|im[aá]gen(?:es)?|cap[ií]tulos?|apartados?|secci[oó]n(?:es)?|anexos?)\.?\s*(?:\d+(?:\.\d+)*[A-Za-z]?\s*(?:,|y|e|o|-|–|a|al)\s*)*'
 ejemplo  = "1.5 millones → 1,5 millones   ·   1.000 → sin cambio"
 
 [[regla]]
