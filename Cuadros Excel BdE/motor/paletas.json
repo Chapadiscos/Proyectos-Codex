@@ -1,0 +1,378 @@
+[
+ {
+  "id": "Accesible_2024",
+  "nombre": "Accesible_2024",
+  "archivo": "Accesible_2024.xml",
+  "colores": [
+   {
+    "clave": "dk1",
+    "hex": "000000"
+   },
+   {
+    "clave": "lt1",
+    "hex": "FFFFFF"
+   },
+   {
+    "clave": "dk2",
+    "hex": "BA5744"
+   },
+   {
+    "clave": "lt2",
+    "hex": "124380"
+   },
+   {
+    "clave": "accent1",
+    "hex": "A0CA78"
+   },
+   {
+    "clave": "accent2",
+    "hex": "FFE2AA"
+   },
+   {
+    "clave": "accent3",
+    "hex": "000000"
+   },
+   {
+    "clave": "accent4",
+    "hex": "000000"
+   },
+   {
+    "clave": "accent5",
+    "hex": "000000"
+   },
+   {
+    "clave": "accent6",
+    "hex": "000000"
+   }
+  ]
+ },
+ {
+  "id": "AMCESFI",
+  "nombre": "AMCESFI",
+  "archivo": "AMCESFI.xml",
+  "colores": [
+   {
+    "clave": "dk1",
+    "hex": "000000"
+   },
+   {
+    "clave": "lt1",
+    "hex": "FFFFFF"
+   },
+   {
+    "clave": "dk2",
+    "hex": "385D6B"
+   },
+   {
+    "clave": "lt2",
+    "hex": "CA1B67"
+   },
+   {
+    "clave": "accent1",
+    "hex": "F0C419"
+   },
+   {
+    "clave": "accent2",
+    "hex": "8BC63F"
+   },
+   {
+    "clave": "accent3",
+    "hex": "F15B5F"
+   },
+   {
+    "clave": "accent4",
+    "hex": "1A7D89"
+   },
+   {
+    "clave": "accent5",
+    "hex": "B22A36"
+   },
+   {
+    "clave": "accent6",
+    "hex": "003C49"
+   }
+  ]
+ },
+ {
+  "id": "BdE_2024",
+  "nombre": "BdE_2024",
+  "archivo": "BdE_2024.xml",
+  "colores": [
+   {
+    "clave": "dk1",
+    "hex": "000000"
+   },
+   {
+    "clave": "lt1",
+    "hex": "FFFFFF"
+   },
+   {
+    "clave": "dk2",
+    "hex": "3873B9"
+   },
+   {
+    "clave": "lt2",
+    "hex": "BA5744"
+   },
+   {
+    "clave": "accent1",
+    "hex": "FED060"
+   },
+   {
+    "clave": "accent2",
+    "hex": "6CB646"
+   },
+   {
+    "clave": "accent3",
+    "hex": "908F8F"
+   },
+   {
+    "clave": "accent4",
+    "hex": "F7BBB8"
+   },
+   {
+    "clave": "accent5",
+    "hex": "75519C"
+   },
+   {
+    "clave": "accent6",
+    "hex": "000000"
+   }
+  ]
+ },
+ {
+  "id": "BdE_2026",
+  "nombre": "Colores 2026_2",
+  "archivo": "BdE_2026.xml",
+  "colores": [
+   {
+    "clave": "dk1",
+    "hex": "000000"
+   },
+   {
+    "clave": "lt1",
+    "hex": "FFFFFF"
+   },
+   {
+    "clave": "dk2",
+    "hex": "EF9011"
+   },
+   {
+    "clave": "lt2",
+    "hex": "7DB749"
+   },
+   {
+    "clave": "accent1",
+    "hex": "FFDB93"
+   },
+   {
+    "clave": "accent2",
+    "hex": "AECEF4"
+   },
+   {
+    "clave": "accent3",
+    "hex": "FFC000"
+   },
+   {
+    "clave": "accent4",
+    "hex": "1D5191"
+   },
+   {
+    "clave": "accent5",
+    "hex": "C30FBA"
+   },
+   {
+    "clave": "accent6",
+    "hex": "7F3C2F"
+   }
+  ]
+ },
+ {
+  "id": "CobreCorp2022",
+  "nombre": "CobreCorp",
+  "archivo": "CobreCorp2022.xml",
+  "colores": [
+   {
+    "clave": "dk1",
+    "hex": "000000"
+   },
+   {
+    "clave": "lt1",
+    "hex": "FFFFFF"
+   },
+   {
+    "clave": "dk2",
+    "hex": "FF501A"
+   },
+   {
+    "clave": "lt2",
+    "hex": "BA5845"
+   },
+   {
+    "clave": "accent1",
+    "hex": "F7BBB8"
+   },
+   {
+    "clave": "accent2",
+    "hex": "F09E19"
+   },
+   {
+    "clave": "accent3",
+    "hex": "AFB1B2"
+   },
+   {
+    "clave": "accent4",
+    "hex": "626260"
+   },
+   {
+    "clave": "accent5",
+    "hex": "C62D82"
+   },
+   {
+    "clave": "accent6",
+    "hex": "56A0D8"
+   }
+  ]
+ },
+ {
+  "id": "Nueva imagen 2019",
+  "nombre": "Nueva imagen 2019",
+  "archivo": "Nueva imagen 2019.xml",
+  "colores": [
+   {
+    "clave": "dk1",
+    "hex": "000000"
+   },
+   {
+    "clave": "lt1",
+    "hex": "FFFFFF"
+   },
+   {
+    "clave": "dk2",
+    "hex": "A32938"
+   },
+   {
+    "clave": "lt2",
+    "hex": "004081"
+   },
+   {
+    "clave": "accent1",
+    "hex": "F06800"
+   },
+   {
+    "clave": "accent2",
+    "hex": "246C24"
+   },
+   {
+    "clave": "accent3",
+    "hex": "00A39B"
+   },
+   {
+    "clave": "accent4",
+    "hex": "EE0213"
+   },
+   {
+    "clave": "accent5",
+    "hex": "694B37"
+   },
+   {
+    "clave": "accent6",
+    "hex": "F53FAB"
+   }
+  ]
+ },
+ {
+  "id": "OME",
+  "nombre": "OME",
+  "archivo": "OME.xml",
+  "colores": [
+   {
+    "clave": "dk1",
+    "hex": "000000"
+   },
+   {
+    "clave": "lt1",
+    "hex": "FFFFFF"
+   },
+   {
+    "clave": "dk2",
+    "hex": "E73037"
+   },
+   {
+    "clave": "lt2",
+    "hex": "7E191E"
+   },
+   {
+    "clave": "accent1",
+    "hex": "B4B6B7"
+   },
+   {
+    "clave": "accent2",
+    "hex": "FFCE00"
+   },
+   {
+    "clave": "accent3",
+    "hex": "00549A"
+   },
+   {
+    "clave": "accent4",
+    "hex": "39ABA2"
+   },
+   {
+    "clave": "accent5",
+    "hex": "F39323"
+   },
+   {
+    "clave": "accent6",
+    "hex": "9F3AAA"
+   }
+  ]
+ },
+ {
+  "id": "VerdeAgua2022",
+  "nombre": "VerdeAgua",
+  "archivo": "VerdeAgua2022.xml",
+  "colores": [
+   {
+    "clave": "dk1",
+    "hex": "000000"
+   },
+   {
+    "clave": "lt1",
+    "hex": "FFFFFF"
+   },
+   {
+    "clave": "dk2",
+    "hex": "AAD6C1"
+   },
+   {
+    "clave": "lt2",
+    "hex": "52B580"
+   },
+   {
+    "clave": "accent1",
+    "hex": "AFB1B2"
+   },
+   {
+    "clave": "accent2",
+    "hex": "626260"
+   },
+   {
+    "clave": "accent3",
+    "hex": "6CB646"
+   },
+   {
+    "clave": "accent4",
+    "hex": "004D71"
+   },
+   {
+    "clave": "accent5",
+    "hex": "C62D82"
+   },
+   {
+    "clave": "accent6",
+    "hex": "56A0D8"
+   }
+  ]
+ }
+]

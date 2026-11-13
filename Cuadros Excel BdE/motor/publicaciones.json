@@ -1,0 +1,23 @@
+{
+  "reticula": {
+    "archivo": "SdE_Reticulas_Publicaciones_ImagenNueva2024_Roboto.xlsx",
+    "hoja": "Cuadro",
+    "grupo": "Grupo 20",
+    "marco_cuadro": "Rectángulo 12",
+    "marco_titulo": "Rectángulo 13",
+    "marco_fuentes": "Rectángulo 14"
+  },
+  "muestrario": [
+    {"nombre": "Publicaciones bianuales, trimestrales, boletín económico", "solido": "A32938", "color": "F3CED3"},
+    {"nombre": "Publicaciones anuales", "solido": "004081", "color": "B3D9FF"},
+    {"nombre": "Documentos Ocasionales y de Trabajo", "solido": "F06800", "color": "FFE0C9"},
+    {"nombre": "Research Update", "color": "CECDB7"},
+    {"nombre": "Notas Estadísticas", "solido": "00B8AF", "color": "BAFFFC"},
+    {"nombre": "Informes internos y varios", "color": "D9D9D9"},
+    {"nombre": "Encuesta Competencias Financieras", "color": "F1F9FA"},
+    {"nombre": "Estudios de Historia Económica", "color": "F7E9E5"}
+  ],
+  "publicaciones": [
+    {"id": "informe-anual", "nombre": "Informe Anual", "color": "004081", "tema": null}
+  ]
+}

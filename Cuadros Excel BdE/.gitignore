@@ -1,0 +1,6 @@
+*.app/
+* maquetado.xlsx
+* (pasos)/
+~$*
+* maquetado (2).xlsx
+__pycache__/
