@@ -106,6 +106,23 @@ notas = false     # además del texto condicional, una nota de InDesign con el m
 rango_minimo = 3      # 3,4,5 → 3-5 ; 3,4 → 3,4
 guion        = "–"    # raya corta (norma para todas las publicaciones)
 
+# Correcciones propias de esta publicación (se suman a las de ortotipografia.toml).
+[[regla]]
+nombre   = "(figura) → (Figura)"
+descripcion = "Llamadas a figura entre paréntesis, con mayúscula"
+buscar   = '\bfigura(s?)\b(?=[^()\r]*\))'
+cambiar  = 'Figura$1'
+excluir  = ["@bibliografia"]
+ejemplo  = "(figura 3) → (Figura 3)   ·   (ver figuras 2 y 3) → (ver Figuras 2 y 3)"
+
+[[regla]]
+nombre   = "(tabla) → (Tabla)"
+descripcion = "Llamadas a tabla entre paréntesis, con mayúscula"
+buscar   = '\btabla(s?)\b(?=[^()\r]*\))'
+cambiar  = 'Tabla$1'
+excluir  = ["@bibliografia"]
+ejemplo  = "(tabla 2) → (Tabla 2)   ·   (tablas 1 y 2) → (Tablas 1 y 2)"
+
 [reglas]
 # Autores: solo nombre y apellidos; las filiaciones (llamadas voladas, centro de trabajo,
 # párrafos de filiación de debajo) se quitan. Es la norma para todas las publicaciones.
