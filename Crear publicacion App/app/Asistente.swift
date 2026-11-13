@@ -1,5 +1,6 @@
-// Ventana «Afinar con Claude»: conversación con Claude Code sobre la publicación elegida, para
-// dejar mejor definida su configuración (.toml) y los estilos de su maqueta.
+// Ventana «Afinar con Claude»: conversación con Claude Code sobre el documento de InDesign elegido
+// en la app (las peticiones se aplican sobre él, en un solo paso de deshacer) y, si se pide, sobre la
+// configuración (.toml) y los estilos de la maqueta de la publicación.
 // Usa el Claude Code de la extensión de VS Code sin interfaz (-p, como formatear/claude.py),
 // en la carpeta del motor, y sigue la misma sesión de un mensaje a otro (--resume). Antes de
 // cada petición guarda una copia de la configuración y la maqueta para poder deshacer.
@@ -59,6 +60,8 @@ final class Asistente: ObservableObject {
     private var proceso: Process?
     private var detenido = false
     private var datos: DatosPublicacion?
+    /// El documento de InDesign con el que trabaja la app (nombre, ruta); nil si no hay ninguno
+    var documento: (nombre: String, ruta: String)?
 
     var slugActual: String { publicacion.map { URL(fileURLWithPath: $0.ruta).deletingPathExtension().lastPathComponent } ?? "" }
     private var archivoHilo: URL { apoyo.appendingPathComponent("conversaciones/\(slugActual).json") }
@@ -169,10 +172,18 @@ final class Asistente: ObservableObject {
         guard let p = publicacion else { return "" }
         let maqueta = datos?.maqueta?.path ?? "(sin maqueta)"
         let maquetado = datos?.maquetado ?? ""
+        let docTexto: String
+        if let d = documento {
+            docTexto = "«\(d.nombre)», en \(d.ruta)"
+        } else {
+            docTexto = "(ninguno: en la app no hay un documento elegido; si la petición es sobre el documento, pide al usuario que lo elija en la ventana principal)"
+        }
         return """
         Estás dentro de la app «Crear Publicación», que pasa capítulos de Word a InDesign en tres pasos \
         (Galerada, Tipografía y Cierre) con el motor de esta carpeta. El usuario es maquetador profesional y te habla \
         para dejar mejor definida UNA publicación. Responde siempre en español, breve y sin tecnicismos de programación.
+
+        Documento de InDesign con el que trabaja: \(docTexto)
 
         Publicación: «\(p.nombre)»
         - Configuración: \(p.ruta)
@@ -186,14 +197,34 @@ final class Asistente: ObservableObject {
         publicaciones/maqueta-base.toml explican cada clave. Los estilos en grupos se escriben «Grupo/Estilo».
         - La maqueta (.indd) tiene los estilos de párrafo, carácter, tabla, celda y objeto, las muestras y las maestras.
 
-        Puedes:
+        LO NORMAL: lo que pide el usuario se aplica DIRECTAMENTE sobre el documento de InDesign de arriba, que \
+        está abierto en InDesign 2027 (el capítulo que se ha importado con la app). Solo se cambia la configuración \
+        o la maqueta de la publicación si lo pide expresamente («para todos los capítulos», «en la configuración», \
+        «en la maqueta»…); si dudas, pregunta.
+
+        Cómo trabajar con InDesign (siempre InDesign 2027):
+        - Escribe cada .jsx en la carpeta temporal del Mac (la de `getconf DARWIN_USER_TEMP_DIR`; InDesign no puede \
+        leer /private/tmp/claude-*) y lánzalo con \
+        `osascript -e 'tell application "/Applications/Adobe InDesign 2027/Adobe InDesign 2027.app" to do script (POSIX file "…") language javascript'`. \
+        No uses `with arguments` (con la ruta de la aplicación da error de sintaxis): escribe los datos dentro del .jsx.
+        - Antes de nada, mira que InDesign esté libre (`app.modalState` debe ser false; si no, pide al usuario que \
+        cierre el diálogo).
+        - El documento se busca entre app.documents por su ruta completa (fullName.fsName); no lo abras de nuevo, \
+        no lo guardes y no lo cierres: el usuario guarda cuando quiere.
+        - Para mirar el documento puedes lanzar los scripts de solo lectura que necesites.
+        - TODOS los cambios de una petición van en UN solo script y dentro de \
+        `app.doScript(funcion, ScriptLanguage.JAVASCRIPT, [], UndoModes.ENTIRE_SCRIPT, "Afinar con Claude: <qué se ha hecho, corto>")`, \
+        para que un solo Cmd+Z (Edición > Deshacer) lo deshaga todo. No repartas los cambios en varios scripts; si te \
+        equivocas, deshaz con `doc.undo()` antes de rehacerlo, para que quede un solo paso.
+        - Si lo que se busca puede dar falsos positivos, cuenta primero con un script de solo lectura y enséñale al \
+        usuario unos ejemplos antes de cambiar.
+
+        También puedes:
         - Leer cualquier archivo del motor para entender cómo funciona (importar.py, formatear/, jsx/).
-        - Editar la configuración de esta publicación.
-        - Cambiar estilos de su maqueta con InDesign 2026: escribe un .jsx en la carpeta temporal del Mac \
-        (la de `getconf DARWIN_USER_TEMP_DIR`; InDesign no puede leer /private/tmp/claude-*) y lánzalo con \
-        `osascript -e 'tell application id "com.adobe.InDesign" to do script (POSIX file "…") language javascript with arguments {…}'`. \
-        Abre la maqueta sin ventana con app.open(archivo, false), cámbiala, guárdala y ciérrala. Si ya está abierta \
-        en InDesign, pide al usuario que la cierre; nunca cierres documentos que haya abierto él. \
+        - Editar la configuración de esta publicación, si te lo pide.
+        - Cambiar estilos de su maqueta, si te lo pide: ábrela sin ventana con app.open(archivo, false), cámbiala, \
+        guárdala y ciérrala. Si ya está abierta en InDesign, pide al usuario que la cierre; nunca cierres documentos \
+        que haya abierto él. \
         Trampas de ExtendScript: dentro de una función `arguments` son los de la función (guárdalos fuera); no hay \
         Array.map ni forEach; los estilos raíz («[Párrafo básico]») fallan al leer casi cualquier propiedad.
         - Si te pide cambiar también el maquetado del servidor, guarda una copia nueva al lado; no lo sobrescribas.
@@ -203,8 +234,10 @@ final class Asistente: ObservableObject {
         publicaciones/diccionario.txt, que son comunes.
 
         Forma de trabajar: si la petición es una decisión editorial dudosa, pregunta antes. Si el cambio es grande, \
-        di primero qué vas a hacer. Al terminar, resume lo que has cambiado en una a tres líneas. La app guarda una \
-        copia antes de cada petición y el usuario puede deshacer el último cambio.
+        di primero qué vas a hacer. Al terminar, resume lo que has cambiado en una a tres líneas; si has cambiado el \
+        documento, di que se deshace con un Cmd+Z en InDesign (Edición > Deshacer «Afinar con Claude: …»). Para la \
+        configuración y la maqueta, la app guarda una copia antes de cada petición y el usuario puede deshacer el \
+        último cambio con su botón.
         """
     }
 
@@ -230,6 +263,8 @@ final class Asistente: ObservableObject {
                     "--allowedTools", "Read", "Edit", "Write", "Glob", "Grep",
                     "Bash(osascript:*)", "Bash(getconf:*)", "Bash(ls:*)", "Bash(cat:*)", "Bash(mkdir:*)",
                     "Bash(\(python):*)"]
+        // La carpeta temporal del Mac (donde Claude escribe los .jsx que lanza en InDesign)
+        args += ["--add-dir", NSTemporaryDirectory()]
         if let sesion { args += ["--resume", sesion] }
         p.arguments = args
         p.currentDirectoryURL = motor
@@ -349,6 +384,8 @@ struct VentanaClaude: View {
     @FocusState private var escribiendo: Bool
 
     private let ideas = [
+        "Pon en cursiva las palabras en latín de este capítulo",
+        "Quita los espacios dobles y los tabuladores sueltos del documento",
         "Revisa la configuración y dime qué falta o qué ves raro",
         "¿Qué estilo se aplica a cada parte del capítulo al importar?",
         "Las viñetas deben ir sin sangría, como en los capítulos de 2025",
@@ -392,7 +429,8 @@ struct VentanaClaude: View {
             .frame(width: 38, height: 38)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Afinar con Claude").font(.system(size: 15, weight: .bold))
-                Text(asistente.publicacion.map { "Publicación: \($0.nombre)" } ?? "Elige una publicación en la ventana principal")
+                Text(asistente.publicacion.map { "Publicación: \($0.nombre)" + (taller.nombreDestino.map { " · Documento: \($0)" } ?? "") }
+                     ?? "Elige una publicación en la ventana principal")
                     .font(.system(size: 11.5)).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer()
@@ -450,7 +488,7 @@ struct VentanaClaude: View {
 
     var vacio: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Pide a Claude lo que quieras ajustar de la publicación: qué estilo va en cada parte, cómo son las tablas o las viñetas, qué palabras se resaltan… Lee la configuración y la maqueta, hace los cambios y te cuenta qué ha hecho.")
+            Text("Pide a Claude lo que quieras cambiar en el documento de InDesign elegido en la app: lo aplica directamente y todo lo de una petición se deshace con un solo Cmd+Z. También puede ajustar la configuración o la maqueta de la publicación, si se lo pides.")
                 .font(.system(size: 12.5)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Text("Por ejemplo").font(.system(size: 11, weight: .semibold)).foregroundStyle(.tertiary)
             ForEach(ideas, id: \.self) { idea in
@@ -498,6 +536,7 @@ struct VentanaClaude: View {
                 .help("Detener")
             } else {
                 Button {
+                    asistente.documento = taller.nombreDestino.flatMap { n in taller.rutaDestino.map { (n, $0) } }
                     asistente.enviar(texto)
                     texto = ""
                 } label: {
