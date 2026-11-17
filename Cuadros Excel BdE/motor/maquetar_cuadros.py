@@ -3081,7 +3081,7 @@ def minuscula_titulo(texto, idioma="es"):
         # abreviatura («Act. Profesionales»), no
         seguido = anterior_propio[0] and texto[m.start() - 1:m.start()] == " "
         antes = texto[:m.start()].rstrip()
-        if antes.endswith(".") and len(re.findall(r"[^\W\d_]+$", antes[:-1])[0] if re.findall(r"[^\W\d_]+$", antes[:-1]) else "") > 4:
+        if antes.endswith((").", "?", "!")) or (antes.endswith(".") and len(re.findall(r"[^\W\d_]+$", antes[:-1])[0] if re.findall(r"[^\W\d_]+$", antes[:-1]) else "") > 4):
             seguido = True
         titulo = len(w) > 1 and w[0].isupper() and w[1:].islower()
         anterior_propio[0] = es_sigla or es_propio or (titulo and seguido)
