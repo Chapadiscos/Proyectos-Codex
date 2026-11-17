@@ -97,6 +97,11 @@ struct PasoMaquetacion: Identifiable {
     let orden: String
 }
 
+/// Herramienta (no es un paso de todos los cuadros): rehace los pasos 2-4 con la letra a 7 pt en una versión nueva
+let herramientaLetra7 = PasoMaquetacion(id: 0, titulo: "Probar letra a 7 pt",
+    detalle: "Para cuadros con muchas columnas: rehace «Celdas», «Cabeceras» y «Líneas y fondos» con la letra a 7 pt (anchos, altos y cabecera recalculados) en una versión nueva. Si no te convence, vuelve a la anterior con ⌘← y sigue con 7,5 pt",
+    icono: "textformat.size.smaller", orden: "letra7")
+
 let pasosMaquetacion = [
     PasoMaquetacion(id: 1, titulo: "Retícula, pastilla y textos",
                     detalle: "Retícula y pastilla de la hoja «Cuadro» del archivo de retículas, en A1 y al fondo, con la pastilla en el matiz 1 de la publicación; Cuadro N (Roboto Regular 7 pt) y título (Roboto Medium 8,5 pt) con el marco de la plantilla: letras entre paréntesis, «(cont.)» o «(cont'd)» al final de párrafo en Regular y, si el título ocupa más líneas, la pastilla crece; unidades en Roboto Light 6 pt; FUENTES en Roboto Light 7 pt con las reglas de Gráficos (rótulo, notas con letra, punto final) en el ancho de la plantilla",
@@ -1274,8 +1279,12 @@ struct TarjetaMaquetar: View {
                 }
             }
             .disabled(taller.trabajo == nil || taller.publicacionActual == nil || taller.enCurso != nil)
-            Label("Siguientes pasos: los iremos añadiendo", systemImage: "ellipsis")
-                .font(.system(size: 10.5)).foregroundStyle(.tertiary)
+            Rotulo("Herramientas")
+            let celdasHechas = taller.pasos.contains { $0.titulo == "Celdas" && $0.n <= taller.actual }
+            let probada = taller.pasos.contains { $0.titulo == "Letra 7 pt" && $0.n <= taller.actual }
+            Accion(icono: herramientaLetra7.icono, titulo: herramientaLetra7.titulo, detalle: herramientaLetra7.detalle,
+                   color: colorApp, principal: false, marca: probada ? "checkmark.circle.fill" : nil) { taller.hacer(herramientaLetra7) }
+                .disabled(taller.trabajo == nil || taller.publicacionActual == nil || taller.enCurso != nil || !celdasHechas)
         }
     }
 }

@@ -2069,12 +2069,14 @@ def celdas(z, hoja):
         maximo_cab = max([lineas_texto(t, k * resto, m) for c, f, t, k, m in celdas_otras if f <= fin_cab] or [1])
         if maximo_cab > 3:
             def alto_cuadro(wp, wr):
+                """(alto de la cabecera, alto del cuadro): primero se busca la cabecera más baja (lo que pidió el
+                usuario y hace el TERMINADO del 3.4) y, a igualdad, el cuadro más bajo."""
                 filas_l = {}
                 for f, espacios, t, m in textos_primera:
                     filas_l[f] = max(filas_l.get(f, 1), lineas_primera(t, espacios, m, wp))
                 for c, f, t, k, m in celdas_otras:
                     filas_l[f] = max(filas_l.get(f, 1), lineas_texto(t, k * wr, m))
-                return sum(alto_fila(n) for n in filas_l.values())
+                return (sum(alto_fila(n) for f, n in filas_l.items() if f <= fin_cab), sum(alto_fila(n) for n in filas_l.values()))
             # Lo más que puede ceder: que sus textos ocupen 2 líneas como mucho o, si ya ocupan 2 (porque la primera ya
             # cedió para que quepan las cifras, 3.4), una más (el TERMINADO del 3.4 llega a 3)
             tope = max(2, max(lineas_primera(t, e, m, primera_pt) for _, e, t, m in textos_primera) + 1)
@@ -2088,15 +2090,17 @@ def celdas(z, hoja):
                 mejor = min(mejor, (alto_cuadro(wp, wr), -wp, wp))
                 wp -= MULTIPLO_PT
             if mejor[2] < primera_pt:
+                antes = alto_cuadro(primera_pt, resto)[0]
                 detalle.append(f"Cabecera de datos muy alta ({maximo_cab} líneas): la primera columna cede de {primera_pt / MM:.1f} "
-                               f"a {mejor[2] / MM:.1f} mm (sus textos, en {tope} líneas como mucho) y el cuadro queda más bajo".replace(".", ","))
+                               f"a {mejor[2] / MM:.1f} mm (sus textos, en {tope} líneas como mucho) y la cabecera baja de "
+                               f"{antes:g} a {mejor[0][0]:g} pt".replace(".", ",", 2))
                 primera_pt = mejor[2]
                 resto = (espacio_pt - primera_pt) / len(otras)
 
     # 1) Muchas columnas de datos: aviso para valorar bajar la letra a 7 pt (decisión del usuario, 2026-11-17)
     if otras and (len(otras) >= 10 or resto < 30):
         detalle.append(f"Aviso: el cuadro tiene {len(otras)} columnas de datos de {resto:.0f} pt: valora bajar la letra a 7 pt "
-                       "(la guía permite de 6 a 7,5 pt según el tamaño del cuadro)")
+                       "con «Probar letra a 7 pt» (la guía permite de 6 a 7,5 pt según el tamaño del cuadro)")
 
     # Columnas de textos largos: si con anchos iguales sus filas salen mucho más altas, ganan ancho a costa de las que
     # tienen holgura (sin que estas pasen a tener más líneas que la más alta), hasta que ya no mejora
@@ -2831,6 +2835,54 @@ def comparar(trabajo):
     return {"trabajo": str(trabajo), **estado, "comparacion": lineas, "comparado": str(actual), "original": str(origen)}
 
 
+# ---------------------------------------------------------------- herramienta: probar la letra a 7 pt
+
+LETRA_PEQUENA = 7
+
+
+def letra7(trabajo, pid=None):
+    """Rehace los pasos 2, 3 y 4 (los que haya hasta la versión elegida) con la letra de las celdas a 7 pt, desde
+    la versión del paso 1, y lo guarda como una versión nueva: las de 7,5 pt se quedan para volver a ellas
+    (petición del usuario, 2026-11-17: probar 7 pt en cuadros con muchas columnas y quedarse con lo mejor)."""
+    global CUERPO_CELDA
+    estado = leer_estado(trabajo)
+    hechos = [p["titulo"] for p in estado["pasos"][:estado["actual"] + 1]]
+    if CELDAS not in hechos:
+        raise Fallo("Antes hay que hacer el paso «Celdas»: la prueba de 7 pt lo rehace con la letra más pequeña")
+    _, pasos = nombres(trabajo)
+    n1 = max(p["n"] for p in estado["pasos"][:estado["actual"] + 1] if p["titulo"] == RETICULA_Y_TEXTOS)
+    base = pasos / estado["pasos"][n1]["archivo"]
+    hoja = estado.get("hoja") or "Cuadro datos"
+    anterior = CUERPO_CELDA
+    CUERPO_CELDA = LETRA_PEQUENA
+    try:
+        with zipfile.ZipFile(base) as z:
+            cambios, detalle, cuadro = celdas(z, hoja)
+        todo = dict(cambios)
+        if CABECERAS in hechos:
+            intermedio = io.BytesIO()
+            reescribir_zip(base, intermedio, todo)
+            with zipfile.ZipFile(intermedio) as z:
+                cambios, det = cabeceras(z, hoja, cuadro, publicacion(pid))
+            todo.update(cambios)
+            detalle += det
+        if LINEAS_Y_FONDOS in hechos:
+            intermedio = io.BytesIO()
+            reescribir_zip(base, intermedio, todo)
+            with zipfile.ZipFile(intermedio) as z:
+                cambios, det = lineas_y_fondos(z, hoja, cuadro)
+            todo.update(cambios)
+            detalle += det
+    finally:
+        CUERPO_CELDA = anterior
+    rehechos = ["Celdas"] + [t for t in (CABECERAS, LINEAS_Y_FONDOS) if t in hechos]
+    detalle.insert(0, f"Letra de las celdas a {LETRA_PEQUENA} pt: rehechos desde la versión {n1} los pasos "
+                      + ", ".join(f"«{t}»" for t in rehechos) + ". Si no te convence, vuelve a la versión anterior (⌘←)")
+    # Los avisos de bajar a 7 pt ya no vienen al caso
+    detalle = [l for l in detalle if not l.startswith("Aviso: el cuadro tiene")]
+    return nuevo_paso(trabajo, f"Letra {LETRA_PEQUENA} pt", todo, detalle, cuadro)
+
+
 
 def pendiente(nombre):
     def paso(trabajo, pid=None):
@@ -2965,7 +3017,7 @@ def info(archivo):
 
 ORDENES = {"empezar": empezar, "estado": lambda t: {"trabajo": t, **leer_estado(t)}, "ir": ir, "reiniciar": reiniciar,
            "paso1": paso1, "paso2": paso2,
-           "paso3": paso3, "paso4": paso4,
+           "paso3": paso3, "paso4": paso4, "letra7": letra7,
            "comparar": comparar, "terminar": terminar, "info": info, "publicaciones": lambda: {},
            "guardar_publicacion": guardar_publicacion, "borrar_publicacion": borrar_publicacion, "paletas": paletas}
 

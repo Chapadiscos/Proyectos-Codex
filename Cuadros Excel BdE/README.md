@@ -78,7 +78,7 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      permite, también en Windows.
    - **Cabecera de datos muy alta** (> 3 líneas; decisión del usuario, 2026-11-17): la primera columna puede ceder
      ancho (sus textos, hasta 2 líneas, o una más si ya ocupaban 2) y se queda el reparto con el cuadro más bajo;
-     si ceder no lo baja, no cede (3.4: con 7,5 pt no gana nada; el TERMINADO usa 7 pt).
+     se busca primero la cabecera más baja y, a igualdad, el cuadro más bajo (como el TERMINADO del 3.4).
    - **Aviso de muchas columnas** (10 o más de datos, o de menos de 30 pt): valorar bajar la letra a 7 pt.
    - **Aviso de textos en celdas fuera del cuadro** dentro de la retícula (3.4: A28, restos del autor).
    - **Pendiente (Windows)**: con las fuentes «Normal» de los autores (Calibri 11, Arial 12) el Excel de Windows
@@ -144,6 +144,11 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
    - La línea que cierra cada bloque de sangrados (gris claro, como el resto) queda por revisar con más ejemplos.
    - Paso 2: si el autor escribió la FUENTE y las notas en celdas bajo el cuadro (DO, Memoria 3.2), el cuadro
      acaba antes y se avisa para pasarlas al cuadro de texto de FUENTES.
+**Herramienta «Probar letra a 7 pt»** (`letra7`, petición del usuario, 2026-11-17): rehace desde la versión del
+paso 1 los pasos 2, 3 y 4 que haya hechos con la letra de las celdas a 7 pt y lo guarda como una versión nueva
+(«Letra 7 pt»); las de 7,5 pt quedan detrás para volver con ⌘←. El paso 2 la propone en su aviso de muchas
+columnas. En el 3.4 deja la cabecera en 60 pt, como el TERMINADO.
+
 5. **Terminar**: «Comparar con el original» (`comparar`, sin crear versión: datos de todas las hojas y textos de
    las formas frente al Excel del autor; avisa en rojo de lo que falte y lista los cambios —sangrías, viñetas,
    «TOTAL», puntos, comillas—) y «Guardar como TERMINADO» («ORIGINALES» → «TERMINADOS», junto al original; borra
