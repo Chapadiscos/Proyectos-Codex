@@ -339,6 +339,10 @@ final class Taller: ObservableObject {
     @Published var ahora = Date()
     /// Resultado de «Comparar con el original» (se borra al cambiar de versión: ya no vale)
     @Published var comparacion: [String] = []
+    /// Hay una versión de la app más nueva que la que está abierta (se ha compilado después de arrancar)
+    @Published var appNueva = false
+    private let arranque = Date()
+    private var ultimaRevision = Date.distantPast
 
     var motorEncontrado: Bool { FileManager.default.fileExists(atPath: motor.appendingPathComponent("maquetar_cuadros.py").path) }
     var publicacionActual: Publicacion? { publicaciones.first { $0.id == publicacion } }
@@ -357,6 +361,15 @@ final class Taller: ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.excel = !NSRunningApplication.runningApplications(withBundleIdentifier: idExcel).isEmpty
+                // Cada 10 s: ¿se ha compilado la app después de abrirla? (si no se reabre, se sigue usando la vieja)
+                if !self.appNueva, Date().timeIntervalSince(self.ultimaRevision) > 10 {
+                    self.ultimaRevision = Date()
+                    if let ejecutable = Bundle.main.executableURL,
+                       let fecha = (try? FileManager.default.attributesOfItem(atPath: ejecutable.path))?[.modificationDate] as? Date,
+                       fecha > self.arranque {
+                        self.appNueva = true
+                    }
+                }
                 // El contador solo corre con la ventana a la vista: cada redibujo con la ventana escondida (el
                 // Organizador visual) dejaba la app esperando a que macOS lo mostrara, y parada mientras tanto
                 if self.enCurso != nil, NSApp.windows.contains(where: { $0.isVisible && $0.occlusionState.contains(.visible) }) {
@@ -1253,6 +1266,14 @@ struct Cabecera: View {
                 Text(detalle).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
             }
             Spacer()
+            if taller.appNueva {
+                Label("Hay una versión nueva de la app: ciérrala (⌘Q) y vuelve a abrirla", systemImage: "arrow.triangle.2.circlepath")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Capsule().fill(Color.orange))
+            }
             if let e = taller.ejecucionEnCurso {
                 HStack(spacing: 8) {
                     // Fijo, sin ruedecita: una animación continua bloqueaba la app con el Organizador visual
