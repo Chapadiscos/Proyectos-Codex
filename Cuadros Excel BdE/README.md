@@ -80,7 +80,8 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      Windows (`ancho_comun`; Windows calculado, no medido).
    - **Primera columna, como mínimo un tercio del cuadro** (decisión del usuario, 2026-11-17; los publicados 1.3,
      1.4, 1.5, 2.7 y 2.9 le dan el 31-34 %), en cuadros de cifras o de hasta 3 columnas de datos, si las demás siguen
-     cabiendo. En cuadros de texto con muchas columnas (1.2) no.
+     cabiendo. En cuadros de texto con muchas columnas (1.2) no. Se mantiene aunque el publicado del 3.3 (4 columnas
+     de cifras) le diera solo el 22 % (decisión del usuario). El orden de las entidades en FUENTES no se toca.
    - **Separación pegada a la primera columna**: la columna estrecha vacía justo detrás de la primera no separa
      grupos y se oculta (ancho 0), como en el publicado del 1.5 (que la borró).
    - **Separaciones solo entre grupos** (decisión del usuario, 2026-11-17, publicado del 3.1): una columna de
