@@ -2652,6 +2652,10 @@ def lineas_y_fondos(z, hoja, cuadro):
     subtotales = [f for f in totales if f != principal]
     # Títulos de bloque: concepto sin sangría y sin datos en las demás columnas
     bloques = [f for f in filas if texto(primera, f).strip() and not sangrada(f) and sin_datos(f) and f not in totales]
+    # «España» en una lista de provincias o países (sin sangría y con datos): toda la fila destacada en blanco matiz 2
+    # (publicados 2.7 y 2.9, Ejemplos 2.3; en el 1.4 es un concepto sangrado de un bloque y no se destaca)
+    destacadas = [f for f in filas if re.fullmatch(r'\s*(España|Spain)\s*', texto(primera, f)) and not sangrada(f)
+                  and not sin_datos(f) and f not in totales]
     # Columna TOTAL: la de datos cuya cabecera dice «TOTAL»
     col_total = next((c for c in datos_cols if any(texto(c, f).strip().upper() == "TOTAL" for f in range(f1, fin_cab + 1))), None)
     # La fila TOTAL va en blanco matiz 2, o en matiz 5 si el 2 ya lo usan títulos de bloque o subtotales (Ejemplos,
@@ -2694,6 +2698,11 @@ def lineas_y_fondos(z, hoja, cuadro):
                 lados["left"] = ("thin", BLANCO)
                 if siguiente is not None and siguiente != principal:
                     lados["bottom"] = ("thin", BLANCO)
+            if f in destacadas:
+                relleno = BLANCO_MATIZ_2
+                lados["bottom"] = ("thin", BLANCO)
+                if i > 0:
+                    lados["top"] = ("thin", BLANCO)
             if es_total:
                 relleno = fondo_total if f == principal else BLANCO_MATIZ_2
                 letra = letra_total if f == principal else None
@@ -2705,6 +2714,9 @@ def lineas_y_fondos(z, hoja, cuadro):
     if bloques:
         detalle.append(f"Títulos de bloque (sin datos en las demás columnas), fondo blanco matiz 2: "
                        + ", ".join(f"«{texto(primera, f).strip()[:30]}»" for f in bloques[:6]) + ("…" if len(bloques) > 6 else ""))
+    for f in destacadas:
+        detalle.append(f"Fila «{texto(primera, f).strip()}» destacada en blanco matiz 2 (agregado nacional en una lista de "
+                       f"provincias o países, como los publicados)" + marca([ref(c, f) for c in (primera, c2)]))
     for f in subtotales:
         detalle.append(f"Subtotal «{texto(primera, f).strip()[:40]}»: fondo blanco matiz 2 en toda la fila")
     if principal:

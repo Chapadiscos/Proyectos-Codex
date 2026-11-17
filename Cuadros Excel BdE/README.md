@@ -36,7 +36,7 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
 
 - **Avisos que se ven en Excel** (petición del usuario, 2026-11-17): los avisos del motor llevan al final una marca
   invisible «⟦A5 A6⟧» o «⟦forma:FUENTES⟧»; la app la quita al mostrarlos y, si la llevan, se pueden pulsar (icono de
-  diana): Excel selecciona esas celdas (separadas por «;» en el Excel en castellano; si falla, «,») o esa forma en
+  diana), en «Cambios de la versión» y en la actividad: Excel pasa al frente y selecciona esas celdas (separadas por «;» en el Excel en castellano; si falla, «,») o esa forma en
   la hoja del cuadro, sin tocar el archivo.
 
 ## Pasos (se construyen y aprueban uno a uno)
@@ -156,6 +156,9 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      sangrados (como el TERMINADO, decisión del usuario; la guía decía que no).
    - Títulos de bloque (concepto sin sangría y sin datos en las demás columnas): blanco matiz 2 en la primera
      columna. Subtotales («Total …»): blanco matiz 2 en toda la fila.
+   - Fila «España» («Spain») en una lista de provincias o países (sin sangría y con datos): toda la fila en blanco
+     matiz 2 con líneas blancas (publicados 2.7 y 2.9, Ejemplos 2.3); si es un concepto sangrado de un bloque (1.4),
+     no.
    - Fila TOTAL: blanco matiz 2, o matiz 5 con el texto en blanco si el matiz 2 ya lo usan bloques o subtotales
      (Ejemplos 1.4 y A2.2); sin hueco en las columnas de separación. Columna TOTAL (cabecera «TOTAL»): blanco
      matiz 2 con línea blanca a la izquierda y entre filas (Ejemplos 4.2 y A4.6).

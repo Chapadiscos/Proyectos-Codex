@@ -493,7 +493,8 @@ final class Taller: ObservableObject {
             self.tarea(paso.id > 0 ? "\(paso.id). \(paso.titulo)" : paso.titulo) { id in
                 guard let r = await self.llamarMotor([paso.orden, trabajo.path, self.publicacion], registro: id) else { return false }
                 self.aplicar(r)
-                self.pasoActual?.detalle.forEach { self.anotar(id, "• " + partirMarca($0).texto) }
+                // Con la marca: en la actividad también se pulsan los avisos para verlos en Excel
+                self.pasoActual?.detalle.forEach { self.anotar(id, "• " + $0) }
                 return await self.mostrar(id)
             }
         }
@@ -1554,7 +1555,8 @@ struct Consola: View {
                 if let e = taller.ejecucionVista, !e.texto.isEmpty {
                     Button {
                         NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(e.texto, forType: .string)
+                        NSPasteboard.general.setString(e.texto.components(separatedBy: "\n").map { partirMarca($0).texto }
+                            .joined(separator: "\n"), forType: .string)
                     } label: { Image(systemName: "doc.on.doc") }
                     .buttonStyle(.borderless)
                     .help("Copiar la salida")
@@ -1567,11 +1569,26 @@ struct Consola: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         VStack(alignment: .leading, spacing: 1) {
-                            ForEach(Array(e.texto.components(separatedBy: "\n").enumerated()), id: \.offset) { _, linea in
-                                Text(linea.isEmpty ? " " : linea)
+                            ForEach(Array(e.texto.components(separatedBy: "\n").enumerated()), id: \.offset) { _, entera in
+                                // Los avisos con marca se pulsan: Excel selecciona sus celdas o su forma
+                                let (linea, marca) = partirMarca(entera)
+                                let texto = Text(linea.isEmpty ? " " : linea)
                                     .font(.system(size: 11.5, weight: linea.hasPrefix("• Aviso") ? .bold : .regular, design: .monospaced))
                                     .foregroundStyle(color(linea))
-                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                if let marca {
+                                    Button { taller.verEnExcel(marca) } label: {
+                                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                            texto.multilineTextAlignment(.leading)
+                                            Image(systemName: "scope").font(.system(size: 10, weight: .semibold)).foregroundStyle(color(linea))
+                                        }
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help("Pulsa para verlo seleccionado en Excel")
+                                } else {
+                                    texto.frame(maxWidth: .infinity, alignment: .leading)
+                                }
                             }
                             Color.clear.frame(height: 1).id("fin")
                         }
