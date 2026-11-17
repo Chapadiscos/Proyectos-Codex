@@ -1721,6 +1721,14 @@ def buscar_tabla(celdas, rangos, ancho_col, a_emu, ancho_ret, estilos):
     return (min(k[0] for k in texto), min(k[1] for k in texto), max(k[0] for k in texto), max(k[1] for k in texto))
 
 
+def indice_rico(d, compartidos):
+    """Índice de la cadena compartida de la celda si su texto lleva formato (trozos <r>: superíndices, cursivas…)."""
+    if d.get("tipo") != "s" or not d.get("xml"):
+        return None
+    m = re.search(r'<v>(\d+)</v>', d["xml"])
+    return int(m.group(1)) if m and int(m.group(1)) < len(compartidos) and "<r>" in compartidos[int(m.group(1))] else None
+
+
 def es_cifra(d):
     """¿Es un dato numérico (número, o texto que es una cifra: «67 (a)», «-0,054***», «(0,015)», «—»)?"""
     if d["numero"]:
@@ -2297,6 +2305,7 @@ def celdas(z, hoja, idioma="es"):
     # Textos nuevos (sangrías, viñetas, TOTAL) y líneas de cada celda
     nuevos_textos, lineas, cambios_txt, porcentajes, correcciones, saltos, sangrados, propuestas = {}, {}, [], [], [], [], [], []
     juntadas = []
+    sangrar_ricos, ricos_sin_tocar, asteriscos = {}, [], []
     for f in range(f1, f2 + 1):
         for c in range(c1, c2 + 1):
             if (c, f) in tapadas:
@@ -2312,6 +2321,11 @@ def celdas(z, hoja, idioma="es"):
             ancho = ancho_emu / EMU_PT - 2 * RELLENO_CELDA_PT
             if es_cifra(x) and f > fin_cab:
                 lineas[(c, f)] = 1
+                # Asteriscos de significatividad pegados a la cifra: «0,237 ***» → «0,237***» (publicado 3.3)
+                pegados = re.sub(r'(?<=[\d)])\s+(\*{1,3})(?=\s*$)', r'\1', t)
+                if not x["numero"] and pegados != t and indice_rico(x, compartidos) is None:
+                    nuevos_textos[(c, f)] = pegados
+                    asteriscos.append(ref(c, f))
                 continue
             nuevo = t
             # «<34» → «< 34»: espacio tras los signos de comparación (TERMINADO 1.4); «7%» → «7 %» con espacio que no
@@ -2378,7 +2392,20 @@ def celdas(z, hoja, idioma="es"):
                         saltos.append(f"«{dos.replace(chr(10), ' / ')[:60]}»")
                 lineas[(c, f)] = len(partes)
             if nuevo != x["texto"]:
-                nuevos_textos[(c, f)] = nuevo
+                rico = indice_rico(x, compartidos)
+                if rico is None:
+                    nuevos_textos[(c, f)] = nuevo
+                elif nuevo.strip() == x["texto"].strip():
+                    pass   # solo espacios a los lados: el texto con formato (R², publicado 3.3) se queda como está
+                elif nuevo.rstrip().lstrip(" ") == x["texto"].strip():
+                    sangrar_ricos[(c, f)] = (rico, nuevo[:len(nuevo) - len(nuevo.lstrip(" "))])
+                else:
+                    ricos_sin_tocar.append(f"{ref(c, f)} «{x['texto'].strip()[:25]}» → «{nuevo.strip()[:25]}»")
+    if asteriscos:
+        cambios_txt.append(f"asteriscos de significatividad pegados a la cifra («0,237 ***» → «0,237***», {len(asteriscos)} celda{'s' if len(asteriscos) > 1 else ''})")
+    if ricos_sin_tocar:
+        detalle.append("Aviso: celdas con formato en el texto (superíndices, cursivas…) sin corregir para no perderlo; "
+                       "corrígelas a mano: " + "; ".join(ricos_sin_tocar[:6]) + marca([r.split(" ", 1)[0] for r in ricos_sin_tocar]))
     if juntadas:
         detalle.append("Cabecera: salto de línea del autor quitado, el texto cabe en una línea: " + "; ".join(juntadas[:6])
                        + marca([j.split(" ", 1)[0] for j in juntadas]))
@@ -2468,6 +2495,15 @@ def celdas(z, hoja, idioma="es"):
                 dentro = re.sub(r'<(rFont|sz|b|family|scheme)\b[^>]*/>', "", m.group(1))
                 return f'<rPr><rFont val="{letra}"/>{dentro}<sz val="{CUERPO_CELDA:g}"/><family val="2"/></rPr>'
             nuevas_si[i] = re.sub(r'<rPr>(.*?)</rPr>', rpr, nuevas_si[i], flags=re.S)
+    # Sangría en celdas con texto con formato: los espacios van al principio del primer trozo (cadena nueva)
+    for (c, f), (i, espacios) in list(sangrar_ricos.items()):
+        si = nuevas_si[i]
+        u = list(re.finditer(r'<t\b[^>]*>([^<]*)</t>', si))[-1]
+        si = si[:u.start(1)] + u.group(1).rstrip() + si[u.end(1):]
+        p_ = re.search(r'<t\b[^>]*>([^<]*)</t>', si)
+        si = si[:p_.start()] + f'<t xml:space="preserve">{espacios}{p_.group(1).lstrip()}</t>' + si[p_.end():]
+        nuevas_si.append(si)
+        sangrar_ricos[(c, f)] = len(nuevas_si) - 1
 
     # Escribir: textos nuevos como cadenas compartidas nuevas, formatos y altos de fila
     def celda_nueva(c, f, xml):
@@ -2486,6 +2522,8 @@ def celdas(z, hoja, idioma="es"):
             if apertura.endswith("/>"):
                 apertura = apertura[:-2] + ">"
             cuerpo = f"<v>{len(nuevas_si) - 1}</v></c>"
+        elif (c, f) in sangrar_ricos:
+            cuerpo = f"<v>{sangrar_ricos[(c, f)]}</v></c>"
         return apertura + cuerpo
 
     def cambiar_celda(m):
@@ -2706,6 +2744,30 @@ def paso4(trabajo, pid=None):
     return nuevo_paso(trabajo, LINEAS_Y_FONDOS, cambios, detalle, cuadro)
 
 
+RE_ESTADISTICOS = re.compile(r'\s*(n\.?\s?º\s+de\s+)?(observaciones|observations|number of observations|'
+                             r'pseudo[- ]?r\s?2|r\s?2|r²|r\s?2\s+ajustado|adjusted\s+r\s?2)\b', re.I)
+
+
+def con_combinadas(hoja_xml, refs):
+    """La hoja con estas celdas combinadas más (sin repetir las que ya lo están)."""
+    ya = set(re.findall(r'<mergeCell\b[^>]*\bref="([^"]+)"', hoja_xml))
+    refs = [r for r in refs if r not in ya]
+    if not refs:
+        return hoja_xml
+    nuevas = "".join(f'<mergeCell ref="{r}"/>' for r in refs)
+    if "<mergeCells" in hoja_xml:
+        hoja_xml = re.sub(r'(<mergeCells\b[^>]*?)\scount="\d+"', lambda m: f'{m.group(1)} count="{len(ya) + len(refs)}"', hoja_xml, count=1)
+        return hoja_xml.replace("</mergeCells>", nuevas + "</mergeCells>", 1)
+    # Va tras sheetData y lo que el esquema pone antes (protección, filtros…)
+    fin = hoja_xml.index("</sheetData>") + len("</sheetData>")
+    for etiqueta in ("sheetCalcPr", "sheetProtection", "protectedRanges", "scenarios", "autoFilter", "sortState",
+                     "dataConsolidate", "customSheetViews"):
+        m = re.search(rf'<{etiqueta}\b(?:[^>]*/>|.*?</{etiqueta}>)', hoja_xml[fin:], re.S)
+        if m:
+            fin += m.end()
+    return hoja_xml[:fin] + f'<mergeCells count="{len(refs)}">{nuevas}</mergeCells>' + hoja_xml[fin:]
+
+
 def lineas_y_fondos(z, hoja, cuadro):
     ruta_hoja = hoja_de(z, hoja)
     hoja_xml = z.read(ruta_hoja).decode("utf-8")
@@ -2754,6 +2816,15 @@ def lineas_y_fondos(z, hoja, cuadro):
 
     separaciones = {c for c in datos_cols if ancho_col(c) < COLUMNA_ESTRECHA
                     and not any(texto(c, f).strip() for f in range(f1, f2 + 1))}
+    # Regresiones (publicado 3.3): la fila del coeficiente y la de su error estándar entre paréntesis (sin concepto)
+    # son un solo concepto: la primera columna se combina en las dos filas y entre ellas no hay línea. Los
+    # estadísticos (observaciones, R²) van separados de las estimaciones por una línea oscura
+    def es_error(f):
+        vals = [texto(c, f).strip() for c in datos_cols if texto(c, f).strip()]
+        return not texto(primera, f).strip() and bool(vals) and all(re.fullmatch(r'\(.*\)\**', v) for v in vals)
+    errores = [f for f in filas[1:] if es_error(f) and texto(primera, f - 1).strip() and not sin_datos(f - 1)]
+    coeficientes = {f - 1 for f in errores}
+    estadisticos = next((f for f in filas if RE_ESTADISTICOS.match(texto(primera, f)) and f > min(errores)), None) if errores else None
     nuevos = {}
     ultima = filas[-1]
     for i, f in enumerate(filas):
@@ -2773,13 +2844,19 @@ def lineas_y_fondos(z, hoja, cuadro):
                 lados["bottom"] = LINEA_OSCURA if siguiente == principal else LINEA_FILAS
             if f == principal and i > 0:
                 lados["top"] = LINEA_OSCURA
+            if f in coeficientes:
+                lados.pop("bottom", None)
+            if estadisticos and siguiente == estadisticos:
+                lados["bottom"] = LINEA_OSCURA
+            if f == estadisticos:
+                lados["top"] = LINEA_OSCURA
             if c == primera:
                 relleno = BLANCO_MATIZ_1
                 if f in bloques:
                     relleno = BLANCO_MATIZ_2
                 # Primera columna: líneas blancas entre todas las filas, también entre conceptos sangrados
                 # (TERMINADO 1.4; la guía decía que no, decisión del usuario 2026-11-17)
-                if siguiente is not None and siguiente != principal:
+                if siguiente is not None and siguiente != principal and f not in coeficientes and siguiente != estadisticos:
                     lados["bottom"] = ("thin", BLANCO)
             if c == col_total and not es_total:
                 relleno = BLANCO_MATIZ_2
@@ -2817,6 +2894,11 @@ def lineas_y_fondos(z, hoja, cuadro):
                        + ", ".join(ref(c, 1)[:-1] for c in sorted(separaciones)))
     if col_total:
         detalle.append(f"Columna TOTAL ({ref(col_total, 1)[:-1]}): fondo blanco matiz 2 con línea blanca a la izquierda y entre filas")
+    if errores:
+        detalle.append("Regresión: coeficiente y error estándar (entre paréntesis) como un solo concepto, sin línea entre "
+                       "ellos y con la primera columna combinada (" + ", ".join(f"{ref(primera, f - 1)}:{ref(primera, f)}" for f in errores) + ")"
+                       + (f"; línea oscura antes de «{texto(primera, estadisticos).strip()}» (separa los estadísticos)" if estadisticos else "")
+                       + ", como el publicado del 3.3" + marca([ref(primera, f) for f in errores]))
     detalle.append("Aviso (recordatorio): la línea oscura (blanco matiz 5) solo va encima de la fila TOTAL; si hay que "
                    "separar otros conceptos importantes, añádela a mano en Excel")
     # Formato suelto del autor a la derecha del cuadro (líneas, rellenos en celdas vacías: 1.2, columnas I-K), fuera
@@ -2828,7 +2910,20 @@ def lineas_y_fondos(z, hoja, cuadro):
         columnas_s = sorted({c for c, _ in sueltas})
         detalle.append("Quitadas líneas y fondos sueltos del autor a la derecha del cuadro (columnas "
                        + ", ".join(ref(c, 1)[:-1] for c in columnas_s) + ")")
+    # …y encima del cuadro (entre la pastilla y la cabecera) y en las columnas ocultas (publicado 3.3: el autor
+    # dejó líneas azules en la fila 2 y en las separaciones)
+    con_formato = lambda x: re.search(r'\bborderId="[1-9]', estilos.xf(x["s"])) or re.search(r'\bfillId="([2-9]|\d\d+)"', estilos.xf(x["s"]))
+    encima = [(c, f) for (c, f), x in todas.items() if f < f1 and c1 <= c <= c2 and not x["texto"].strip() and con_formato(x)]
+    ocultas = [(c, f) for (c, f), x in todas.items() if f1 <= f <= f2 and c1 <= c <= c2 and ancho_col(c) == 0
+               and not x["texto"].strip() and con_formato(x)]
+    for k in encima + ocultas:
+        nuevos[k] = estilos.variante(estilo(*k), relleno="", borde={})
+    if encima:
+        detalle.append("Quitadas líneas y fondos sueltos del autor encima del cuadro (fila"
+                       + ("s " if len({f for _, f in encima}) > 1 else " ") + ", ".join(str(f) for f in sorted({f for _, f in encima})) + ")")
     hoja_xml = con_estilo(hoja_xml, nuevos)
+    if errores:
+        hoja_xml = con_combinadas(hoja_xml, [f"{ref(primera, f - 1)}:{ref(primera, f)}" for f in errores])
     return {ruta_hoja: hoja_xml.encode("utf-8"), "xl/styles.xml": estilos.resultado().encode("utf-8")}, detalle
 
 
@@ -3189,6 +3284,9 @@ PROVINCIAS_OFICIALES = [
 RE_ANIOS_CORTOS = re.compile(r'(?<![\d.,])((?:19|20)\d\d)\s?([–-])\s?(\d\d)(?![\d.,%])')
 
 
+SIMBOLOS_GRIEGOS = set("ΔΣΠΩΦΨΛΘΓαβγδεσμπρτφχψωλθ")
+
+
 def minuscula_titulo(texto, idioma="es"):
     """«Respuesta de Política y Eficacia» → «Respuesta de política y eficacia»: las palabras con mayúscula de título
     pasan a minúscula, salvo la primera, las siglas, los nombres propios y los números romanos."""
@@ -3201,6 +3299,8 @@ def minuscula_titulo(texto, idioma="es"):
         mayus = w.upper()
         es_sigla = mayus in SIGLAS and w == mayus
         es_propio = mayus in propios or CON_TILDE.get(mayus, mayus) in propios
+        if primera[0] and len(w) == 1 and w in SIMBOLOS_GRIEGOS:
+            return w   # «Δ Acum. intangibles»: el símbolo no es la primera palabra (publicado 3.3)
         if primera[0]:
             primera[0] = False
             anterior_propio[0] = es_sigla or es_propio

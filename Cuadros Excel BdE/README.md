@@ -138,6 +138,11 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
    - Barra entre expresiones de varias palabras, con espacios: «Deuda total/Activo total» → «Deuda total / Activo
      total» (publicado del 3.2, corrección ortotipográfica con aviso). Entre palabras sueltas, pegada («Deuda/PIB»,
      «mb/d», «2023/2024»).
+   - Asteriscos de significatividad pegados a la cifra: «0,237 ***» → «0,237***» (publicado del 3.3).
+   - Un símbolo griego al principio («Δ Acum. intangibles») no cuenta como primera palabra para las minúsculas.
+   - Celdas con formato en el texto (superíndices como el de «R²», cursivas): no se reescriben para no perder el
+     formato; si solo cambian los espacios de los lados, se dejan; la sangría se añade al primer trozo; otras
+     correcciones se avisan para hacerlas a mano (fallo visto en el 3.3: «R²» quedaba «R2»).
    - **Primera columna con mayúsculas de título** («Industria Manufacturera»): no se cambia (puede haber nombres de
      entidades); aviso con la propuesta («Industria manufacturera») para revisarla (decisión del usuario, 2026-11-17).
      La lista de nombres propios incluye provincias, comunidades e instituciones (Banco, Central, Europeo…); tras un
@@ -181,7 +186,11 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
    - Fila TOTAL: blanco matiz 2, o matiz 5 con el texto en blanco si el matiz 2 ya lo usan bloques o subtotales
      (Ejemplos 1.4 y A2.2); sin hueco en las columnas de separación. Columna TOTAL (cabecera «TOTAL»): blanco
      matiz 2 con línea blanca a la izquierda y entre filas (Ejemplos 4.2 y A4.6).
-   - Líneas y fondos sueltos del autor en celdas vacías a la derecha del cuadro, quitados (1.2, columnas I-K).
+   - Líneas y fondos sueltos del autor en celdas vacías a la derecha del cuadro, quitados (1.2, columnas I-K), y
+     también encima del cuadro (filas entre la pastilla y la cabecera) y en las columnas ocultas (publicado del 3.3).
+   - **Regresiones** (publicado del 3.3): la fila del coeficiente y la de su error estándar (entre paréntesis, sin
+     concepto) son un solo concepto: la primera columna se combina en las dos filas y entre ellas no hay línea. Antes
+     de los estadísticos («Observaciones», «R2», «R²», «Pseudo R2»…), línea oscura (blanco matiz 5).
    - Columnas de separación sin líneas ni fondo en las filas de datos (las líneas se cortan entre grupos, TERMINADO
      3.4); en la fila TOTAL, sin hueco.
    - La línea que cierra cada bloque de sangrados (gris claro, como el resto) queda por revisar con más ejemplos.
