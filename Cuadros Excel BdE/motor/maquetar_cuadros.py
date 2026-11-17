@@ -1203,6 +1203,10 @@ def textos(z, hoja, estado):
         else:
             detalle.append(f"Sin tocar (no sé qué texto es): «{corto}»")
             continue
+        if tipo != "cuadro":
+            a, hechos_c = corregir_forma(a, estado.get("idioma", "es"))
+            if hechos_c:
+                detalle.append("Aviso (corrección ortotipográfica), revísalas: " + "; ".join(hechos_c[:6]))
         a, _ = textos_en_negro(a)
         partes[k] = a
     if "fuentes" not in tipos.values():
@@ -1698,7 +1702,7 @@ CABECERA_BAJO_UNIDADES = 4 * MM     # de las unidades (su cuadro) a la cabecera 
 UNIDADES_BAJO_PASTILLA = 0.3 * MM   # el cuadro de las unidades, justo bajo la pastilla (TERMINADO 1.4)
 ALTO_UNIDADES = 5 * MM              # cuadro de unidades de una línea (TERMINADO 1.4)
 LINEA_UNIDADES = 6 * 1.171875       # cada línea de más de las unidades (Roboto 6 pt, interlineado sencillo)
-CABECERA_BAJO_PASTILLA = 5 * MM     # sin unidades, de la pastilla a la cabecera (Ejemplos 1.3, 1.5)
+CABECERA_BAJO_PASTILLA = 4 * MM     # sin unidades, de la pastilla a la cabecera (TERMINADO 1.2: 3,8 mm; usuario: 4)
 FUENTES_BAJO_CUADRO = 5 * MM        # del final del cuadro al cuadro de FUENTES (como en los gráficos)
 
 
@@ -1771,7 +1775,7 @@ def colocar_cuadro(dibujo, caja, filas_viejas, altos_nuevos, f1, f2):
         motivo = "4 mm bajo las unidades" + (f" ({lineas} líneas)" if lineas > 1 else "")
     else:
         objetivo = fondo_pastilla + round(CABECERA_BAJO_PASTILLA * EMU_PT)
-        motivo = "5 mm bajo la pastilla"
+        motivo = "4 mm bajo la pastilla"
     # Altos nuevos de las filas de encima del cuadro: las de arriba se quedan como están y la de justo encima toma el
     # hueco; si las de arriba ya ocupan más, se encogen todas por igual (dejando 1 pt a la de encima)
     encima = sum(alto_viejo(f) for f in range(1, f1 - 1))
@@ -1842,11 +1846,11 @@ def paso2(trabajo, pid=None):
     base = pasos / estado["pasos"][estado["actual"]]["archivo"]
     hoja = estado.get("hoja") or "Cuadro datos"
     with zipfile.ZipFile(base) as z:
-        cambios, detalle, cuadro = celdas(z, hoja)
+        cambios, detalle, cuadro = celdas(z, hoja, estado.get("idioma", "es"))
     return nuevo_paso(trabajo, CELDAS, cambios, detalle, cuadro)
 
 
-def celdas(z, hoja):
+def celdas(z, hoja, idioma="es"):
     ruta_hoja = hoja_de(z, hoja)
     hoja_xml = z.read(ruta_hoja).decode("utf-8")
     comp_xml, compartidos = leer_compartidos(z)
@@ -2172,7 +2176,7 @@ def celdas(z, hoja):
                       if len(fijas) > len(separaciones) else ""))
 
     # Textos nuevos (sangrías, viñetas, TOTAL) y líneas de cada celda
-    nuevos_textos, lineas, cambios_txt, porcentajes = {}, {}, [], []
+    nuevos_textos, lineas, cambios_txt, porcentajes, correcciones = {}, {}, [], [], []
     for f in range(f1, f2 + 1):
         for c in range(c1, c2 + 1):
             if (c, f) in tapadas:
@@ -2196,6 +2200,10 @@ def celdas(z, hoja):
             if con_espacio != t:
                 cambios_txt.append(f"«{t.strip()[:20]}» → «{con_espacio.strip()[:20]}»")
             con_por = re.sub(r'(\d)[ \u202f]?%', '\\1\u00a0%', con_espacio)
+            corregido, tipos_c = corregir_texto(con_por, idioma, cabecera=f <= fin_cab)
+            if tipos_c:
+                correcciones.append(f"{ref(c, f)} «{con_por.strip()[:35]}» → «{corregido.strip()[:35]}» ({', '.join(tipos_c)})")
+                con_por = corregido
             if con_por != con_espacio:
                 porcentajes.append(ref(c, f))
             if con_por != t:
@@ -2226,6 +2234,9 @@ def celdas(z, hoja):
                 lineas[(c, f)] = len(partir(t, ancho, medir_de(c, f)))
             if nuevo != x["texto"]:
                 nuevos_textos[(c, f)] = nuevo
+    if correcciones:
+        detalle.append("Aviso (corrección ortotipográfica), revísalas: " + "; ".join(correcciones[:10])
+                       + (f" y {len(correcciones) - 10} más" if len(correcciones) > 10 else ""))
     if porcentajes:
         cambios_txt.append(f"espacio que no parte línea antes de «%» ({len(porcentajes)} celda{'s' if len(porcentajes) > 1 else ''})")
     if cambios_txt:
@@ -2650,7 +2661,6 @@ def lineas_y_fondos(z, hoja, cuadro):
 # ---------------------------------------------------------------- comparar con el original (de Gráficos Excel BdE)
 
 MAXIMO_EJEMPLOS = 6
-RE_TRIMESTRE = re.compile(r'\b(?:[IV]{1,3}\s*TR|T\s?[1-4]|Q\s?[1-4]|[1-4]\s?[TQ])\b')
 
 
 def celdas_libro(z):
@@ -2886,7 +2896,7 @@ def letra7(trabajo, pid=None):
     CUERPO_CELDA = LETRA_PEQUENA
     try:
         with zipfile.ZipFile(base) as z:
-            cambios, detalle, cuadro = celdas(z, hoja)
+            cambios, detalle, cuadro = celdas(z, hoja, estado.get("idioma", "es"))
         todo = dict(cambios)
         if CABECERAS in hechos:
             intermedio = io.BytesIO()
@@ -2910,6 +2920,141 @@ def letra7(trabajo, pid=None):
     # Los avisos de bajar a 7 pt ya no vienen al caso
     detalle = [l for l in detalle if not l.startswith("Aviso: el cuadro tiene")]
     return nuevo_paso(trabajo, f"Letra {LETRA_PEQUENA} pt", todo, detalle, cuadro)
+
+
+# ---------------------------------------------------------------- correcciones ortotipográficas (decisión del usuario,
+# 2026-11-17, del TERMINADO 1.2): trimestres como en Gráficos, «EE.UU.» → «EEUU», «Mb/d» → «mb/d», años abreviados
+# «1973–74» → «1973–1974» y, en la cabecera, minúscula en las palabras con mayúscula de título
+
+SIGLAS = {"EEUU", "EE.UU.", "EE", "UU", "UEM", "UE", "EA", "PIB", "IPC", "IPCA", "IAPC", "IPRI", "BCE", "BDE", "FMI",
+          "OCDE", "OPEP", "IA", "TIC", "PYME", "PYMES", "VAB", "EPA", "PMI", "CNMV", "TAE", "TIN", "ICO", "IRPF",
+          "IVA", "I+D", "SA", "EBAE", "ROE", "ROA", "NPL", "BBVA", "CCAA", "AAPP", "ISFLSH", "PER", "ETF", "EURIBOR",
+          "FED", "INE", "AEAT", "BIS", "BPI", "UK", "US", "USA", "USD", "EUR", "GBP", "JPY", "CNY", "ESG", "TR", "EMU",
+          "GDP", "CPI", "HICP", "ECB", "IMF", "OECD", "SME", "SMES", "AI", "UN", "CET1", "LTV", "LTI", "DTI", "DSTI", "SMI", "OIS"}
+
+SIGLAS_ESCRITAS = {"BDE": "BdE", "PYMES": "pymes", "PYME": "pyme", "ROE": "RoE", "EURIBOR": "euríbor", "SMES": "SMEs",
+                   "FED": "Fed"}
+
+SIGLAS_SOLO_EN = {"UN", "US"}
+
+NOMBRES_PROPIOS = {
+    "ESPAÑA", "EUROPA", "ALEMANIA", "FRANCIA", "ITALIA", "PORTUGAL", "JAPÓN", "CHINA", "INDIA", "BRASIL", "MÉXICO",
+    "REINO", "UNIDO", "ESTADOS", "UNIDOS", "LATINOAMÉRICA", "AMÉRICA", "ASIA", "ÁFRICA", "GRECIA", "IRLANDA",
+    "BÉLGICA", "AUSTRIA", "SUIZA", "RUSIA", "TURQUÍA", "CANADÁ", "AUSTRALIA", "COREA", "ARGENTINA", "CHILE",
+    "COLOMBIA", "PERÚ", "MADRID", "CATALUÑA", "ANDALUCÍA", "OCEANÍA", "NORUEGA", "SUECIA", "DINAMARCA", "FINLANDIA",
+    "POLONIA", "HOLANDA", "UCRANIA", "ISRAEL", "ÁFRICA", "SPAIN", "EUROPE", "GERMANY", "FRANCE", "ITALY", "JAPAN",
+    "UNITED", "STATES", "KINGDOM", "LATIN", "AMERICA", "EURO", "AREA", "JANUARY", "FEBRUARY", "MARCH", "APRIL",
+    "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER",
+    # Más países y regiones (leyendas de tartas por países: «G_DO2608_06»)
+    "ARABIA", "SAUDÍ", "ARGELIA", "NIGERIA", "LIBIA", "EGIPTO", "MARRUECOS", "TÚNEZ", "ANGOLA", "IRÁN", "IRAK",
+    "KUWAIT", "CATAR", "QATAR", "OMÁN", "EMIRATOS", "ÁRABES", "VENEZUELA", "ECUADOR", "URUGUAY", "PARAGUAY",
+    "BOLIVIA", "CUBA", "PANAMÁ", "GUATEMALA", "HONDURAS", "NICARAGUA", "AZERBAIYÁN", "KAZAJISTÁN", "INDONESIA",
+    "MALASIA", "TAILANDIA", "VIETNAM", "FILIPINAS", "SINGAPUR", "PAKISTÁN", "BANGLADÉS", "SUDÁFRICA", "HUNGRÍA",
+    "RUMANÍA", "BULGARIA", "CROACIA", "ESLOVENIA", "ESLOVAQUIA", "CHEQUIA", "LITUANIA", "LETONIA", "ESTONIA",
+    "LUXEMBURGO", "MALTA", "CHIPRE", "ISLANDIA", "NEERLANDÉS", "BAJOS", "TRINIDAD", "TOBAGO", "GUINEA", "ECUATORIAL",
+    "NIGERIA", "CAMERÚN", "SENEGAL", "GHANA", "KENIA", "ETIOPÍA", "ESCANDINAVIA", "BÁLTICOS", "MAGREB", "GOLFO"}
+
+CON_TILDE = {"MEXICO": "MÉXICO", "SAUDI": "SAUDÍ", "PERU": "PERÚ", "JAPON": "JAPÓN", "CANADA": "CANADÁ",
+             "TURQUIA": "TURQUÍA", "BELGICA": "BÉLGICA", "AFRICA": "ÁFRICA", "LATINOAMERICA": "LATINOAMÉRICA",
+             "OCEANIA": "OCEANÍA", "TUNEZ": "TÚNEZ", "IRAN": "IRÁN", "OMAN": "OMÁN", "PANAMA": "PANAMÁ",
+             "AZERBAIYAN": "AZERBAIYÁN", "KAZAJISTAN": "KAZAJISTÁN", "PAKISTAN": "PAKISTÁN", "SUDAFRICA": "SUDÁFRICA",
+             "HUNGRIA": "HUNGRÍA", "RUMANIA": "RUMANÍA", "CAMERUN": "CAMERÚN", "ETIOPIA": "ETIOPÍA", "ARABES": "ÁRABES",
+             "ANDALUCIA": "ANDALUCÍA", "CATALUÑA": "CATALUÑA", "BALTICOS": "BÁLTICOS"}
+
+NOMBRES_PROPIOS_SOLO_EN = {"EURO", "AREA", "MAY", "MARCH", "UNITED", "STATES", "KINGDOM", "LATIN", "AMERICA"}
+
+RE_TRIMESTRE = re.compile(
+    r'(?<![\w/])(?:(?P<a1>(?:19|20)\d{2})\s*[-/ ]?\s*)?'
+    r'(?:(?P<n1>[1-4])\s*(?:er|º|o|ª)?\.?\s*(?:TR|Tr|tr|TRIM\.?|Trim\.?|trim\.?|[Tt]rimestre|TRIMESTRE|T|Q)'
+    r'|(?:TR|T|Q)\s*(?P<n2>[1-4])'
+    r'|(?P<r>IV|III|II|I)\s*(?:TR|Tr|TRIM\.?|Trim\.?|trim\.?|[Tt]rimestre|TRIMESTRE|T))'
+    r'(?:\s*[-/ ]?\s*(?P<a2>(?:19|20)\d{2}|\d{2})(?!\d))?(?![\w])')
+
+ROMANO_TRIMESTRE = {"1": "I", "2": "II", "3": "III", "4": "IV", "I": "I", "II": "II", "III": "III", "IV": "IV"}
+
+NUMERO_TRIMESTRE = {"I": "1", "II": "2", "III": "3", "IV": "4"}
+
+def trimestres(texto, idioma):
+    def cambiar(m):
+        n = m.group("n1") or m.group("n2") or NUMERO_TRIMESTRE[m.group("r")]
+        anio = m.group("a1") or m.group("a2")
+        base = f"{ROMANO_TRIMESTRE[n]} TR" if idioma != "en" else f"Q{n}"
+        return base + (f" {anio}" if anio else "")
+    return RE_TRIMESTRE.sub(cambiar, texto)
+
+
+RE_ANIOS_CORTOS = re.compile(r'(?<![\d.,])((?:19|20)\d\d)\s?([–-])\s?(\d\d)(?![\d.,%])')
+
+
+def minuscula_titulo(texto, idioma="es"):
+    """«Respuesta de Política y Eficacia» → «Respuesta de política y eficacia»: las palabras con mayúscula de título
+    pasan a minúscula, salvo la primera, las siglas, los nombres propios y los números romanos."""
+    propios = (NOMBRES_PROPIOS | {"ORIENTE", "OCCIDENTE", "PRÓXIMO"}) - (set() if idioma == "en" else NOMBRES_PROPIOS_SOLO_EN)
+    primera = [True]
+    anterior_propio = [False]
+
+    def palabra(m):
+        w = m.group(0)
+        mayus = w.upper()
+        es_sigla = mayus in SIGLAS and w == mayus
+        es_propio = mayus in propios or CON_TILDE.get(mayus, mayus) in propios
+        if primera[0]:
+            primera[0] = False
+            anterior_propio[0] = es_sigla or es_propio
+            return w
+        # Tras un nombre propio o una sigla, la palabra con mayúscula forma parte del nombre («Oriente Medio»,
+        # «ICO Crecimiento»): se deja
+        seguido = anterior_propio[0] and texto[m.start() - 1:m.start()] == " "
+        titulo = len(w) > 1 and w[0].isupper() and w[1:].islower()
+        anterior_propio[0] = es_sigla or es_propio or (titulo and seguido)
+        if titulo and not es_propio and not es_sigla and not seguido and not ROMANOS_RE.match(w):
+            return w.lower()
+        return w
+    return re.sub(r"[^\W\d_]+", palabra, texto)
+
+
+ROMANOS_RE = re.compile(r'(?=[IVXLC]+$)M*(C[MD]|D?C{0,3})(X[CL]|L?X{0,3})(I[XV]|V?I{0,3})$')
+
+
+def corregir_texto(texto, idioma="es", cabecera=False):
+    """Las correcciones ortotipográficas automáticas; devuelve el texto y la lista de lo que ha cambiado."""
+    cambios = []
+    nuevo = trimestres(texto, idioma)
+    if nuevo != texto:
+        cambios.append("trimestres")
+    if idioma != "en":
+        n2 = re.sub(r'\bEE\.\s?UU\.?', "EEUU", nuevo)
+        if n2 != nuevo:
+            cambios.append("EEUU")
+        nuevo = n2
+    n2 = re.sub(r'\bMb/d\b', "mb/d", nuevo)
+    if n2 != nuevo:
+        cambios.append("mb/d")
+    nuevo = n2
+    n2 = RE_ANIOS_CORTOS.sub(lambda m: f"{m.group(1)}{m.group(2)}{m.group(1)[:2]}{m.group(3)}"
+                             if int(m.group(3)) > int(m.group(1)[2:]) else m.group(0), nuevo)
+    if n2 != nuevo:
+        cambios.append("años completos")
+    nuevo = n2
+    if cabecera:
+        n2 = minuscula_titulo(nuevo, idioma)
+        if n2 != nuevo:
+            cambios.append("minúsculas")
+        nuevo = n2
+    return nuevo, cambios
+
+
+def corregir_forma(xml, idioma="es"):
+    """Las correcciones en cada trozo de texto de una forma (título, unidades, FUENTES)."""
+    hechos = []
+
+    def t(m):
+        antes = html.unescape(m.group(2))
+        nuevo, cambios = corregir_texto(antes, idioma)
+        if cambios:
+            hechos.append(f"«{antes.strip()[:40]}» → «{nuevo.strip()[:40]}»")
+        return m.group(1) + html.escape(nuevo, quote=False) + m.group(3)
+    return re.sub(r'(<a:t(?:\s[^>]*)?>)([^<]*)(</a:t>)', t, xml), hechos
 
 
 

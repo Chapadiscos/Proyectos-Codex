@@ -110,12 +110,17 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      caracteres, como G y H del 1.2); en altura al centro, o arriba si la fila lleva textos de 2 o más líneas
      en las columnas de datos (si solo la primera columna ocupa varias líneas, al centro, como el 1.5).
    - **Sitio del cuadro** (decisión del usuario, 2026-11-17): las unidades, justo bajo la pastilla (0,3 mm); la
-     cabecera, 4 mm bajo un cuadro de unidades de 5 mm (2,5 mm más por línea de más) o, sin unidades, 5 mm bajo
+     cabecera, 4 mm bajo un cuadro de unidades de 5 mm (2,5 mm más por línea de más) o, sin unidades, 4 mm bajo
      la pastilla (1.4: fila 2 = 51,25 pt; TERMINADO 51). Lo da la fila de encima del cuadro; si las de arriba ya
      ocupan más, se encogen. Todo lo de encima del cuadro se vuelve a anclar en su sitio (no se mueve).
    - **FUENTES, 5 mm bajo el final del cuadro**, anclada a su fila.
    - «<34» → «< 34»: espacio tras «<», «>», «≤», «≥» pegados a cifra o letra (TERMINADO 1.4).
    - «7%» → «7 %» en las celdas (espacio que no parte línea; TERMINADO 1.2), como en FUENTES.
+   - **Correcciones ortotipográficas** (decisión del usuario, 2026-11-17), en celdas, título, unidades y FUENTES,
+     con aviso en rojo para revisarlas: trimestres como en Gráficos (es «I TR 2024», en «Q1 2024»), «EE.UU.» →
+     «EEUU», «Mb/d» → «mb/d», años abreviados «1973–74» → «1973–1974» y, en la cabecera, minúscula en las palabras
+     con mayúscula de título (salvo la primera, siglas, nombres propios y lo que va pegado a ellos: «Oriente Medio»,
+     «ICO Crecimiento»).
    - Hijos de un título de bloque, sangrados aunque el autor no los sangrara (si hay otros hijos sangrados).
    - Textos de la cabecera repetidos en filas de datos (1.3), borrados con aviso.
    - Primera columna: sangrías (de Excel o con espacios) → 4, 8 o 12 espacios por nivel; con varias líneas, la

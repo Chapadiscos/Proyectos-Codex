@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Compara la hoja del cuadro de dos libros (p. ej. un MANUAL hecho con la app y su TERMINADO):
-anchos de columna y altos de fila en puntos del Excel de Mac, cada celda (texto y formato) y las formas.
+"""Compara la hoja del cuadro de dos libros (el TERMINADO hecho con la app, en ORIGINALES, y el publicado, en
+TERMINADOS): anchos de columna y altos de fila en puntos del Excel de Mac, el formato de cada celda y las formas.
+Las diferencias de texto van aparte al final: el publicado ha pasado corrección y el de la app no.
 Uso: comparar.py <libro A> <libro B> [hoja A] [hoja B]"""
 import sys, re, zipfile, html
 from pathlib import Path
@@ -60,7 +61,8 @@ ultima_fila = max(f for c, f in list(a["celdas"]) + list(b["celdas"]))
 ultima_fila = min(ultima_fila, 80)
 print("\nALTOS (pt)")
 print("   " + "  ".join(f"{f}:{a['altos'].get(f - 1, a['defecto']) / 12700:g}/{b['altos'].get(f - 1, b['defecto']) / 12700:g}" for f in range(1, ultima_fila + 1)))
-print("\nCELDAS (A | B), solo las distintas")
+print("\nFORMATO DE LAS CELDAS (A | B), solo las distintas")
+textos_distintos = []
 for f in range(1, ultima_fila + 1):
     for c in range(1, ultima_col + 1):
         ca, cb = a["celdas"].get((c, f)), b["celdas"].get((c, f))
@@ -71,7 +73,7 @@ for f in range(1, ultima_fila + 1):
             continue
         dif = []
         if ta_ != tb_:
-            dif.append(f"texto «{ta_[:40]}» | «{tb_[:40]}»")
+            textos_distintos.append(f"   {m.ref(c, f)}: «{ta_[:60]}» | «{tb_[:60]}»".replace("\n", "⏎"))
         for nombre, x, y in zip(("letra", "relleno", "bordes", "alineación"), fa, fb):
             if x != y:
                 dif.append(f"{nombre} {x or '—'} | {y or '—'}")
@@ -97,5 +99,7 @@ def formas(z, hoja):
         salida.append(f"{m.nombre_forma(x0)[:16]:16} y={Y / 36000:5.1f} h={H / 36000:5.1f} ancho={W / 36000:5.1f} mm  "
                       f"{','.join(t[:-2] for t in tam)} pt {','.join(fuentes)}  «{texto[:60]}»")
     return salida
+print("\nTEXTOS DISTINTOS (corrección del publicado, o cambios de la app)")
+[print(l) for l in textos_distintos]
 print("\nFORMAS A"); [print("   " + l) for l in formas(a["zip"], a["hoja"])]
 print("FORMAS B"); [print("   " + l) for l in formas(b["zip"], b["hoja"])]
