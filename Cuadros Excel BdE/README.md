@@ -36,7 +36,7 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
 
 - **Avisos que se ven en Excel** (petición del usuario, 2026-11-17): los avisos del motor llevan al final una marca
   invisible «⟦A5 A6⟧» o «⟦forma:FUENTES⟧»; la app la quita al mostrarlos y, si la llevan, se pueden pulsar (icono de
-  diana), en «Cambios de la versión» y en la actividad: Excel pasa al frente y selecciona esas celdas (separadas por «;» en el Excel en castellano; si falla, «,») o esa forma en
+  diana), en «Cambios de la versión», en «Comparar con el original» y en la actividad: Excel pasa al frente y selecciona esas celdas (separadas por «;» en el Excel en castellano; si falla, «,») o esa forma en
   la hoja del cuadro, sin tocar el archivo.
 
 ## Pasos (se construyen y aprueban uno a uno)

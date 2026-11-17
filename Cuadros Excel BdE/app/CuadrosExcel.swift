@@ -1458,17 +1458,31 @@ struct TarjetaTerminar: View {
             if !taller.comparacion.isEmpty {
                 VStack(alignment: .leading, spacing: 5) {
                     Rotulo("Comparación con el original (versión \(taller.actual), lo guardado)")
-                    ForEach(taller.comparacion, id: \.self) { linea in
+                    ForEach(taller.comparacion, id: \.self) { entera in
+                        // Con marca (diana): al pulsar, Excel selecciona las celdas o la forma del cambio
+                        let (linea, marca) = partirMarca(entera)
                         let aviso = linea.hasPrefix("Aviso")
                         let cambio = linea.hasPrefix("Cambio")
-                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        let fila = HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Image(systemName: aviso ? "exclamationmark.triangle.fill" : cambio ? "arrow.left.arrow.right" : "circle.fill")
                                 .font(.system(size: aviso || cambio ? 10 : 4))
                                 .foregroundStyle(aviso ? Color.red : cambio ? Color.orange : color)
                             Text(linea).font(.system(size: 11.5, weight: aviso ? .bold : .regular))
                                 .foregroundStyle(aviso ? Color.red : Color.primary)
                                 .fixedSize(horizontal: false, vertical: true)
-                                .textSelection(.enabled)
+                                .multilineTextAlignment(.leading)
+                            if marca != nil {
+                                Image(systemName: "scope").font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(aviso ? Color.red : cambio ? Color.orange : color)
+                            }
+                        }
+                        if let marca {
+                            Button { taller.verEnExcel(marca) } label: { fila.contentShape(Rectangle()) }
+                                .buttonStyle(.plain)
+                                .help(marca.hasPrefix("forma:") ? "Seleccionar en Excel la forma «\(marca.dropFirst(6))»"
+                                      : "Seleccionar en Excel: \(marca.replacingOccurrences(of: " ", with: ", "))")
+                        } else {
+                            fila.textSelection(.enabled)
                         }
                     }
                 }

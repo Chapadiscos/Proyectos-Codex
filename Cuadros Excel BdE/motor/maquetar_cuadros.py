@@ -2828,10 +2828,31 @@ def lista_corta(cosas):
     return texto + (f" y {len(cosas) - MAXIMO_EJEMPLOS} más" if len(cosas) > MAXIMO_EJEMPLOS else "")
 
 
-def comparar_libros(zo, zf, idioma_="es"):
+def nombres_textos(z, hoja):
+    """Texto → nombre de la forma que lo lleva, en el dibujo de la hoja del cuadro (para marcar los cambios)."""
+    ruta = dibujo_de_hoja(z, hoja) if hoja else None
+    nombres = {}
+    if ruta and ruta in z.namelist():
+        for a in ANCLA.finditer(z.read(ruta).decode("utf-8")):
+            for cuerpo in re.findall(r'<xdr:txBody>(.*?)</xdr:txBody>', a.group(0), re.S):
+                t = " ".join(html.unescape("".join(re.findall(r'<a:t>([^<]*)</a:t>', p_)))
+                             for p_ in re.findall(r'<a:p>.*?</a:p>', cuerpo, re.S))
+                nombres[re.sub(r'\s+', " ", t).strip()] = nombre_forma(a.group(0))
+    return nombres
+
+
+def comparar_libros(zo, zf, idioma_="es", hoja_cuadro=None):
     """Avisos de lo que ha cambiado del original al maquetado en textos y cifras (no en la colocación ni en
-    el formato de letra): datos que faltan, datos cambiados, formatos de número, series y textos."""
+    el formato de letra): datos que faltan, datos cambiados, formatos de número, series y textos. Los de la hoja
+    del cuadro llevan marca (celdas o forma) para verlos en Excel."""
     faltan, cambios, info = [], [], []
+    forma_de = nombres_textos(zf, hoja_cuadro)
+
+    def m_celdas(hoja, refs):
+        return marca(refs) if hoja == hoja_cuadro else ""
+
+    def m_forma(texto):
+        return marca(forma=forma_de[texto]) if texto in forma_de else ""
     # 1. Datos de las hojas
     co, cf = celdas_libro(zo), celdas_libro(zf)
     for hoja, celdas in co.items():
@@ -2843,7 +2864,8 @@ def comparar_libros(zo, zf, idioma_="es"):
         if perdidas:
             faltan.append((f"faltan {len(perdidas)} datos" if len(perdidas) > 1 else "falta 1 dato")
                           + f" en la hoja «{hoja}»: "
-                          + lista_corta(f"{r} («{recortar(' '.join(celdas[r][0].split()), 25)}»)" for r in perdidas))
+                          + lista_corta(f"{r} («{recortar(' '.join(celdas[r][0].split()), 25)}»)" for r in perdidas)
+                          + m_celdas(hoja, perdidas))
         cambiadas = [r for r in celdas if r in fin and celdas[r][0] != fin[r][0]
                      and not (es_numero(celdas[r][0]) and es_numero(fin[r][0])
                               and math.isclose(float(celdas[r][0]), float(fin[r][0]), rel_tol=1e-9, abs_tol=1e-12))]
@@ -2863,7 +2885,7 @@ def comparar_libros(zo, zf, idioma_="es"):
         for tipo, refs in por_tipo.items():
             cambios.append(f"{tipo} en «{hoja}»: " + lista_corta(
                 f"{r} «{recortar(' '.join(celdas[r][0].split()), 40)}» → «{recortar(' '.join(fin[r][0].split()), 40)}»"
-                for r in refs))
+                for r in refs) + m_celdas(hoja, refs))
         formatos = {}
         for r in celdas:
             if r in fin and celdas[r][1] != fin[r][1]:
@@ -2871,7 +2893,7 @@ def comparar_libros(zo, zf, idioma_="es"):
         for (a, b), refs in formatos.items():
             que = "fechas" if re.search(r'[ymd]', re.sub(r'"[^"]*"|\[[^\]]*\]', "", b), re.I) else "formato de números"
             cambios.append(f"{que} en «{hoja}»: {len(refs)} celda(s) ({lista_corta(refs[:3])}) "
-                           f"de «{a}» a «{b}»")
+                           f"de «{a}» a «{b}»" + m_celdas(hoja, refs))
         nuevas = [r for r in fin if r not in celdas]
         if nuevas:
             columnas = sorted({re.match(r'[A-Z]+', r).group(0) for r in nuevas})
@@ -2914,7 +2936,7 @@ def comparar_libros(zo, zf, idioma_="es"):
                 distintas = [(x, y) for x, y in zip(a[i1:i2], b[j1:j2]) if x != y]
                 if distintas:
                     cambios.append("mayúsculas: " + ", ".join(f"«{x}» → «{y}»" for x, y in distintas[:MAXIMO_EJEMPLOS])
-                                   + f" (en «{recortar(mejor, 50)}»)")
+                                   + f" (en «{recortar(mejor, 50)}»)" + m_forma(mejor))
                 continue
             if op in ("delete", "replace"):
                 i1 += separado(a[i1:i2])
@@ -2924,17 +2946,17 @@ def comparar_libros(zo, zf, idioma_="es"):
             if not sa and not sb:
                 continue
             if not sb:
-                faltan.append(f"falta «{recortar(sa)}» en «{recortar(t, 50)}»")
+                faltan.append(f"falta «{recortar(sa)}» en «{recortar(t, 50)}»" + m_forma(mejor))
             elif not sa:
-                info.append(f"Añadido «{recortar(sb)}» en «{recortar(mejor, 50)}»")
+                info.append(f"Añadido «{recortar(sb)}» en «{recortar(mejor, 50)}»" + m_forma(mejor))
             else:
                 # Letra a letra: si solo se han quitado letras o cifras (además de signos), es que falta algo
                 ops = difflib.SequenceMatcher(None, sa, sb, autojunk=False).get_opcodes()
                 quitado = "".join(sa[x1:x2] for o, x1, x2, _, _ in ops if o == "delete")
                 if all(o in ("equal", "delete") for o, *_ in ops) and re.search(r'\w\w', quitado):
-                    faltan.append(f"falta «{recortar(quitado.strip())}» en «{recortar(t, 50)}»")
+                    faltan.append(f"falta «{recortar(quitado.strip())}» en «{recortar(t, 50)}»" + m_forma(mejor))
                 else:
-                    cambios.append(f"{tipo_cambio(sa, sb)}: «{recortar(sa)}» → «{recortar(sb)}»")
+                    cambios.append(f"{tipo_cambio(sa, sb)}: «{recortar(sa)}» → «{recortar(sb)}»" + m_forma(mejor))
     for t in sueltos:
         # Un texto repartido en varios cuadros: están todas sus palabras
         palabras = Counter(w.lower() for u in resto_f for w in u.split(" "))
@@ -2943,7 +2965,7 @@ def comparar_libros(zo, zf, idioma_="es"):
         faltan.append(f"falta el texto «{recortar(t)}»")
     for t in resto_f:
         if not any(t.lower() in u.lower() for u in to):
-            info.append(f"Texto nuevo: «{recortar(t)}»")
+            info.append(f"Texto nuevo: «{recortar(t)}»" + m_forma(t))
     lineas = [f"Aviso: {f}" for f in faltan]
     if cambios:
         lineas.append(f"Aviso: {len(cambios)} cambio(s) de textos o cifras respecto al original; revísalos:")
@@ -2964,7 +2986,7 @@ def comparar(trabajo):
         origen = pasos / estado["pasos"][0]["archivo"]
     actual = copia_actual(trabajo)
     with zipfile.ZipFile(origen) as zo, zipfile.ZipFile(actual) as zf:
-        lineas = comparar_libros(zo, zf, estado.get("idioma", "es"))
+        lineas = comparar_libros(zo, zf, estado.get("idioma", "es"), estado.get("hoja"))
     return {"trabajo": str(trabajo), **estado, "comparacion": lineas, "comparado": str(actual), "original": str(origen)}
 
 
