@@ -982,6 +982,8 @@ final class Taller: ObservableObject {
                         select (range otra of h)
                     end try
                 end if
+                -- Delante: con Excel detrás, la selección se dibuja en gris muy suave y no se ve
+                activate
                 return "ok"
             end tell
         end run
