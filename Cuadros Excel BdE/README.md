@@ -176,8 +176,10 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
    - Formatos nuevos (rellenos, bordes y fuentes con color) en styles.xml; los del autor no se tocan.
 4. **Líneas y fondos** (`paso4`, en pruebas desde 2026-11-13; exige el paso 3):
    - Solo líneas horizontales finas: blanco matiz 2 (#D9D9D9) entre filas; la última fila, sin línea.
-   - Línea oscura (blanco matiz 5, #808080) **siempre encima de la fila TOTAL** (decisión del usuario) y en ningún
-     otro sitio: el detalle recuerda en rojo que, si hay que separar otros conceptos importantes, se añade a mano.
+   - **La fila TOTAL no lleva línea oscura encima**, en ninguna publicación (decisión del usuario, 2026-11-17,
+     publicado Memoria 3.1; antes iba siempre): entre la fila de encima y la TOTAL, línea blanca. La línea oscura
+     solo separa conceptos importantes, a mano con «Línea oscura sobre la selección» (el detalle lo recuerda), y
+     los estadísticos de las regresiones.
    - Primera columna: fondo blanco matiz 1 (#F2F2F2) con líneas blancas entre todas las filas, también entre
      sangrados (como el TERMINADO, decisión del usuario; la guía decía que no).
    - Títulos de bloque (concepto sin sangría y sin datos en las demás columnas): blanco matiz 2 en la primera
@@ -198,6 +200,10 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      como las demás) y vacía la celda. Solo celdas solas en su fila, por encima de la primera fila con dos textos,
      y, las unidades, si empiezan como unas unidades («Datos a…», «Millones…», «%»…). Al comparar con el
      original salen como «pasados de celdas a cuadros de texto», no como datos que faltan.
+   - **Avisos de la comparación con el original, concretos** (petición del usuario, 2026-11-17): solo lo que cambia va
+     entre ⟪ ⟫ y la app lo pinta en rojo; los espacios, saltos de línea y espacios que no parten línea se ven (␣ ⏎
+     ⍽), con algo de texto alrededor, y se explica el cambio invisible («sangría de 2 a 4 espacios», «salto de
+     línea añadido», «espacio que no parte línea»…).
    - Al comparar con el original, el formato de número sin el relleno que quita el paso 2 no cuenta como cambio.
    - Líneas y fondos sueltos del autor en celdas vacías a la derecha del cuadro, quitados (1.2, columnas I-K), y
      también encima del cuadro (filas entre la pastilla y la cabecera) y en las columnas ocultas (publicado del 3.3).

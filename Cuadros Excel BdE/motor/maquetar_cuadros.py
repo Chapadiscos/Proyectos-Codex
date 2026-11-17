@@ -2918,11 +2918,12 @@ def lineas_y_fondos(z, hoja, cuadro):
                 nuevos[(c, f)] = estilos.variante(estilo(c, f), relleno="", borde={})
                 continue
             lados, relleno, letra = {}, None, None
-            # Línea de debajo: entre filas, gris claro; encima de la fila TOTAL, oscura; la última fila, sin línea
-            if siguiente is not None:
-                lados["bottom"] = LINEA_OSCURA if siguiente == principal else LINEA_FILAS
+            # Línea de debajo: entre filas, gris claro; la última fila, sin línea. Encima de la fila TOTAL no va línea
+            # oscura sino blanca (decisión del usuario, 2026-11-17, publicado Memoria 3.1; antes iba oscura)
+            if siguiente is not None and siguiente != principal:
+                lados["bottom"] = LINEA_FILAS
             if f == principal and i > 0:
-                lados["top"] = LINEA_OSCURA
+                lados["top"] = ("thin", BLANCO)
             if f in coeficientes:
                 lados.pop("bottom", None)
             if estadisticos and siguiente == estadisticos:
@@ -2965,7 +2966,7 @@ def lineas_y_fondos(z, hoja, cuadro):
         detalle.append(f"Subtotal «{texto(primera, f).strip()[:40]}»: fondo blanco matiz 2 en toda la fila")
     if principal:
         detalle.append(f"Fila TOTAL (fila {principal}): fondo blanco matiz {'5 (#808080) con el texto en blanco, porque el matiz 2 ya está usado' if fondo_total == BLANCO_MATIZ_5 else '2 (#D9D9D9)'}"
-                       "; línea oscura encima (blanco matiz 5); sin hueco en las columnas de separación")
+                       "; línea blanca encima (sin línea oscura); sin hueco en las columnas de separación")
     else:
         detalle.append("Sin fila TOTAL")
     if separaciones:
@@ -2978,8 +2979,8 @@ def lineas_y_fondos(z, hoja, cuadro):
                        "ellos y con la primera columna combinada (" + ", ".join(f"{ref(primera, f - 1)}:{ref(primera, f)}" for f in errores) + ")"
                        + (f"; línea oscura antes de «{texto(primera, estadisticos).strip()}» (separa los estadísticos)" if estadisticos else "")
                        + ", como el publicado del 3.3" + marca([ref(primera, f) for f in errores]))
-    detalle.append("Aviso (recordatorio): la línea oscura (blanco matiz 5) solo va encima de la fila TOTAL; si hay que "
-                   "separar otros conceptos importantes, añádela a mano en Excel")
+    detalle.append("Aviso (recordatorio): la fila TOTAL ya no lleva línea oscura encima; si hay que separar conceptos "
+                   "importantes, selecciona sus filas en Excel y usa «Línea oscura sobre la selección»")
     # Formato suelto del autor a la derecha del cuadro (líneas, rellenos en celdas vacías: 1.2, columnas I-K), fuera
     sueltas = [(c, f) for (c, f), x in todas.items() if f1 <= f <= f2 and c > c2 and not x["texto"].strip()
                and (re.search(r'\bborderId="[1-9]', estilos.xf(x["s"])) or re.search(r'\bfillId="([2-9]|\d\d+)"', estilos.xf(x["s"])))]
@@ -3042,13 +3043,77 @@ def textos_libro(z):
             for rico in re.findall(r'<c:rich>(.*?)</c:rich>', xml, re.S):
                 textos.append(" ".join(html.unescape("".join(re.findall(r'<a:t>([^<]*)</a:t>', p_)))
                                        for p_ in re.findall(r'<a:p>.*?</a:p>', rico, re.S)))
-    return [t for t in (re.sub(r'\s+', " ", t).strip() for t in textos) if t]
+    # Solo los espacios normales y saltos se juntan: el espacio que no parte línea se queda (para el aviso)
+    return [t for t in (re.sub(r'[ \t\r\n]+', " ", t).strip(" ") for t in textos) if t]
 
 
 def sin_ortotipografia(t):
     t = t.replace(" ", " ").replace(" ", " ")
     t = re.sub(r'[«»“”„"]', '"', t).replace("’", "'").replace("‘", "'")
     return re.sub(r'\s+', " ", t).strip()
+
+
+INVISIBLES = {"\n": "⏎", "\u00a0": "⍽", "\u202f": "⍽", "\u2009": "⍽", "\u200a": "⍽", "\t": "⇥", " ": "␣"}
+
+
+def resaltar(a, b, contexto=24):
+    """«…⟪x⟫…» → «…⟪y⟫…»: solo lo que cambia entre ⟪ ⟫ (la app lo pinta en rojo), con los espacios, saltos de
+    línea y espacios que no parten línea a la vista (␣ ⏎ ⍽), y algo de texto alrededor."""
+    ops = difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes()
+
+    def lado(t, cual):
+        trozos = []
+        for op, i1, i2, j1, j2 in ops:
+            seg = t[i1:i2] if cual == 0 else t[j1:j2]
+            if op == "equal":
+                trozos.append((False, seg.replace("\n", " ")))
+            elif seg:
+                trozos.append((True, "".join(INVISIBLES.get(ch, ch) for ch in seg)))
+        salida = []
+        for k, (marcado, seg) in enumerate(trozos):
+            if marcado:
+                salida.append("⟪" + seg + "⟫")
+                continue
+            primero, ultimo = k == 0, k == len(trozos) - 1
+            # Los espacios del principio y los pegados a lo que cambia, también a la vista (sangrías)
+            if primero or trozos[k - 1][0]:
+                seg = re.sub(r'^ +', lambda m: "␣" * len(m.group(0)), seg)
+            if not ultimo and trozos[k + 1][0]:
+                seg = re.sub(r' +$', lambda m: "␣" * len(m.group(0)), seg)
+            if primero and not ultimo and len(seg) > contexto:
+                seg = "…" + seg[-contexto:]
+            elif ultimo and not primero and len(seg) > contexto:
+                seg = seg[:contexto] + "…"
+            elif not primero and not ultimo and len(seg) > 2 * contexto:
+                seg = seg[:contexto] + "…" + seg[-contexto:]
+            elif primero and ultimo:
+                seg = recortar(seg)
+            salida.append(seg)
+        return "".join(salida)
+    return f"«{lado(a, 0)}» → «{lado(b, 1)}»"
+
+
+def explicar(a, b):
+    """Qué clase de cambio invisible es (sangría, saltos de línea, espacios), para el aviso."""
+    motivos = []
+    sa, sb = len(a) - len(a.lstrip(" ")), len(b) - len(b.lstrip(" "))
+    if a.strip() == b.strip() and sa != sb:
+        motivos.append(f"sangría de {sa} a {sb} espacios")
+    na, nb = a.count("\n"), b.count("\n")
+    if na > nb:
+        motivos.append("salto de línea quitado" if na - nb == 1 else f"{na - nb} saltos de línea quitados")
+    elif nb > na:
+        motivos.append("salto de línea añadido" if nb - na == 1 else f"{nb - na} saltos de línea añadidos")
+    duros = lambda t: sum(t.count(ch) for ch in "\u00a0\u202f\u2009\u200a")
+    if duros(b) > duros(a):
+        motivos.append("espacio que no parte línea")
+    if re.search(r'\S  +\S', a) and not re.search(r'\S  +\S', b):
+        motivos.append("espacio doble quitado")
+    if a.rstrip(" ") != a and b.rstrip(" ") == b and a.strip() != b.strip() or (a != a.rstrip() and b == b.rstrip() and a.strip() == b.strip() and sa == sb):
+        motivos.append("espacio final quitado")
+    if re.search(r'["“”]', a) and "«" in b:
+        motivos.append("comillas españolas")
+    return f" ({', '.join(motivos)})" if motivos else ""
 
 
 def tipo_cambio(a, b):
@@ -3144,7 +3209,7 @@ def comparar_libros(zo, zf, idioma_="es", hoja_cuadro=None):
             por_tipo.setdefault(tipo_cambio(celdas[r][0], fin[r][0]), []).append(r)
         for tipo, refs in por_tipo.items():
             cambios.append(f"{tipo} en «{hoja}»: " + lista_corta(
-                f"{r} «{recortar(' '.join(celdas[r][0].split()), 40)}» → «{recortar(' '.join(fin[r][0].split()), 40)}»"
+                f"{r} {resaltar(celdas[r][0], fin[r][0])}{explicar(celdas[r][0], fin[r][0])}"
                 for r in refs) + m_celdas(hoja, refs))
         formatos = {}
         for r in celdas:
@@ -3216,7 +3281,7 @@ def comparar_libros(zo, zf, idioma_="es", hoja_cuadro=None):
                 if all(o in ("equal", "delete") for o, *_ in ops) and re.search(r'\w\w', quitado):
                     faltan.append(f"falta «{recortar(quitado.strip())}» en «{recortar(t, 50)}»" + m_forma(mejor))
                 else:
-                    cambios.append(f"{tipo_cambio(sa, sb)}: «{recortar(sa)}» → «{recortar(sb)}»" + m_forma(mejor))
+                    cambios.append(f"{tipo_cambio(sa, sb)}: {resaltar(sa, sb)}" + m_forma(mejor))
     for t in sueltos:
         # Un texto repartido en varios cuadros: están todas sus palabras
         palabras = Counter(w.lower() for u in resto_f for w in u.split(" "))

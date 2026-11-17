@@ -307,6 +307,27 @@ func partirMarca(_ linea: String) -> (texto: String, marca: String?) {
     return (String(linea[..<r.lowerBound]), String(linea[r.upperBound..<linea.index(before: linea.endIndex)]))
 }
 
+/// El texto con lo que cambia entre ⟪ ⟫ (lo marca el motor en la comparación) en rojo y seminegrita, sin los ⟪ ⟫.
+func conResaltes(_ linea: String) -> AttributedString {
+    var salida = AttributedString()
+    var resto = Substring(linea)
+    while let a = resto.range(of: "⟪"), let b = resto[a.upperBound...].range(of: "⟫") {
+        salida += AttributedString(String(resto[..<a.lowerBound]))
+        var rojo = AttributedString(String(resto[a.upperBound..<b.lowerBound]))
+        rojo.foregroundColor = .red
+        rojo.font = .system(size: 11.5, weight: .bold)
+        rojo.backgroundColor = Color.red.opacity(0.12)
+        salida += rojo
+        resto = resto[b.upperBound...]
+    }
+    salida += AttributedString(String(resto))
+    return salida
+}
+
+func sinResaltes(_ linea: String) -> String {
+    linea.replacingOccurrences(of: "⟪", with: "").replacingOccurrences(of: "⟫", with: "")
+}
+
 func duracion(_ s: Int) -> String { s < 60 ? "\(s) s" : "\(s / 60) min \(s % 60) s" }
 
 let colorApp = Color(red: 0.13, green: 0.55, blue: 0.36)
@@ -1451,7 +1472,7 @@ struct TarjetaVersiones: View {
                             Image(systemName: aviso ? "exclamationmark.triangle.fill" : "circle.fill")
                                 .font(.system(size: aviso ? 10 : 4))
                                 .foregroundStyle(aviso ? Color.red : colorVersiones)
-                            Text(linea).font(.system(size: 11.5, weight: aviso ? .bold : .regular))
+                            Text(conResaltes(linea)).font(.system(size: 11.5, weight: aviso ? .bold : .regular))
                                 .foregroundStyle(aviso ? Color.red : Color.primary)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .multilineTextAlignment(.leading)
@@ -1507,7 +1528,7 @@ struct TarjetaTerminar: View {
                             Image(systemName: aviso ? "exclamationmark.triangle.fill" : cambio ? "arrow.left.arrow.right" : "circle.fill")
                                 .font(.system(size: aviso || cambio ? 10 : 4))
                                 .foregroundStyle(aviso ? Color.red : cambio ? Color.orange : color)
-                            Text(linea).font(.system(size: 11.5, weight: aviso ? .bold : .regular))
+                            Text(conResaltes(linea)).font(.system(size: 11.5, weight: aviso ? .bold : .regular))
                                 .foregroundStyle(aviso ? Color.red : Color.primary)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .multilineTextAlignment(.leading)
@@ -1630,7 +1651,7 @@ struct Consola: View {
                 if let e = taller.ejecucionVista, !e.texto.isEmpty {
                     Button {
                         NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(e.texto.components(separatedBy: "\n").map { partirMarca($0).texto }
+                        NSPasteboard.general.setString(e.texto.components(separatedBy: "\n").map { sinResaltes(partirMarca($0).texto) }
                             .joined(separator: "\n"), forType: .string)
                     } label: { Image(systemName: "doc.on.doc") }
                     .buttonStyle(.borderless)
@@ -1647,7 +1668,7 @@ struct Consola: View {
                             ForEach(Array(e.texto.components(separatedBy: "\n").enumerated()), id: \.offset) { _, entera in
                                 // Los avisos con marca se pulsan: Excel selecciona sus celdas o su forma
                                 let (linea, marca) = partirMarca(entera)
-                                let texto = Text(linea.isEmpty ? " " : linea)
+                                let texto = Text(linea.isEmpty ? AttributedString(" ") : conResaltes(linea))
                                     .font(.system(size: 11.5, weight: linea.hasPrefix("• Aviso") ? .bold : .regular, design: .monospaced))
                                     .foregroundStyle(color(linea))
                                 if let marca {
