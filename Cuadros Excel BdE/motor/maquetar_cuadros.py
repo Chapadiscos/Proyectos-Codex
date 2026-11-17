@@ -2376,9 +2376,10 @@ def cabeceras(z, hoja, cuadro, pub):
             a1, b1, a2, b2 = combinada.get((c, f), (c, f, c, f))
             ancla = (a1, b1)
             estrecha = ancho_col(c) < COLUMNA_ESTRECHA and a1 == a2
-            if estrecha or not texto(*ancla) and ancla not in [(k[0], k[1]) for k in combinada.values()]:
-                continue
-            if c == primera and not texto(*ancla):
+            vacia = not texto(*ancla) and ancla not in [(k[0], k[1]) for k in combinada.values()]
+            if estrecha or vacia or (c == primera and not texto(*ancla)):
+                # Sin relleno ni líneas (el autor puede haber dejado alguna: 3.4, línea azul en A4 y G4)
+                nuevos[(c, f)] = estilos.variante(estilo(c, f), relleno="", borde={})
                 continue
             nivel = min(4, nivel_de(b2))
             clave_color, letra = NIVELES_CABECERA[nivel]
