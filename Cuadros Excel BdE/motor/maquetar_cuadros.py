@@ -1359,6 +1359,20 @@ class Estilos:
         self.nuevos_bordes.append(nuevo)
         return len(todos)
 
+    def borde_de(self, i):
+        """Los lados del borde del formato `i` como {"top": ("thin", "D9D9D9"), …} (colores RGB; los del tema, sin
+        color: se dejan como estaban si no se tocan)."""
+        b = re.search(r'\bborderId="(\d+)"', self.xf(i))
+        n = int(b.group(1)) if b else 0
+        borde = (self.bordes + self.nuevos_bordes)[n] if n < len(self.bordes) + len(self.nuevos_bordes) else ""
+        lados = {}
+        for lado in ("left", "right", "top", "bottom"):
+            m = re.search(rf'<{lado} style="(\w+)">(.*?)</{lado}>', borde, re.S)
+            if m:
+                rgb = re.search(r'rgb="FF(\w{6})"', m.group(2))
+                lados[lado] = (m.group(1), rgb.group(1) if rgb else BLANCO_MATIZ_2)
+        return lados
+
     def con_letra(self, i, color):
         """La fuente del formato `i` con este color de letra (nueva si hace falta)."""
         fuente = self.fuente_de(i)
@@ -3216,6 +3230,61 @@ def marca(celdas=(), forma=None):
     celdas = [c for c in celdas if c]
     return f" ⟦{' '.join(celdas)}⟧" if celdas else ""
 
+# ---------------------------------------------------------------- herramienta: línea oscura para separar conceptos
+
+LINEAS_OSCURAS = "Líneas oscuras"
+
+
+def linea_oscura(trabajo, pid=None, filas=""):
+    """Pone la línea oscura (blanco matiz 5) encima de estas filas del cuadro («7,10,13»), en todo su ancho salvo las
+    columnas de separación, para separar conceptos (petición del usuario, 2026-11-17: publicado del 2.9). Las filas
+    salen de la selección de Excel. Deja una versión nueva."""
+    estado = leer_estado(trabajo)
+    requiere(estado, [LINEAS_Y_FONDOS], "«Línea oscura»")
+    cuadro = next((p.get("cuadro") for p in reversed(estado["pasos"][:estado["actual"] + 1]) if p.get("cuadro")), None)
+    if not cuadro:
+        raise Fallo("No sé dónde está el cuadro: vuelve a hacer el paso «Celdas»")
+    # De cada zona de la selección («$A$7», «$A$7:$C$9», «$A$7;$A$10»), su primera fila
+    pedidas = sorted({int(m.group(1)) for m in (re.search(r'(\d+)', zona) for zona in re.split(r'[;,]', filas)) if m})
+    c1, f1, c2, f2 = cuadro["c1"], cuadro["f1"], cuadro["c2"], cuadro["f2"]
+    primera, fin_cab = cuadro["primera"], cuadro["fin_cabecera"]
+    validas = [f for f in pedidas if fin_cab + 1 < f <= f2]
+    if not validas:
+        raise Fallo(f"Selecciona en Excel alguna celda de la fila que empieza el concepto nuevo (filas {fin_cab + 2} a {f2} "
+                    "del cuadro): la línea oscura va encima de ella")
+    _, pasos = nombres(trabajo)
+    base = pasos / estado["pasos"][estado["actual"]]["archivo"]
+    hoja = estado.get("hoja") or "Cuadro datos"
+    with zipfile.ZipFile(base) as z:
+        ruta_hoja = hoja_de(z, hoja)
+        hoja_xml = z.read(ruta_hoja).decode("utf-8")
+        _, compartidos = leer_compartidos(z)
+        estilos = Estilos(z.read("xl/styles.xml").decode("utf-8"))
+        todas = celdas_hoja(hoja_xml, compartidos)
+        ancho_col = anchos_columnas(hoja_xml)
+        separaciones = {c for c in range(primera + 1, c2 + 1) if ancho_col(c) < COLUMNA_ESTRECHA
+                        and not any(todas.get((c, f), {}).get("texto", "").strip() for f in range(f1, f2 + 1))}
+        nuevos = {}
+        for f in validas:
+            for c in range(primera, c2 + 1):
+                if ancho_col(c) == 0 or c in separaciones:
+                    continue
+                for fila, lado in ((f, "top"), (f - 1, "bottom")):
+                    s_ = nuevos.get((c, fila), todas.get((c, fila), {}).get("s", 0))
+                    lados = estilos.borde_de(s_)
+                    lados[lado] = LINEA_OSCURA
+                    nuevos[(c, fila)] = estilos.variante(s_, borde=lados)
+        hoja_xml = con_estilo(hoja_xml, nuevos)
+        cambios = {ruta_hoja: hoja_xml.encode("utf-8"), "xl/styles.xml": estilos.resultado().encode("utf-8")}
+    detalle = [f"Línea oscura (blanco matiz 5) para separar conceptos, encima de {'las filas' if len(validas) > 1 else 'la fila'} "
+               + ", ".join(map(str, validas)) + marca([ref(primera, f) for f in validas])]
+    fuera = [f for f in pedidas if f not in validas]
+    if fuera:
+        detalle.append(f"Aviso: sin línea en la{'s' if len(fuera) > 1 else ''} fila{'s' if len(fuera) > 1 else ''} "
+                       + ", ".join(map(str, fuera)) + " (fuera del cuerpo del cuadro o primera fila de datos)")
+    return nuevo_paso(trabajo, LINEAS_OSCURAS, cambios, detalle, cuadro)
+
+
 
 def pendiente(nombre):
     def paso(trabajo, pid=None):
@@ -3350,7 +3419,7 @@ def info(archivo):
 
 ORDENES = {"empezar": empezar, "estado": lambda t: {"trabajo": t, **leer_estado(t)}, "ir": ir, "reiniciar": reiniciar,
            "paso1": paso1, "paso2": paso2,
-           "paso3": paso3, "paso4": paso4, "letra7": letra7,
+           "paso3": paso3, "paso4": paso4, "letra7": letra7, "linea_oscura": linea_oscura,
            "comparar": comparar, "terminar": terminar, "info": info, "publicaciones": lambda: {},
            "guardar_publicacion": guardar_publicacion, "borrar_publicacion": borrar_publicacion, "paletas": paletas}
 

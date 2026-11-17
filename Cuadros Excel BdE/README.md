@@ -180,6 +180,11 @@ paso 1 los pasos 2, 3 y 4 que haya hechos con la letra de las celdas a 7 pt y lo
 («Letra 7 pt»); las de 7,5 pt quedan detrás para volver con ⌘←. El paso 2 la propone en su aviso de muchas
 columnas. En el 3.4 deja la cabecera en 60 pt, como el TERMINADO.
 
+**Herramienta «Línea oscura sobre la selección»** (`linea_oscura`, petición del usuario, 2026-11-17, publicado
+del 2.9): para separar conceptos. Se selecciona en Excel una celda de cada fila que empieza un concepto nuevo (varias
+con ⌘; de cada zona cuenta su primera fila) y la app pone la línea oscura (blanco matiz 5) encima de esas filas, en
+todo el ancho del cuadro salvo las separaciones, en una versión nueva («Líneas oscuras»). Exige el paso 4.
+
 5. **Terminar**: «Comparar con el original» (`comparar`, sin crear versión: datos de todas las hojas y textos de
    las formas frente al Excel del autor; avisa en rojo de lo que falte y lista los cambios —sangrías, viñetas,
    «TOTAL», puntos, comillas—) y «Guardar como TERMINADO» («ORIGINALES» → «TERMINADOS», junto al original; borra

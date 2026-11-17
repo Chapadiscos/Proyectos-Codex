@@ -102,6 +102,11 @@ let herramientaLetra7 = PasoMaquetacion(id: 0, titulo: "Probar letra a 7 pt",
     detalle: "Para cuadros con muchas columnas: rehace «Celdas», «Cabeceras» y «Líneas y fondos» con la letra a 7 pt (anchos, altos y cabecera recalculados) en una versión nueva. Si no te convence, vuelve a la anterior con ⌘← y sigue con 7,5 pt",
     icono: "textformat.size.smaller", orden: "letra7")
 
+/// Herramienta: línea oscura encima de las filas seleccionadas en Excel, para separar conceptos
+let herramientaLineaOscura = PasoMaquetacion(id: 0, titulo: "Línea oscura sobre la selección",
+    detalle: "Para separar conceptos: selecciona en Excel una celda de cada fila que empieza un concepto nuevo (varias con ⌘) y pulsa aquí; la línea oscura (blanco matiz 5) va encima de esas filas, en todo el ancho del cuadro. Deja una versión nueva (⌘← para quitarla)",
+    icono: "line.3.horizontal.decrease", orden: "linea_oscura")
+
 let pasosMaquetacion = [
     PasoMaquetacion(id: 1, titulo: "Retícula, pastilla y textos",
                     detalle: "Retícula y pastilla de la hoja «Cuadro» del archivo de retículas, en A1 y al fondo, con la pastilla en el matiz 1 de la publicación; Cuadro N (Roboto Regular 7 pt) y título (Roboto Medium 8,5 pt) con el marco de la plantilla: letras entre paréntesis, «(cont.)» o «(cont'd)» al final de párrafo en Regular y, si el título ocupa más líneas, la pastilla crece; unidades en Roboto Light 6 pt; FUENTES en Roboto Light 7 pt con las reglas de Gráficos (rótulo, notas con letra, punto final) en el ancho de la plantilla",
@@ -963,6 +968,37 @@ final class Taller: ObservableObject {
         tarea("Ver en Excel") { id in await self.mostrarEnExcel(id, recargar: false) }
     }
 
+    /// Línea oscura encima de las filas que estén seleccionadas en Excel (en la copia de trabajo abierta)
+    func lineaOscura() {
+        guard let trabajo else { return }
+        let guion = """
+        on run argv
+            tell application "Microsoft Excel"
+                set wb to missing value
+                repeat with i from 1 to (count workbooks)
+                    if full name of workbook i is item 1 of argv or full name of workbook i is item 2 of argv then set wb to workbook i
+                end repeat
+                if wb is missing value then return "sin libro"
+                activate object wb
+                return get address of selection
+            end tell
+        end run
+        """
+        tarea(herramientaLineaOscura.titulo) { id in
+            let r = await osascript(guion, [trabajo.path, Taller.copiaB(trabajo).path], espera: 15)
+            guard r.ok, r.texto != "sin libro", !r.texto.isEmpty else {
+                self.anotar(id, r.texto == "sin libro" ? "⚠ La copia de trabajo no está abierta en Excel: pulsa «Colocar Excel»."
+                                                     : "⚠ No he podido leer la selección de Excel (\(r.texto)).")
+                return false
+            }
+            self.anotar(id, "Selección en Excel: \(r.texto.replacingOccurrences(of: "$", with: ""))")
+            guard let resp = await self.llamarMotor(["linea_oscura", trabajo.path, self.publicacion, r.texto], registro: id) else { return false }
+            self.aplicar(resp)
+            self.pasoActual?.detalle.forEach { self.anotar(id, "• " + $0) }
+            return await self.mostrar(id)
+        }
+    }
+
     /// Selecciona en Excel (en el libro abierto, hoja del cuadro) las celdas o la forma de un aviso, sin tocar el archivo
     func verEnExcel(_ marca: String) {
         guard let ruta = trabajo else { return }
@@ -1364,6 +1400,10 @@ struct TarjetaMaquetar: View {
             Accion(icono: herramientaLetra7.icono, titulo: herramientaLetra7.titulo, detalle: herramientaLetra7.detalle,
                    color: colorApp, principal: false, marca: probada ? "checkmark.circle.fill" : nil) { taller.hacer(herramientaLetra7) }
                 .disabled(taller.trabajo == nil || taller.publicacionActual == nil || taller.enCurso != nil || !celdasHechas)
+            let fondosHechos = taller.pasos.contains { $0.titulo == "Líneas y fondos" && $0.n <= taller.actual }
+            Accion(icono: herramientaLineaOscura.icono, titulo: herramientaLineaOscura.titulo, detalle: herramientaLineaOscura.detalle,
+                   color: colorApp, principal: false, marca: nil) { taller.lineaOscura() }
+                .disabled(taller.trabajo == nil || taller.publicacionActual == nil || taller.enCurso != nil || !fondosHechos)
         }
     }
 }
