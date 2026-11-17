@@ -185,6 +185,11 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
    - La celda de la primera columna, solo si lleva texto («Evento», 1.2); si no, esquina en blanco.
    - Columnas estrechas de separación (< 3), sin relleno: hueco blanco entre grupos.
    - Formatos nuevos (rellenos, bordes y fuentes con color) en styles.xml; los del autor no se tocan.
+   - **Fila TOTAL entera en Roboto Medium** (texto y cifras), en todas las publicaciones (decisión del usuario,
+     2026-11-17: así todos los Memoria publicados).
+   - **Toda la letra de las celdas en negro**: el color del autor no se queda (cifras grises del Memoria 3.2
+     publicado, caso aislado); en los textos con formato, los trozos toman el color de la celda. Solo las cabeceras
+     llevan otro color, el que les pone el paso 3 (decisión del usuario, 2026-11-17).
 4. **Líneas y fondos** (`paso4`, en pruebas desde 2026-11-13; exige el paso 3):
    - Solo líneas horizontales finas: blanco matiz 2 (#D9D9D9) entre filas; la última fila, sin línea.
    - **La fila TOTAL no lleva línea oscura encima**, en ninguna publicación (decisión del usuario, 2026-11-17,

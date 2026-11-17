@@ -1549,9 +1549,9 @@ class Estilos:
             if m and 'val="0"' not in m.group(0) and 'val="false"' not in m.group(0):
                 partes.append(m.group(0))
         partes.append(f'<sz val="{CUERPO_CELDA:g}"/>')
-        color = re.search(r'<color\b[^>]*/>', fuente)
-        if color:
-            partes.append(color.group(0))
+        # Siempre en negro: el color del autor (cifras en gris, Memoria 3.2) no se queda; las cabeceras las colorea
+        # el paso 3 (decisión del usuario, 2026-11-17)
+        partes.append('<color rgb="FF000000"/>')
         partes.append(f'<name val="{LETRA_CELDA_NEGRITA if negrita or es_negrita(fuente) else LETRA_CELDA}"/><family val="2"/>')
         nueva = "<font>" + "".join(partes) + "</font>"
         todas = self.fuentes + self.nuevas_fuentes
@@ -2249,6 +2249,11 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None):
                 return True
         return False
     filas_suma = {f for f in range(fin_cab + 1, f2 + 1) if es_suma(f)}
+    # La fila TOTAL, entera en Roboto Medium (cifras incluidas), en todas las publicaciones (decisión del usuario,
+    # 2026-11-17: así todos los Memoria publicados)
+    filas_total = {f for f in range(fin_cab + 1, f2 + 1) if re.fullmatch(r'\s*total\s*', d(primera, f)["texto"], re.I)
+                   and not d(primera, f)["texto"].startswith(" ")}
+    filas_suma |= filas_total
     # Filas madre: con datos y con filas más sangradas justo debajo («A entidades de crédito españolas» y sus
     # «Lideradas por…», publicado Memoria 3.1): su texto de la primera columna, en Roboto Medium (decisión del usuario)
     con_texto = [f for f in range(fin_cab + 1, f2 + 1) if d(primera, f)["texto"].strip()]
@@ -2640,6 +2645,9 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None):
             nuevos_s[(c, f)] = estilos.nuevo(x["s"], al, negrita=f in filas_suma or (c == primera and f in madres))
     negritas = [ref(c, f) for (c, f) in nuevos_s if es_negrita(estilos.fuente_de(d(c, f)["s"])) and d(c, f)["texto"].strip()]
     sumas_txt = [f for f in sorted(filas_suma) if not RE_TOTAL.match(d(primera, f)["texto"])]
+    if filas_total:
+        detalle.append("Fila TOTAL entera (también las cifras) en " + LETRA_CELDA_NEGRITA + ": fila "
+                       + ", ".join(map(str, sorted(filas_total))) + marca([ref(primera, f) for f in sorted(filas_total)]))
     madres_txt = [f for f in sorted(madres) if f not in filas_suma]
     if madres_txt:
         detalle.append("Conceptos de nivel intermedio (sangrados, con otros más sangrados debajo): su texto en " + LETRA_CELDA_NEGRITA + ": "
@@ -2663,7 +2671,8 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None):
         if "<r>" in nuevas_si[i]:
             def rpr(m):
                 letra = LETRA_CELDA_NEGRITA if es_negrita(m.group(1)) else LETRA_CELDA
-                dentro = re.sub(r'<(rFont|sz|b|family|scheme)\b[^>]*/>', "", m.group(1))
+                # Sin color propio: el trozo toma el de la celda (negro; en la cabecera, el del paso 3)
+                dentro = re.sub(r'<(rFont|sz|b|family|scheme|color)\b[^>]*/>', "", m.group(1))
                 return f'<rPr><rFont val="{letra}"/>{dentro}<sz val="{CUERPO_CELDA:g}"/><family val="2"/></rPr>'
             nuevas_si[i] = re.sub(r'<rPr>(.*?)</rPr>', rpr, nuevas_si[i], flags=re.S)
     # Sangría en celdas con texto con formato: los espacios van al principio del primer trozo (cadena nueva)
