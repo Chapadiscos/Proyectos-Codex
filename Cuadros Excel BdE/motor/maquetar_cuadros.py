@@ -1466,7 +1466,7 @@ class Estilos:
         self.cache[clave] = n
         return n
 
-    def fuente_celda(self, fuente):
+    def fuente_celda(self, fuente, negrita=False):
         """Roboto Light 7,5 pt (o Roboto Medium si el autor la puso en negrita) con el formato local de la fuente
         del autor (cursiva, subrayado, tachado, índices, color), sin negrita de Excel: el peso lo da la familia."""
         partes = []
@@ -1478,7 +1478,7 @@ class Estilos:
         color = re.search(r'<color\b[^>]*/>', fuente)
         if color:
             partes.append(color.group(0))
-        partes.append(f'<name val="{LETRA_CELDA_NEGRITA if es_negrita(fuente) else LETRA_CELDA}"/><family val="2"/>')
+        partes.append(f'<name val="{LETRA_CELDA_NEGRITA if negrita or es_negrita(fuente) else LETRA_CELDA}"/><family val="2"/>')
         nueva = "<font>" + "".join(partes) + "</font>"
         todas = self.fuentes + self.nuevas_fuentes
         if nueva in todas:
@@ -1507,14 +1507,14 @@ class Estilos:
         self.nuevos_formatos.append((n, nuevo))
         return n
 
-    def nuevo(self, i, alineacion):
+    def nuevo(self, i, alineacion, negrita=False):
         """Índice de un formato como el `i` del autor con la fuente de celda y esta alineación (y el formato de
         número sin relleno a los lados)."""
-        clave = (i, tuple(sorted(alineacion.items())))
+        clave = (i, tuple(sorted(alineacion.items())), negrita)
         if clave in self.cache:
             return self.cache[clave]
         xf = self.xf(i)
-        fid = self.fuente_celda(self.fuente_de(i))
+        fid = self.fuente_celda(self.fuente_de(i), negrita)
         apertura = re.match(r'<xf\b[^>]*?(/?)>', xf)
         atributos = apertura.group(0)[3:-(2 if apertura.group(1) else 1)]
         nf = self.sin_relleno(i)
@@ -2165,9 +2165,19 @@ def celdas(z, hoja, idioma="es"):
         ancho_previo = ancho_col
         ancho_col = lambda c, _v=ancho_previo, _s=set(separaciones), _w=w_sep, _p=set(pegada): 0.0 if c in _p else (_w if c in _s else _v(c))
     espacio_pt = (ancho_ret - sum(unidades_a_emu(ancho_col(c)) for c in list(range(1, primera)) + fijas)) / EMU_PT
+    # Filas de suma (Memoria 2.1 publicado): sus cifras son la SUMA de las filas de justo debajo; van en Roboto
+    # Medium como un subtotal (decisión del usuario, 2026-11-17), sin fondo
+    def es_suma(f):
+        for c in range(primera + 1, c2 + 1):
+            m = re.search(r'<f>\s*SUM\(\$?([A-Z]+)\$?(\d+):\$?([A-Z]+)\$?(\d+)\)\s*</f>', d(c, f)["xml"] or "")
+            if m and m.group(1) == m.group(3) and int(m.group(2)) == f + 1 and int(m.group(4)) > f + 1:
+                return True
+        return False
+    filas_suma = {f for f in range(fin_cab + 1, f2 + 1) if es_suma(f)}
+
     def medir_de(c, f):
         """La medida de la variante que llevará la celda: Roboto Medium si el autor la puso en negrita."""
-        return medir_medium if es_negrita(estilos.fuente_de(d(c, f)["s"])) else medir
+        return medir_medium if f in filas_suma or es_negrita(estilos.fuente_de(d(c, f)["s"])) else medir
     palabra = lambda t, m=medir: max([m(w, CUERPO_CELDA) for w in re.split(r"[ \n]+", t) if w] or [0])
 
     def vista(c, f):
@@ -2538,8 +2548,13 @@ def celdas(z, hoja, idioma="es"):
             al = {"horizontal": h, "vertical": "top" if f in arriba else "center"}
             if not es_cifra(x) or f <= fin_cab:
                 al["wrapText"] = "1"
-            nuevos_s[(c, f)] = estilos.nuevo(x["s"], al)
+            nuevos_s[(c, f)] = estilos.nuevo(x["s"], al, negrita=f in filas_suma)
     negritas = [ref(c, f) for (c, f) in nuevos_s if es_negrita(estilos.fuente_de(d(c, f)["s"])) and d(c, f)["texto"].strip()]
+    sumas_txt = [f for f in sorted(filas_suma) if not RE_TOTAL.match(d(primera, f)["texto"])]
+    if sumas_txt:
+        detalle.append("Filas que suman las de debajo, en " + LETRA_CELDA_NEGRITA + " como un subtotal: "
+                       + ", ".join(f"«{d(primera, f)['texto'].strip()[:30]}» (fila {f})" for f in sumas_txt)
+                       + marca([ref(primera, f) for f in sumas_txt]))
     detalle.append(f"Letra de las celdas: {LETRA_CELDA} {CUERPO_CELDA:g} pt".replace(".", ",")
                    + (f"; lo que iba en negrita, en {LETRA_CELDA_NEGRITA} ({len(negritas)} celda{'s' if len(negritas) > 1 else ''}: "
                       + ", ".join(negritas[:8]) + ("…" if len(negritas) > 8 else "") + ")" if negritas else ""))

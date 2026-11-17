@@ -188,6 +188,9 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
    - Fila TOTAL: blanco matiz 2, o matiz 5 con el texto en blanco si el matiz 2 ya lo usan bloques o subtotales
      (Ejemplos 1.4 y A2.2); sin hueco en las columnas de separación. Columna TOTAL (cabecera «TOTAL»): blanco
      matiz 2 con línea blanca a la izquierda y entre filas (Ejemplos 4.2 y A4.6).
+   - **Filas de suma** (decisión del usuario, 2026-11-17, publicado Memoria 2.1): si las cifras de una fila son la SUMA
+     de las filas de justo debajo («Entidades de crédito» = SUM(E7:E12)), toda la fila va en Roboto Medium, como un
+     subtotal, sin fondo. Se avisa con diana.
    - **Columnas ocultas del autor** (Memoria 2.1: textos de traducción en A-C que la columna D enseña con una
      fórmula; «Descuadre» en G): ni se miden para el alto de fila ni se les cambia el formato.
    - **«Cuadro N» y unidades en celdas** encima del cuadro (Memoria 2.1, 3.2, 4.2): el paso 1 los pasa a cuadros de
