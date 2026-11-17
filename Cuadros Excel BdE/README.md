@@ -19,7 +19,8 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
   Excel (Resumen cuadros, pág. 22): matiz 1-3 un 80/60/40 % más claros y 4-5 un 25/50 % más oscuros. La
   **pastilla es el matiz 1** (comprobado con el archivo de retículas: 004081 → B3D9FF del Informe Anual, F06800 →
   FFE0C9 de los DO, A32938 → F3CED3 de las bianuales). La paleta de Excel queda en segundo plano (opcional).
-  Publicación creada: «Informe Anual», sólido 004081.
+  Publicaciones creadas: «Informe Anual» y «Memoria Supervisión» (2026-11-17), las dos con sólido 004081 (los publicados
+  de la Memoria usan la misma pastilla B3D9FF); separadas por si más adelante hay diferencias.
 
 ## Cómo trabaja
 

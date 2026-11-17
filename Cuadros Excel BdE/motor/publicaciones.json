@@ -19,6 +19,7 @@
     {"nombre": "Estudios de Historia Económica", "color": "F7E9E5"}
   ],
   "publicaciones": [
-    {"id": "informe-anual", "nombre": "Informe Anual", "color": "004081", "tema": null}
+    {"id": "informe-anual", "nombre": "Informe Anual", "color": "004081", "tema": null},
+    {"id": "memoria-supervision", "nombre": "Memoria Supervisión", "color": "004081", "tema": null}
   ]
 }
