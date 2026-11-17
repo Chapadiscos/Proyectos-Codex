@@ -11,6 +11,7 @@ Uso (la salida es siempre JSON):
   maquetar_cuadros.py ir      <trabajo.xlsx> <n>
   maquetar_cuadros.py reiniciar <trabajo.xlsx>
   maquetar_cuadros.py paso1..paso4 <trabajo.xlsx> <id_publicacion>
+  maquetar_cuadros.py aplicar <trabajo.xlsx> <id_publicacion> <paso:propuesta>
   maquetar_cuadros.py terminar <trabajo.xlsx>
   maquetar_cuadros.py info    <archivo.xlsx>
   maquetar_cuadros.py publicaciones
@@ -170,7 +171,7 @@ def solo_lectura(archivo):
     os.chmod(archivo, 0o444)
 
 
-def nuevo_paso(trabajo, titulo, cambios, detalle, extra=None):
+def nuevo_paso(trabajo, titulo, cambios, detalle, extra=None, propuestas=None, aplica=None):
     """Aplica `cambios` (ruta interna → bytes) sobre la versión actual y la guarda como paso siguiente.
     Los pasos que hubiera por delante se descartan, como al deshacer y volver a hacer."""
     estado = leer_estado(trabajo)
@@ -184,7 +185,8 @@ def nuevo_paso(trabajo, titulo, cambios, detalle, extra=None):
     reescribir_zip(pasos / estado["pasos"][actual]["archivo"], pasos / archivo, cambios)
     solo_lectura(pasos / archivo)
     shutil.copyfile(pasos / archivo, trabajo)
-    estado["pasos"].append({"n": n, "titulo": titulo, "archivo": archivo, "detalle": detalle, **({"cuadro": extra} if extra else {})})
+    estado["pasos"].append({"n": n, "titulo": titulo, "archivo": archivo, "detalle": detalle, **({"cuadro": extra} if extra else {}),
+                            **({"propuestas": propuestas} if propuestas else {}), **({"aplica": aplica} if aplica else {})})
     estado["actual"] = n
     guardar_estado(trabajo, estado)
     return {"trabajo": str(trabajo), **estado}
@@ -992,8 +994,10 @@ def paso1(trabajo, pid):
     intermedio = io.BytesIO()
     reescribir_zip(base, intermedio, cambios)
     with zipfile.ZipFile(intermedio) as z:
-        cambios_textos, detalle_textos = textos(z, hoja, estado)
-    return nuevo_paso(trabajo, RETICULA_Y_TEXTOS, {**cambios, **cambios_textos}, detalle + detalle_textos)
+        propuestas = []
+        cambios_textos, detalle_textos = textos(z, hoja, estado, propuestas)
+    return nuevo_paso(trabajo, RETICULA_Y_TEXTOS, {**cambios, **cambios_textos}, detalle + detalle_textos,
+                      propuestas=propuestas)
 
 
 def reticula_y_pastilla(z, hoja, pub):
@@ -1127,7 +1131,7 @@ RE_UNIDADES = re.compile(r'\s*(datos|millones|miles|millardos|porcentajes?|%|tas
                          r'eur\b|€|points|change|year-end)', re.I)
 
 
-def textos(z, hoja, estado):
+def textos(z, hoja, estado, propuestas=None):
     """«Cuadro N» y título con el marco de la plantilla (el título con el final «(a)» / «(cont.)» en Regular y,
     si ocupa más de una línea, la pastilla crece); unidades en Roboto Light 6 pt; FUENTES en Roboto Light 7 pt
     con las reglas de Gráficos, en el ancho de la plantilla. Todo en negro."""
@@ -1212,6 +1216,59 @@ def textos(z, hoja, estado):
             detalle.append("Textos del autor en celdas encima del cuadro, pasados a cuadros de texto (como en el Informe "
                            "Anual) y vaciadas sus celdas: " + "; ".join(pasadas))
 
+    # FUENTE y notas escritas en celdas bajo el cuadro (Memoria 3.2: A22 «FUENTE: …», A23 «(*)…», A24 «(a)…»): pasan
+    # al cuadro de texto de FUENTES, como en los demás cuadros, y las celdas se vacían (petición del usuario, 2026-11-17)
+    if "fuentes" not in tipos.values():
+        ruta_hoja = hoja_de(z, hoja)
+        hoja_xml = cambios_hoja[ruta_hoja].decode("utf-8") if ruta_hoja in cambios_hoja else z.read(ruta_hoja).decode("utf-8")
+        _, compartidos = leer_compartidos(z)
+        mdw = digito_maximo(z.read("xl/styles.xml").decode("utf-8"))
+        ancho_col = anchos_columnas(hoja_xml)
+        altos, defecto = filas
+        todas_c = celdas_hoja(hoja_xml, compartidos)
+
+        def x_de(c):
+            return sum(round(round(ancho_col(k) * mdw) * EMU_PT) for k in range(1, c))
+        visibles = {k: x for k, x in todas_c.items() if x["texto"].strip() and ancho_col(k[0]) > 0
+                    and altos.get(k[1] - 1, defecto) != 0 and x_de(k[0]) < ancho_ret}
+        por_fila = Counter(f for (c, f) in visibles)
+        fin_tabla = max([f for f, n in por_fila.items() if n >= 2] or [0])
+        rotulo = next(((c, f) for (c, f), x in sorted(visibles.items(), key=lambda kv: (kv[0][1], kv[0][0]))
+                       if f > fin_tabla and por_fila[f] == 1 and not x["numero"] and "<f" not in x["xml"]
+                       and ROTULO.match(x["texto"])), None)
+        if rotulo:
+            tomadas, huecos = [], 0
+            for f in range(rotulo[1], rotulo[1] + 16):
+                if por_fila[f] == 0:
+                    huecos += 1
+                    if huecos >= 2:
+                        break
+                    continue
+                if por_fila[f] >= 2:
+                    break
+                huecos = 0
+                k = next(k for k in visibles if k[1] == f)
+                if visibles[k]["numero"] or "<f" in visibles[k]["xml"]:
+                    break
+                tomadas.append(k)
+            marco = pl["marco_fuentes"]
+            linea = next((l for l in lineas_de(marco) if texto_de(l).strip()), [("<a:rPr lang=\"es-ES\"/>", "")])
+            parrafos = [[(linea[0][0], l.strip())] for k in tomadas for l in visibles[k]["texto"].split("\n") if l.strip()]
+            nueva = con_parrafos(marco, parrafos)
+            cy = sum(altos.get(r, defecto) for r in range(rotulo[1] - 1))
+            r_, desp = celda_de(filas, cy)
+            nueva, sig = renumerar(anclar_celda(nueva, 0, 0, r_, desp, tamano(marco)[0], tamano(marco)[1]), sig, "FUENTES")
+            partes.insert(len(partes) - 1, nueva)
+            tipos[partes.index(nueva)] = "fuentes"
+            for c, f in tomadas:
+                hoja_xml = re.sub(rf'<c r="{ref(c, f)}"([^>]*?)(?:/>|>.*?</c>)',
+                                  lambda m: "<c r=\"" + ref(c, f) + "\"" + re.sub(r'\st="\w+"', "", m.group(1)) + "/>",
+                                  hoja_xml, count=1, flags=re.S)
+            cambios_hoja[ruta_hoja] = hoja_xml.encode("utf-8")
+            detalle.append("FUENTE y notas del autor en celdas bajo el cuadro, pasadas al cuadro de texto de FUENTES (como "
+                           "en los demás cuadros) y vaciadas sus celdas: " + ", ".join(ref(c, f) for c, f in tomadas)
+                           + marca(forma="FUENTES"))
+
     medir_medium = medidor("Roboto-Medium.ttf")
     medir_light = medidor("Roboto-Light.ttf")
     titulo_k = None
@@ -1224,16 +1281,21 @@ def textos(z, hoja, estado):
         if tipo == "cuadro":
             a, _ = con_marco(a, pl["marco_cuadro"], filas)
             detalle.append(f"«{corto}»: Roboto Regular 7 pt, marco y posición de la plantilla")
-            if mayusculas(corto):
-                detalle.append(f"Aviso: el rótulo «{corto}» va en mayúsculas" + marca(forma=nombre_forma(a)))
+            # Siempre «Cuadro» (o «Table»), en todas las publicaciones (decisión del usuario, 2026-11-17, Memoria 3.2)
+            todo = html.unescape(texto_forma(a))
+            bien = re.sub(r'(?i)\b(cuadro|table)\b', lambda m: m.group(1).capitalize(), todo, count=1)
+            if bien != todo:
+                cambiado = recasar_xml(a, todo, bien)
+                if cambiado:
+                    a = cambiado
+                    detalle.append(f"«{corto}» → «{bien.split(chr(10))[0].strip()}» (siempre «{bien.strip().split()[0]}»)")
         elif tipo == "titulo":
             a, finales = con_marco(a, pl["marco_titulo"], filas, final_regular=FINAL_TITULO)
             titulo_k = k
             detalle.append(f"Título «{corto}»: Roboto Medium 8,5 pt, marco y posición de la plantilla")
             for f in finales:
                 detalle.append(f"  «{f}» al final del párrafo, en Roboto Regular")
-            if mayusculas(corto):
-                detalle.append("Aviso: el título va en mayúsculas: pásalo a minúsculas a mano" + marca(forma=nombre_forma(a)))
+            titulo_mayus = mayusculas(corto)
         elif tipo == "fuentes":
             a, notas = maquetar_fuentes(a, estado.get("idioma", "es"))
             # En el ancho de la plantilla, desde la columna A; el alto, el que pida el texto
@@ -1262,6 +1324,18 @@ def textos(z, hoja, estado):
                 detalle.append("Aviso (corrección ortotipográfica), revísalas: " + "; ".join(hechos_c[:6]) + marca(forma=nombre_forma(a)))
         a, _ = textos_en_negro(a)
         partes[k] = a
+        if tipo == "titulo" and titulo_mayus:
+            # Propuesta con botón «Aplicar» en la app (petición del usuario, 2026-11-17, Memoria 3.2)
+            todo = html.unescape(texto_forma(a))
+            frase = frase_desde_mayusculas(todo, estado.get("idioma", "es"))
+            if propuestas is not None and frase != todo and recasar_xml(a, todo, frase):
+                propuestas.append({"tipo": "forma", "hoja": hoja, "forma": nombre_forma(a), "de": todo, "a": frase,
+                                   "que": "título en minúsculas"})
+                detalle.append("Aviso (propuesta, sin aplicar): el título va en mayúsculas; en minúsculas: "
+                               + f"«{recortar(frase.replace(chr(10), ' ').strip(), 140)}»"
+                               + f" ⟦aplicar:{len(propuestas) - 1}⟧" + marca(forma=nombre_forma(a)))
+            else:
+                detalle.append("Aviso: el título va en mayúsculas: pásalo a minúsculas a mano" + marca(forma=nombre_forma(a)))
     if "fuentes" not in tipos.values():
         # Sin FUENTE (1.2): el marco de la plantilla, con su texto de muestra, para escribirla (el paso 2 lo coloca
         # 5 mm bajo el cuadro)
@@ -1992,11 +2066,12 @@ def paso2(trabajo, pid=None):
     base = pasos / estado["pasos"][estado["actual"]]["archivo"]
     hoja = estado.get("hoja") or "Cuadro datos"
     with zipfile.ZipFile(base) as z:
-        cambios, detalle, cuadro = celdas(z, hoja, estado.get("idioma", "es"))
-    return nuevo_paso(trabajo, CELDAS, cambios, detalle, cuadro)
+        propuestas = []
+        cambios, detalle, cuadro = celdas(z, hoja, estado.get("idioma", "es"), propuestas)
+    return nuevo_paso(trabajo, CELDAS, cambios, detalle, cuadro, propuestas=propuestas)
 
 
-def celdas(z, hoja, idioma="es"):
+def celdas(z, hoja, idioma="es", propuestas_salida=None):
     ruta_hoja = hoja_de(z, hoja)
     hoja_xml = z.read(ruta_hoja).decode("utf-8")
     comp_xml, compartidos = leer_compartidos(z)
@@ -2499,7 +2574,13 @@ def celdas(z, hoja, idioma="es"):
     if propuestas:
         detalle.append("Aviso (propuesta, sin aplicar): en la primera columna, ¿minúscula en las palabras con mayúscula de "
                        "título? " + "; ".join(f"{r} «{a[:35]}» → «{b[:35]}»" for r, a, b in propuestas[:8])
-                       + (f" y {len(propuestas) - 8} más" if len(propuestas) > 8 else "") + marca([r for r, _, _ in propuestas]))
+                       + (f" y {len(propuestas) - 8} más" if len(propuestas) > 8 else "")
+                       # Con botón «Aplicar» en la app (petición del usuario, 2026-11-17, Memoria 3.2)
+                       + (f" ⟦aplicar:{len(propuestas_salida)}⟧" if propuestas_salida is not None else "")
+                       + marca([r for r, _, _ in propuestas]))
+        if propuestas_salida is not None:
+            propuestas_salida.append({"tipo": "celdas", "hoja": hoja, "cambios": [list(p) for p in propuestas],
+                                      "que": "minúsculas en la primera columna"})
     if correcciones:
         detalle.append("Aviso (corrección ortotipográfica), revísalas: " + "; ".join(correcciones[:10])
                        + (f" y {len(correcciones) - 10} más" if len(correcciones) > 10 else "")
@@ -2993,8 +3074,6 @@ def lineas_y_fondos(z, hoja, cuadro):
                        "ellos y con la primera columna combinada (" + ", ".join(f"{ref(primera, f - 1)}:{ref(primera, f)}" for f in errores) + ")"
                        + (f"; línea oscura antes de «{texto(primera, estadisticos).strip()}» (separa los estadísticos)" if estadisticos else "")
                        + ", como el publicado del 3.3" + marca([ref(primera, f) for f in errores]))
-    detalle.append("Aviso (recordatorio): la fila TOTAL ya no lleva línea oscura encima; si hay que separar conceptos "
-                   "importantes, selecciona sus filas en Excel y usa «Línea oscura sobre la selección»")
     # Formato suelto del autor a la derecha del cuadro (líneas, rellenos en celdas vacías: 1.2, columnas I-K), fuera
     sueltas = [(c, f) for (c, f), x in todas.items() if f1 <= f <= f2 and c > c2 and not x["texto"].strip()
                and (re.search(r'\bborderId="[1-9]', estilos.xf(x["s"])) or re.search(r'\bfillId="([2-9]|\d\d+)"', estilos.xf(x["s"])))]
@@ -3194,9 +3273,14 @@ def comparar_libros(zo, zf, idioma_="es", hoja_cuadro=None):
             continue
         fin = cf[hoja]
         perdidas = [r for r in celdas if r not in fin]
-        # Las que el paso 1 pasó a cuadros de texto («Cuadro 2.1», unidades: Memoria 2.1) no se han perdido
-        en_formas = {re.sub(r'\s+', " ", t).strip() for t in textos_libro(zf)}
-        movidas = [r for r in perdidas if hoja == hoja_cuadro and re.sub(r'\s+', " ", celdas[r][0]).strip() in en_formas]
+        # Las que el paso 1 pasó a cuadros de texto («Cuadro 2.1», unidades: Memoria 2.1; FUENTE y notas: Memoria 3.2)
+        # no se han perdido. Se buscan dentro del texto de las formas solo por letras y cifras: FUENTES se maqueta
+        # («(a) Se…» → «a⇥Se…», punto final, «FUENTE:» en mayúsculas)
+        def clave(t):
+            return re.sub(r'[\W_]+', "", t).lower()
+        en_formas = [clave(t) for t in textos_libro(zf)]
+        movidas = [r for r in perdidas if hoja == hoja_cuadro and len(clave(celdas[r][0])) >= 3
+                   and any(clave(celdas[r][0]) in t for t in en_formas)]
         if movidas:
             info.append("pasados de celdas a cuadros de texto: " + lista_corta(f"{r} («{recortar(celdas[r][0].strip(), 25)}»)" for r in movidas))
             perdidas = [r for r in perdidas if r not in movidas]
@@ -3303,7 +3387,11 @@ def comparar_libros(zo, zf, idioma_="es", hoja_cuadro=None):
             continue
         faltan.append(f"falta el texto «{recortar(t)}»")
     movidos = {re.sub(r'\s+', " ", v[0]).strip().lower() for c_ in co.values() for v in c_.values()}
+    # Un cuadro de texto hecho con celdas del original (FUENTES desde celdas bajo el cuadro): no es nuevo
+    claves_celdas = [k for k in (re.sub(r'[\W_]+', "", v[0]).lower() for c_ in co.values() for v in c_.values()) if len(k) >= 3]
     for t in resto_f:
+        if any(k in re.sub(r'[\W_]+', "", t).lower() for k in claves_celdas) and re.match(r'\s*(FUENTES?|SOURCES?|NOTAS?)\b', t, re.I):
+            continue
         if not any(t.lower() in u.lower() for u in to) and t.lower() not in movidos:
             info.append(f"Texto nuevo: «{recortar(t)}»" + m_forma(t))
     lineas = [f"Aviso: {f}" for f in faltan]
@@ -3352,7 +3440,8 @@ def letra7(trabajo, pid=None):
     CUERPO_CELDA = LETRA_PEQUENA
     try:
         with zipfile.ZipFile(base) as z:
-            cambios, detalle, cuadro = celdas(z, hoja, estado.get("idioma", "es"))
+            propuestas = []
+            cambios, detalle, cuadro = celdas(z, hoja, estado.get("idioma", "es"), propuestas)
         todo = dict(cambios)
         if CABECERAS in hechos:
             intermedio = io.BytesIO()
@@ -3368,6 +3457,20 @@ def letra7(trabajo, pid=None):
                 cambios, det = lineas_y_fondos(z, hoja, cuadro)
             todo.update(cambios)
             detalle += det
+        # Las propuestas ya aplicadas (título en minúsculas…) se vuelven a aplicar; las del paso «Celdas» rehecho
+        # que son las mismas quedan como aplicadas (sin botón)
+        reaplicadas = []
+        for prop in propuestas_aplicadas(estado):
+            intermedio = io.BytesIO()
+            reescribir_zip(base, intermedio, todo)
+            with zipfile.ZipFile(intermedio) as z:
+                try:
+                    cambios, det = aplicar_en(z, prop)
+                except Fallo:
+                    continue
+            todo.update(cambios)
+            reaplicadas.append(prop)
+            detalle += [l.replace("Propuesta aplicada", "Propuesta aplicada antes, aplicada de nuevo", 1) for l in det]
     finally:
         CUERPO_CELDA = anterior
     rehechos = ["Celdas"] + [t for t in (CABECERAS, LINEAS_Y_FONDOS) if t in hechos]
@@ -3375,7 +3478,8 @@ def letra7(trabajo, pid=None):
                       + ", ".join(f"«{t}»" for t in rehechos) + ". Si no te convence, vuelve a la versión anterior (⌘←)")
     # Los avisos de bajar a 7 pt ya no vienen al caso
     detalle = [l for l in detalle if not l.startswith("Aviso: el cuadro tiene")]
-    return nuevo_paso(trabajo, f"Letra {LETRA_PEQUENA} pt", todo, detalle, cuadro)
+    aplica = [f"{estado['actual'] + 1}:{k}" for k, p in enumerate(propuestas) if p in reaplicadas]
+    return nuevo_paso(trabajo, f"Letra {LETRA_PEQUENA} pt", todo, detalle, cuadro, propuestas=propuestas, aplica=aplica)
 
 
 # ---------------------------------------------------------------- correcciones ortotipográficas (decisión del usuario,
@@ -3483,6 +3587,95 @@ def minuscula_titulo(texto, idioma="es"):
             return w.lower()
         return w
     return re.sub(r"[^\W\d_]+", palabra, texto)
+
+
+CONECTORES_PROPIOS = {"DE", "DEL", "LA", "LAS", "LOS", "Y", "E", "EL", "OF", "THE", "AND"}
+
+
+def frase_desde_mayusculas(texto, idioma="es"):
+    """«PROCEDIMIENTOS CON PARTICIPACIÓN DEL BANCO DE ESPAÑA» → «Procedimientos con participación del Banco de
+    España»: todo en minúscula salvo la primera palabra (y la de después de un punto), las siglas, los números
+    romanos y los nombres propios. Las palabras de instituciones y lugares («Banco», «Central», «Comunidad»…) solo
+    van con mayúscula en cadena («Banco de España», «Banco Central Europeo»); sueltas son palabras corrientes."""
+    propios_fuertes = NOMBRES_PROPIOS - (set() if idioma == "en" else NOMBRES_PROPIOS_SOLO_EN)
+    propios = propios_fuertes | LUGARES_Y_INSTITUCIONES
+    palabras = list(re.finditer(r"[^\W\d_]+", texto))
+    es_propio = [CON_TILDE.get(m.group(0).upper(), m.group(0).upper()) in propios for m in palabras]
+    # Cadenas de palabras propias unidas por espacios y conectores («de», «del»…)
+    mayuscula = [False] * len(palabras)
+    k = 0
+    while k < len(palabras):
+        if not es_propio[k]:
+            k += 1
+            continue
+        cadena, j = [k], k + 1
+        while j < len(palabras):
+            if es_propio[j] and not texto[palabras[j - 1].end():palabras[j].start()].strip():
+                cadena.append(j)
+                j += 1
+            elif palabras[j].group(0).upper() in CONECTORES_PROPIOS and j + 1 < len(palabras) and es_propio[j + 1] \
+                    and not texto[palabras[j - 1].end():palabras[j + 1].start()].replace(palabras[j].group(0), "").strip():
+                j += 1
+            else:
+                break
+        fuertes = any(CON_TILDE.get(palabras[i].group(0).upper(), palabras[i].group(0).upper()) in propios_fuertes for i in cadena)
+        if fuertes or len(cadena) >= 2:
+            for i in cadena:
+                mayuscula[i] = True
+        k = j
+    salida, pos = [], 0
+    for i, m in enumerate(palabras):
+        w = m.group(0)
+        salida.append(texto[pos:m.start()])
+        pos = m.end()
+        mayus = w.upper()
+        antes = texto[:m.start()].rstrip()
+        if mayus in SIGLAS and w == mayus and not (idioma != "en" and mayus in SIGLAS_SOLO_EN):
+            nueva = SIGLAS_ESCRITAS.get(mayus, w)
+            nueva = nueva if len(nueva) == len(w) else w
+        elif len(w) > 1 and w == mayus and ROMANOS_RE.match(w):
+            nueva = w
+        elif i == 0 or mayuscula[i] or antes.endswith((".", "?", "!")):
+            nueva = w[0].upper() + w[1:].lower()
+        else:
+            nueva = w.lower()
+        salida.append(nueva if len(nueva) == len(w) else w)
+    salida.append(texto[pos:])
+    return "".join(salida)
+
+
+def recasar_textos(textos, de, a):
+    """Cambia mayúsculas y minúsculas en estos trozos de texto (los <t> de una celda o una forma, en orden) para que
+    lo que decía `de` diga `a`, sin mirar los espacios y saltos (la celda pudo partirse en líneas o sangrarse).
+    None si el texto ya no es el de la propuesta."""
+    if len(de) != len(a) or any(x.isspace() != y.isspace() or x.lower() != y.lower() for x, y in zip(de, a)):
+        return None
+    pares = [(x, y) for x, y in zip(de, a) if not x.isspace()]
+    salida, i = [], 0
+    for t in textos:
+        trozo = []
+        for ch in t:
+            if ch.isspace():
+                trozo.append(ch)
+                continue
+            if i >= len(pares) or pares[i][0] != ch:
+                return None
+            trozo.append(pares[i][1])
+            i += 1
+        salida.append("".join(trozo))
+    return salida if i == len(pares) else None
+
+
+def recasar_xml(xml, de, a, forma=True):
+    """El XML (una forma o un <si>) con el cambio de mayúsculas `de` → `a` en sus textos; None si no cuadra."""
+    patron = r'(<a:t>|<a:t\b[^>]*>)(.*?)(</a:t>)' if forma else r'(<t>|<t\b[^>]*[^/]>)(.*?)(</t>)'
+    limpio = re.sub(r'<rPh\b.*?</rPh>', "", xml, flags=re.S) if not forma else xml
+    trozos = [html.unescape(m.group(2)) for m in re.finditer(patron, limpio, re.S)]
+    nuevos = recasar_textos(trozos, de, a)
+    if nuevos is None:
+        return None
+    it = iter(nuevos)
+    return re.sub(patron, lambda m: m.group(1) + html.escape(next(it), quote=False) + m.group(3), limpio, flags=re.S)
 
 
 # Más nombres propios para cuadros: provincias, comunidades e islas (2.7, 2.9) e instituciones (Memoria 3.1)
@@ -3625,6 +3818,88 @@ def linea_oscura(trabajo, pid=None, filas=""):
 
 
 
+# ---------------------------------------------------------------- herramienta: aplicar una propuesta de un aviso
+
+PROPUESTA_APLICADA = "Propuesta aplicada"
+
+
+def aplicar(trabajo, pid=None, cual=""):
+    """Aplica la propuesta «n:k» (paso n, propuesta k) que un aviso dejó sin hacer —título en mayúsculas, minúsculas
+    de título en la primera columna— sobre la versión actual, como una versión nueva (petición del usuario,
+    2026-11-17: un botón para aprobar el cambio propuesto)."""
+    estado = leer_estado(trabajo)
+    try:
+        n, k = (int(x) for x in cual.split(":"))
+        paso = next(p for p in estado["pasos"][:estado["actual"] + 1] if p["n"] == n)
+        prop = paso["propuestas"][k]
+    except (ValueError, StopIteration, KeyError, IndexError):
+        raise Fallo("Esa propuesta no está en la versión actual: vuelve a la versión del aviso o rehaz el paso")
+    if any(cual in p.get("aplica", []) for p in estado["pasos"][:estado["actual"] + 1]):
+        raise Fallo("Esa propuesta ya está aplicada")
+    _, pasos = nombres(trabajo)
+    base = pasos / estado["pasos"][estado["actual"]]["archivo"]
+    with zipfile.ZipFile(base) as z:
+        cambios, detalle = aplicar_en(z, prop)
+    cuadro = next((p.get("cuadro") for p in reversed(estado["pasos"][:estado["actual"] + 1]) if p.get("cuadro")), None)
+    return nuevo_paso(trabajo, PROPUESTA_APLICADA, cambios, detalle, cuadro, aplica=[cual])
+
+
+def propuestas_aplicadas(estado):
+    """Las propuestas aplicadas hasta la versión actual (para rehacerlas si se rehacen los pasos: «letra a 7 pt»)."""
+    hechas = []
+    for p in estado["pasos"][:estado["actual"] + 1]:
+        for cual in p.get("aplica", []):
+            n, k = (int(x) for x in cual.split(":"))
+            origen = next((q for q in estado["pasos"] if q["n"] == n), None)
+            if origen and k < len(origen.get("propuestas", [])):
+                hechas.append(origen["propuestas"][k])
+    return hechas
+
+
+def aplicar_en(z, prop):
+    """(cambios, detalle) de aplicar la propuesta sobre el libro abierto `z`."""
+    cambios, detalle = {}, []
+    if prop["tipo"] == "forma":
+        ruta = dibujo_de_hoja(z, prop["hoja"])
+        dibujo = z.read(ruta).decode("utf-8")
+        anclas = [a for a in ANCLA.finditer(dibujo) if nombre_forma(a.group(0)) == prop["forma"]]
+        nueva = recasar_xml(anclas[0].group(0), prop["de"], prop["a"]) if len(anclas) == 1 else None
+        if nueva is None:
+            raise Fallo(f"El texto de «{prop['forma']}» ya no es el de la propuesta (¿lo has cambiado a mano?): no lo toco")
+        cambios[ruta] = (dibujo[:anclas[0].start()] + nueva + dibujo[anclas[0].end():]).encode("utf-8")
+        detalle.append(f"Propuesta aplicada ({prop['que']}): «{recortar(prop['a'].replace(chr(10), ' ').strip(), 140)}»"
+                       + marca(forma=prop["forma"]))
+    else:
+        ruta_hoja = hoja_de(z, prop["hoja"])
+        hoja_xml = z.read(ruta_hoja).decode("utf-8")
+        comp_xml, compartidos = leer_compartidos(z)
+        todas = celdas_hoja(hoja_xml, compartidos)
+        nuevas_si, hechas, no = list(compartidos), [], []
+        for r, de, a in prop["cambios"]:
+            m = RE_REF.match(r)
+            x = todas.get((col_num(m.group(1)), int(m.group(2))))
+            v = re.search(r'<v>(\d+)</v>', x["xml"]) if x and x["tipo"] == "s" else None
+            nueva = recasar_xml(compartidos[int(v.group(1))], de, a, forma=False) if v else None
+            if nueva is None:
+                no.append(r)
+                continue
+            nuevas_si.append(nueva)
+            celda = x["xml"].replace(v.group(0), f"<v>{len(nuevas_si) - 1}</v>", 1)
+            hoja_xml = hoja_xml.replace(x["xml"], celda, 1)
+            hechas.append(f"{r} «{a.strip()[:35]}»")
+        if not hechas:
+            raise Fallo("Los textos ya no son los de la propuesta (¿los has cambiado a mano?): no toco nada")
+        comp = re.sub(r'(<sst\b[^>]*>).*(</sst>)', lambda m: m.group(1) + "".join(nuevas_si) + m.group(2), comp_xml,
+                      count=1, flags=re.S)
+        comp = re.sub(r'\buniqueCount="\d+"', f'uniqueCount="{len(nuevas_si)}"', comp, count=1)
+        cambios = {ruta_hoja: hoja_xml.encode("utf-8"), "xl/sharedStrings.xml": comp.encode("utf-8")}
+        detalle.append(f"Propuesta aplicada ({prop['que']}): " + "; ".join(hechas[:8])
+                       + (f" y {len(hechas) - 8} más" if len(hechas) > 8 else "") + marca([h.split(" ", 1)[0] for h in hechas]))
+        if no:
+            detalle.append("Aviso: sin tocar, su texto ya no es el de la propuesta: " + ", ".join(no) + marca(no))
+    return cambios, detalle
+
+
 def pendiente(nombre):
     def paso(trabajo, pid=None):
         raise Fallo(f"El paso «{nombre}» todavía no está hecho: lo construimos a continuación.")
@@ -3758,7 +4033,7 @@ def info(archivo):
 
 ORDENES = {"empezar": empezar, "estado": lambda t: {"trabajo": t, **leer_estado(t)}, "ir": ir, "reiniciar": reiniciar,
            "paso1": paso1, "paso2": paso2,
-           "paso3": paso3, "paso4": paso4, "letra7": letra7, "linea_oscura": linea_oscura,
+           "paso3": paso3, "paso4": paso4, "letra7": letra7, "linea_oscura": linea_oscura, "aplicar": aplicar,
            "comparar": comparar, "terminar": terminar, "info": info, "publicaciones": lambda: {},
            "guardar_publicacion": guardar_publicacion, "borrar_publicacion": borrar_publicacion, "paletas": paletas}
 

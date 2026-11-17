@@ -27,6 +27,8 @@ struct Paso: Decodable, Identifiable {
     let titulo: String
     let archivo: String
     let detalle: [String]
+    /// Propuestas de avisos aplicadas en esta versión («n:k»: paso n, propuesta k)
+    let aplica: [String]?
     var id: Int { n }
 }
 
@@ -302,9 +304,20 @@ let formatoHora: DateFormatter = {
 
 /// Un aviso del motor puede acabar en una marca «⟦A5 A6⟧» o «⟦forma:FUENTES⟧» con lo que hay que enseñar en Excel:
 /// se quita para mostrarlo y, al pulsar el aviso, Excel selecciona esas celdas o esa forma.
-func partirMarca(_ linea: String) -> (texto: String, marca: String?) {
+func partirMarca(_ entera: String) -> (texto: String, marca: String?) {
+    let linea = sinPropuesta(entera).texto
     guard linea.hasSuffix("⟧"), let r = linea.range(of: " ⟦", options: .backwards) else { return (linea, nil) }
     return (String(linea[..<r.lowerBound]), String(linea[r.upperBound..<linea.index(before: linea.endIndex)]))
+}
+
+/// Un aviso con una propuesta sin aplicar (título en mayúsculas…) lleva «⟦aplicar:k⟧»: se quita para mostrarlo y la
+/// app pone al lado el botón «Aplicar» (propuesta k del paso del aviso).
+func sinPropuesta(_ linea: String) -> (texto: String, propuesta: Int?) {
+    guard let r = linea.range(of: #" ⟦aplicar:(\d+)⟧"#, options: .regularExpression) else { return (linea, nil) }
+    let k = Int(linea[r].filter(\.isNumber))
+    var texto = linea
+    texto.removeSubrange(r)
+    return (texto, k)
 }
 
 /// El texto con lo que cambia entre ⟪ ⟫ (lo marca el motor en la comparación) en rojo y seminegrita, sin los ⟪ ⟫.
@@ -1020,6 +1033,22 @@ final class Taller: ObservableObject {
         }
     }
 
+    /// ¿Está ya aplicada la propuesta k del paso n en la versión actual?
+    func propuestaAplicada(_ n: Int, _ k: Int) -> Bool {
+        pasos.prefix(actual + 1).contains { $0.aplica?.contains("\(n):\(k)") ?? false }
+    }
+
+    /// Aplica la propuesta de un aviso (título en minúsculas…) como una versión nueva y la enseña en Excel
+    func aplicarPropuesta(_ n: Int, _ k: Int) {
+        guard let trabajo else { return }
+        tarea("Aplicar la propuesta") { id in
+            guard let resp = await self.llamarMotor(["aplicar", trabajo.path, self.publicacion, "\(n):\(k)"], registro: id) else { return false }
+            self.aplicar(resp)
+            self.pasoActual?.detalle.forEach { self.anotar(id, "• " + $0) }
+            return await self.mostrar(id)
+        }
+    }
+
     /// Selecciona en Excel (en el libro abierto, hoja del cuadro) las celdas o la forma de un aviso, sin tocar el archivo
     func verEnExcel(_ marca: String) {
         guard let ruta = trabajo else { return }
@@ -1465,8 +1494,9 @@ struct TarjetaVersiones: View {
                     Rotulo("Cambios de la versión \(p.n)")
                     ForEach(p.detalle, id: \.self) { entera in
                         // Los avisos, en rojo y negrita: piden comprobar algo a mano. Si llevan marca, se pulsan y
-                        // Excel selecciona las celdas o la forma de las que hablan
+                        // Excel selecciona las celdas o la forma de las que hablan. Con propuesta, botón «Aplicar»
                         let (linea, marca) = partirMarca(entera)
+                        let propuesta = sinPropuesta(entera).propuesta
                         let aviso = linea.hasPrefix("Aviso")
                         let fila = HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Image(systemName: aviso ? "exclamationmark.triangle.fill" : "circle.fill")
@@ -1481,13 +1511,34 @@ struct TarjetaVersiones: View {
                                     .foregroundStyle(aviso ? Color.red : colorVersiones)
                             }
                         }
-                        if let marca {
-                            Button { taller.verEnExcel(marca) } label: { fila.contentShape(Rectangle()) }
-                                .buttonStyle(.plain)
-                                .help(marca.hasPrefix("forma:") ? "Seleccionar en Excel la forma «\(marca.dropFirst(6))»"
-                                      : "Seleccionar en Excel: \(marca.replacingOccurrences(of: " ", with: ", "))")
-                        } else {
-                            fila
+                        VStack(alignment: .leading, spacing: 4) {
+                            if let marca {
+                                Button { taller.verEnExcel(marca) } label: { fila.contentShape(Rectangle()) }
+                                    .buttonStyle(.plain)
+                                    .help(marca.hasPrefix("forma:") ? "Seleccionar en Excel la forma «\(marca.dropFirst(6))»"
+                                          : "Seleccionar en Excel: \(marca.replacingOccurrences(of: " ", with: ", "))")
+                            } else {
+                                fila
+                            }
+                            if let propuesta {
+                                if taller.propuestaAplicada(p.n, propuesta) {
+                                    Label("Aplicada", systemImage: "checkmark.circle.fill")
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .foregroundStyle(Color.green)
+                                        .padding(.leading, 16)
+                                } else {
+                                    Button { taller.aplicarPropuesta(p.n, propuesta) } label: {
+                                        Label("Aplicar", systemImage: "checkmark.circle")
+                                            .font(.system(size: 11, weight: .semibold))
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                    .tint(.red)
+                                    .controlSize(.small)
+                                    .padding(.leading, 16)
+                                    .disabled(taller.enCurso != nil)
+                                    .help("Hace el cambio propuesto en una versión nueva (⌘← para quitarlo)")
+                                }
+                            }
                         }
                     }
                 }

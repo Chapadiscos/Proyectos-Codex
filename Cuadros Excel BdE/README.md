@@ -51,6 +51,13 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      el mismo cuadro, se separan. Al final de cada párrafo del título, las letras entre paréntesis («(a)»,
      «(a) (b)», «(a, b)») y «(cont.)» / «(cont'd)» van en Roboto Regular, como en Gráficos. Con un título de
      2-3 líneas, el marco del título y la pastilla crecen un interlineado (3,5 mm) por línea y las unidades bajan.
+   - **«Cuadro» siempre así**, en todas las publicaciones (decisión del usuario, 2026-11-17, Memoria 3.2): «CUADRO
+     3.2» o «cuadro 3.2» → «Cuadro 3.2» (en inglés, «Table»), sin aviso.
+   - **FUENTE y notas escritas en celdas bajo el cuadro** (Memoria 3.2, DO): la primera celda sola en su fila que
+     empieza por FUENTE/FUENTES/NOTA, por debajo de la última fila con dos o más textos, y las celdas solas que la
+     siguen (hasta dos filas vacías seguidas o una fila con varios textos) pasan, un párrafo por celda, al cuadro de
+     texto de FUENTES de la plantilla, que se maqueta con sus reglas; las celdas se vacían (petición del usuario,
+     2026-11-17). La comparación las da por «pasadas de celdas a cuadros de texto», no por perdidas.
    - Sin FUENTE del autor (1.2): se añade el marco de FUENTE de la plantilla («FUENTE: Xxxxxxxxxx.») con aviso para
      escribirla; el paso 2 lo coloca 5 mm bajo el cuadro.
    - Unidades (texto bajo la pastilla): Roboto Light 6 pt, donde las dejó el autor.
@@ -61,7 +68,10 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
    - FUENTES: reglas de Gráficos (Roboto Light 7 pt, rótulo en Medium, notas con letra —también «a.», «a)»,
      «(a)» y «a» + espacio + mayúscula— con sangría de 8,5 pt, línea en blanco, comillas, «%»), punto final en
      la fuente, en el ancho de la plantilla desde la columna A y anclada a su fila (sigue al cuadro).
-   - Todo en negro. Lo que queda fuera de la retícula no se toca. Avisa si el rótulo o el título van en mayúsculas.
+   - Todo en negro. Lo que queda fuera de la retícula no se toca.
+   - **Título en mayúsculas**: aviso con la propuesta en minúsculas (primera palabra, siglas, romanos y nombres
+     propios con mayúscula; las palabras de instituciones y lugares —«Banco», «Central», «Comunidad»…— solo en
+     cadena: «Banco de España», «Banco Central Europeo») y botón «Aplicar» (ver más abajo).
    - Probado con los 24 originales (XML válido en todos). Caso especial pendiente: el 1.6 (cuadro a la derecha
      de un gráfico, fuera de la retícula).
 2. **Celdas** (`paso2`, en pruebas desde 2026-11-13; exige el paso 1):
@@ -179,8 +189,8 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
    - Solo líneas horizontales finas: blanco matiz 2 (#D9D9D9) entre filas; la última fila, sin línea.
    - **La fila TOTAL no lleva línea oscura encima**, en ninguna publicación (decisión del usuario, 2026-11-17,
      publicado Memoria 3.1; antes iba siempre): entre la fila de encima y la TOTAL, línea blanca. La línea oscura
-     solo separa conceptos importantes, a mano con «Línea oscura sobre la selección» (el detalle lo recuerda), y
-     los estadísticos de las regresiones.
+     solo separa conceptos importantes, a mano con «Línea oscura sobre la selección», y los estadísticos de las
+     regresiones. Sin recordatorio en los avisos: por definición nunca va (decisión del usuario, 2026-11-17).
    - Primera columna: fondo blanco matiz 1 (#F2F2F2) con líneas blancas entre todas las filas, también entre
      sangrados (como el TERMINADO, decisión del usuario; la guía decía que no).
    - Títulos de bloque (concepto sin sangría y sin datos en las demás columnas): blanco matiz 2 en la primera
@@ -220,12 +230,20 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
    - Columnas de separación sin líneas ni fondo en las filas de datos (las líneas se cortan entre grupos, TERMINADO
      3.4); en la fila TOTAL, sin hueco.
    - La línea que cierra cada bloque de sangrados (gris claro, como el resto) queda por revisar con más ejemplos.
-   - Paso 2: si el autor escribió la FUENTE y las notas en celdas bajo el cuadro (DO, Memoria 3.2), el cuadro
+   - Paso 2: si quedan la FUENTE y las notas en celdas bajo el cuadro (las que el paso 1 no reconoce), el cuadro
      acaba antes y se avisa para pasarlas al cuadro de texto de FUENTES.
 **Herramienta «Probar letra a 7 pt»** (`letra7`, petición del usuario, 2026-11-17): rehace desde la versión del
 paso 1 los pasos 2, 3 y 4 que haya hechos con la letra de las celdas a 7 pt y lo guarda como una versión nueva
 («Letra 7 pt»); las de 7,5 pt quedan detrás para volver con ⌘←. El paso 2 la propone en su aviso de muchas
 columnas. En el 3.4 deja la cabecera en 60 pt, como el TERMINADO.
+
+**Botón «Aplicar» de las propuestas** (`aplicar <trabajo> <publicación> <paso:propuesta>`, petición del usuario,
+2026-11-17, Memoria 3.2): los avisos con un cambio propuesto y no hecho —título en mayúsculas (paso 1), mayúsculas de
+título en la primera columna (paso 2)— llevan la marca invisible «⟦aplicar:k⟧» y la propuesta se guarda en el paso
+(`propuestas` en estado.json). La app pone debajo del aviso el botón «Aplicar», que hace el cambio en una versión
+nueva («Propuesta aplicada», `aplica: ["n:k"]`; ⌘← para quitarlo) y lo enseña en Excel; aplicada, el botón pasa a
+«Aplicada». Solo cambia mayúsculas y minúsculas y comprueba antes que el texto sigue siendo el del aviso (si se ha
+tocado a mano, no hace nada). «Probar letra a 7 pt» vuelve a aplicar las propuestas ya aplicadas.
 
 **Herramienta «Línea oscura sobre la selección»** (`linea_oscura`, petición del usuario, 2026-11-17, publicado
 del 2.9): para separar conceptos. Se selecciona en Excel una celda de cada fila que empieza un concepto nuevo (varias
