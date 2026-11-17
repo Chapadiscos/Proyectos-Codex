@@ -2317,6 +2317,8 @@ def celdas(z, hoja, idioma="es"):
             # «<34» → «< 34»: espacio tras los signos de comparación (TERMINADO 1.4); «7%» → «7 %» con espacio que no
             # parte línea, como en FUENTES (TERMINADO 1.2)
             con_espacio = re.sub(r'([<>≤≥])(?=[\w(])', r'\1 ', t)
+            # …y también antes: «ROA< 0» → «ROA < 0» (publicado 3.2)
+            con_espacio = re.sub(r'(?<=[\w)])([<>≤≥])', r' \1', con_espacio)
             if con_espacio != t:
                 cambios_txt.append(f"«{t.strip()[:20]}» → «{con_espacio.strip()[:20]}»")
             con_por = re.sub(r'(\d)[ \u202f]?%', '\\1\u00a0%', con_espacio)
@@ -3255,6 +3257,14 @@ def corregir_texto(texto, idioma="es", cabecera=False, provincias=False):
                     nuevo = solo.group(1) + oficial + solo.group(3)
                     cambios.append("nombre oficial de provincia")
                     break
+    # Barra entre expresiones de varias palabras, con espacios: «Deuda total/Activo total» → «Deuda total / Activo
+    # total» (publicado 3.2); entre palabras sueltas, pegada («mb/d», «Deuda/PIB»)
+    def barra(m):
+        return f"{m.group(1)} / {m.group(2)}" if " " in m.group(1).strip() and " " in m.group(2).strip() else m.group(0)
+    n2 = re.sub(r'([^()\[\],;:/\n]*\S)/(\S[^()\[\],;:/\n]*)', barra, nuevo)
+    if n2 != nuevo:
+        cambios.append("espacios a los lados de la barra")
+    nuevo = n2
     n2 = re.sub(r'\bMb/d\b', "mb/d", nuevo)
     if n2 != nuevo:
         cambios.append("mb/d")

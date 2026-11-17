@@ -133,7 +133,11 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      la pastilla (1.4: fila 2 = 51,25 pt; TERMINADO 51). Lo da la fila de encima del cuadro; si las de arriba ya
      ocupan más, se encogen. Todo lo de encima del cuadro se vuelve a anclar en su sitio (no se mueve).
    - **FUENTES, 5 mm bajo el final del cuadro**, anclada a su fila.
-   - «<34» → «< 34»: espacio tras «<», «>», «≤», «≥» pegados a cifra o letra (TERMINADO 1.4).
+   - «<34» → «< 34»: espacio tras «<», «>», «≤», «≥» pegados a cifra o letra (TERMINADO 1.4), y también antes
+     («ROA< 0» → «ROA < 0», publicado del 3.2).
+   - Barra entre expresiones de varias palabras, con espacios: «Deuda total/Activo total» → «Deuda total / Activo
+     total» (publicado del 3.2, corrección ortotipográfica con aviso). Entre palabras sueltas, pegada («Deuda/PIB»,
+     «mb/d», «2023/2024»).
    - **Primera columna con mayúsculas de título** («Industria Manufacturera»): no se cambia (puede haber nombres de
      entidades); aviso con la propuesta («Industria manufacturera») para revisarla (decisión del usuario, 2026-11-17).
      La lista de nombres propios incluye provincias, comunidades e instituciones (Banco, Central, Europeo…); tras un
