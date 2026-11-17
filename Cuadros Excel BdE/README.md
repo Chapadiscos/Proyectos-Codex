@@ -162,7 +162,8 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
    - Hijos de un título de bloque, sangrados aunque el autor no los sangrara (si hay otros hijos sangrados).
    - Textos de la cabecera repetidos en filas de datos (1.3), borrados con aviso.
    - Primera columna: sangrías (de Excel o con espacios) → 4, 8 o 12 espacios por nivel; con varias líneas, la
-     sangría se repite en cada una (saltos manuales, como el TERMINADO del 1.5); sin viñetas «- »; «Total» → «TOTAL» (también en la cabecera).
+     sangría se repite en cada una (saltos manuales, como el TERMINADO del 1.5); sin viñetas «- »; «Total» → «TOTAL» en la primera columna (fondo gris); en la cabecera, sobre el color de la
+     publicación, «Total» en minúscula («TOTAL» → «Total», decisión del usuario, 2026-11-17, Memoria 3.1).
 3. **Cabeceras** (`paso3`, en pruebas desde 2026-11-13; exige el paso 2, que deja en el estado dónde está el
    cuadro y su cabecera: `cuadro` en estado.json):
    - Fondo con los matices del color de la publicación por nivel, contando desde la fila de abajo: cabecera 1
@@ -188,11 +189,17 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      matiz 2 con líneas blancas (publicados 2.7 y 2.9, Ejemplos 2.3); si es un concepto sangrado de un bloque (1.4),
      no.
    - Fila TOTAL: blanco matiz 2, o matiz 5 con el texto en blanco si el matiz 2 ya lo usan bloques o subtotales
-     (Ejemplos 1.4 y A2.2); sin hueco en las columnas de separación. Columna TOTAL (cabecera «TOTAL»): blanco
-     matiz 2 con línea blanca a la izquierda y entre filas (Ejemplos 4.2 y A4.6).
+     (Ejemplos 1.4 y A2.2); sin hueco en las columnas de separación. Columna TOTAL: **sin fondo** (decisión del
+     usuario, 2026-11-17, Memoria 3.1: su cabecera va en el color de la publicación; antes, blanco matiz 2).
+   - **Conceptos de nivel intermedio** (decisión del usuario, 2026-11-17, Memoria 3.1): los sangrados que tienen otros
+     más sangrados debajo («A entidades de crédito españolas» → «Lideradas por…») llevan su texto (solo la primera
+     columna) en Roboto Medium. Los de primer nivel (sin sangría) no: así los publicados 1.5 y Memoria 3.2 y 4.2.
    - **Filas de suma** (decisión del usuario, 2026-11-17, publicado Memoria 2.1): si las cifras de una fila son la SUMA
      de las filas de justo debajo («Entidades de crédito» = SUM(E7:E12)), toda la fila va en Roboto Medium, como un
      subtotal, sin fondo. Se avisa con diana.
+   - **Ajustes por publicación** (en `publicaciones.json`, se conservan al editar la publicación en la app):
+     `cabecera_letra_blanca`: niveles de cabecera con el texto en blanco (Memoria Supervisión: `[2]`, el nivel 2 sobre
+     el matiz 2, publicados 3.1 y 3.4; en el Informe Anual va en negro).
    - **Columnas ocultas del autor** (Memoria 2.1: textos de traducción en A-C que la columna D enseña con una
      fórmula; «Descuadre» en G): ni se miden para el alto de fila ni se les cambia el formato.
    - **«Cuadro N» y unidades en celdas** encima del cuadro (Memoria 2.1, 3.2, 4.2): el paso 1 los pasa a cuadros de

@@ -2174,10 +2174,17 @@ def celdas(z, hoja, idioma="es"):
                 return True
         return False
     filas_suma = {f for f in range(fin_cab + 1, f2 + 1) if es_suma(f)}
+    # Filas madre: con datos y con filas más sangradas justo debajo («A entidades de crédito españolas» y sus
+    # «Lideradas por…», publicado Memoria 3.1): su texto de la primera columna, en Roboto Medium (decisión del usuario)
+    con_texto = [f for f in range(fin_cab + 1, f2 + 1) if d(primera, f)["texto"].strip()]
+    # Solo las de nivel intermedio (sangradas, con otras más sangradas debajo): así los publicados (Memoria 3.1, en
+    # Medium; 1.5 y Memoria 3.2 y 4.2, madres sin sangría, en Light). Que sumen o no a sus hijas no decide
+    madres = {f for f, g in zip(con_texto, con_texto[1:]) if nivel_fila(f) >= 1 and nivel_fila(g) > nivel_fila(f)
+              and not RE_TOTAL.match(d(primera, f)["texto"])}
 
     def medir_de(c, f):
         """La medida de la variante que llevará la celda: Roboto Medium si el autor la puso en negrita."""
-        return medir_medium if f in filas_suma or es_negrita(estilos.fuente_de(d(c, f)["s"])) else medir
+        return medir_medium if f in filas_suma or (c == primera and f in madres) or es_negrita(estilos.fuente_de(d(c, f)["s"])) else medir
     palabra = lambda t, m=medir: max([m(w, CUERPO_CELDA) for w in re.split(r"[ \n]+", t) if w] or [0])
 
     def vista(c, f):
@@ -2414,10 +2421,11 @@ def celdas(z, hoja, idioma="es"):
                 porcentajes.append(ref(c, f))
             if con_por != t:
                 nuevo = t = con_por
-            if f <= fin_cab and re.fullmatch(r'\s*total\s*', t, re.I) and t.strip() != "TOTAL":
-                # «TOTAL» también en la cabecera (guía: ejemplos A4.6 y 4.2; Memoria 3.4 TERMINADO)
-                cambios_txt.append(f"«{t.strip()}» → «TOTAL» (cabecera)")
-                nuevo = t = "TOTAL"
+            if f <= fin_cab and re.fullmatch(r'\s*total\s*', t, re.I) and t.strip() != "Total":
+                # En la cabecera (fondo del color de la publicación), «Total» en minúscula; «TOTAL» solo sobre fondo
+                # gris, la fila TOTAL (decisión del usuario, 2026-11-17, publicado Memoria 3.1; antes iba en mayúscula)
+                cambios_txt.append(f"«{t.strip()}» → «Total» (cabecera, sobre el color de la publicación)")
+                nuevo = t = "Total"
             if c == primera and f > fin_cab:
                 cuerpo = t.strip("  ")
                 sin_vineta = VINETA.sub("", cuerpo)
@@ -2548,9 +2556,14 @@ def celdas(z, hoja, idioma="es"):
             al = {"horizontal": h, "vertical": "top" if f in arriba else "center"}
             if not es_cifra(x) or f <= fin_cab:
                 al["wrapText"] = "1"
-            nuevos_s[(c, f)] = estilos.nuevo(x["s"], al, negrita=f in filas_suma)
+            nuevos_s[(c, f)] = estilos.nuevo(x["s"], al, negrita=f in filas_suma or (c == primera and f in madres))
     negritas = [ref(c, f) for (c, f) in nuevos_s if es_negrita(estilos.fuente_de(d(c, f)["s"])) and d(c, f)["texto"].strip()]
     sumas_txt = [f for f in sorted(filas_suma) if not RE_TOTAL.match(d(primera, f)["texto"])]
+    madres_txt = [f for f in sorted(madres) if f not in filas_suma]
+    if madres_txt:
+        detalle.append("Conceptos de nivel intermedio (sangrados, con otros más sangrados debajo): su texto en " + LETRA_CELDA_NEGRITA + ": "
+                       + ", ".join(f"«{d(primera, f)['texto'].strip()[:30]}» (fila {f})" for f in madres_txt)
+                       + marca([ref(primera, f) for f in madres_txt]))
     if sumas_txt:
         detalle.append("Filas que suman las de debajo, en " + LETRA_CELDA_NEGRITA + " como un subtotal: "
                        + ", ".join(f"«{d(primera, f)['texto'].strip()[:30]}» (fila {f})" for f in sumas_txt)
@@ -2772,6 +2785,8 @@ def cabeceras(z, hoja, cuadro, pub):
                 continue
             nivel = min(4, nivel_de(b2))
             clave_color, letra = NIVELES_CABECERA[nivel]
+            if nivel in pub.get("cabecera_letra_blanca", []):
+                letra = BLANCO   # por publicación (Memoria Supervisión: nivel 2 en blanco, publicados 3.1 y 3.4)
             # Líneas blancas: a los lados y debajo si hay otro nivel de cabecera debajo
             lados = {}
             if c == a1:
@@ -2787,6 +2802,8 @@ def cabeceras(z, hoja, cuadro, pub):
             usados.setdefault(nivel, set()).add(ancla)
     for nivel in sorted(usados):
         clave_color, letra = NIVELES_CABECERA[nivel]
+        if nivel in pub.get("cabecera_letra_blanca", []):
+            letra = BLANCO
         detalle.append(f"Cabecera {nivel}: {clave_color.replace('matiz', 'matiz ').replace('solido', 'sólido')} "
                        f"#{colores[clave_color]}" + (", texto en blanco" if letra else "") + f" ({len(usados[nivel])} celda{'s' if len(usados[nivel]) > 1 else ''})")
     detalle.append("Líneas blancas finas entre las celdas de la cabecera y entre sus niveles")
@@ -2938,11 +2955,8 @@ def lineas_y_fondos(z, hoja, cuadro):
                 # (TERMINADO 1.4; la guía decía que no, decisión del usuario 2026-11-17)
                 if siguiente is not None and siguiente != principal and f not in coeficientes and siguiente != estadisticos:
                     lados["bottom"] = ("thin", BLANCO)
-            if c == col_total and not es_total:
-                relleno = BLANCO_MATIZ_2
-                lados["left"] = ("thin", BLANCO)
-                if siguiente is not None and siguiente != principal:
-                    lados["bottom"] = ("thin", BLANCO)
+            # Columna TOTAL: sin fondo; su cabecera va en el color de la publicación, así que ni gris ni mayúsculas
+            # (decisión del usuario, 2026-11-17, publicado Memoria 3.1; antes iba en blanco matiz 2)
             if f in destacadas:
                 relleno = BLANCO_MATIZ_2
                 lados["bottom"] = ("thin", BLANCO)
@@ -2973,7 +2987,7 @@ def lineas_y_fondos(z, hoja, cuadro):
         detalle.append("Columnas de separación sin líneas en las filas de datos (las líneas se cortan entre grupos): "
                        + ", ".join(ref(c, 1)[:-1] for c in sorted(separaciones)))
     if col_total:
-        detalle.append(f"Columna TOTAL ({ref(col_total, 1)[:-1]}): fondo blanco matiz 2 con línea blanca a la izquierda y entre filas")
+        detalle.append(f"Columna TOTAL ({ref(col_total, 1)[:-1]}): sin fondo, como las demás (su cabecera va en el color de la publicación)")
     if errores:
         detalle.append("Regresión: coeficiente y error estándar (entre paréntesis) como un solo concepto, sin línea entre "
                        "ellos y con la primera columna combinada (" + ", ".join(f"{ref(primera, f - 1)}:{ref(primera, f)}" for f in errores) + ")"
@@ -3683,7 +3697,7 @@ def guardar_publicacion(datos):
     lista = CONFIG["publicaciones"]
     for i, p in enumerate(lista):
         if p["id"] == pid:
-            lista[i] = nueva
+            lista[i] = {**p, **nueva}   # los ajustes propios de la publicación (cabecera_letra_blanca…) se quedan
             break
     else:
         lista.append(nueva)
