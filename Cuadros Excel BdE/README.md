@@ -78,6 +78,8 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
    - **Separaciones de la cabecera** (columnas estrechas sin texto): 3 pt (≈ 1,06 mm; Memoria 3.4 TERMINADO, que
      Excel enseña como «0,25» de ancho en caracteres). Ancho guardado elegido para que mida 3 pt en Mac y 4 px en
      Windows (`ancho_comun`; Windows calculado, no medido).
+   - **Separación pegada a la primera columna**: la columna estrecha vacía justo detrás de la primera no separa
+     grupos y se oculta (ancho 0), como en el publicado del 1.5 (que la borró).
    - **Múltiplos de 3 pt** (decisión del usuario, 2026-11-13: «visualmente ni se aprecia»): cada columna mide un
      múltiplo de 3 pt, la medida en que coinciden el Mac (puntos enteros) y Windows (píxeles de 0,75 pt). Las de
      datos se redondean hacia arriba y la primera se queda con el resto: el cuadro mide 468 pt (retícula 468,9).

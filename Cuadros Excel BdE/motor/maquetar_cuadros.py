@@ -1590,7 +1590,8 @@ def poner_anchos(hoja_xml, anchos):
                     nuevos.append([a, c - 1, re.sub(r'\bmax="\d+"', f'max="{c - 1}"', x)])
                 propia = re.sub(r'\bmin="\d+"', f'min="{c}"', re.sub(r'\bmax="\d+"', f'max="{c}"', x))
                 propia = re.sub(r'\s(width|customWidth|bestFit)="[^"]*"', "", propia)
-                propia = propia[:-2].rstrip() + f' width="{w}" customWidth="1"/>'
+                propia = re.sub(r'\shidden="[^"]*"', "", propia)
+                propia = propia[:-2].rstrip() + f' width="{w}" customWidth="1"' + (' hidden="1"' if w == 0 else "") + "/>"
                 nuevos.append([c, c, propia])
                 if c < b:
                     nuevos.append([c + 1, b, re.sub(r'\bmin="\d+"', f'min="{c + 1}"', x)])
@@ -2020,13 +2021,19 @@ def celdas(z, hoja, idioma="es"):
     # varias líneas) hasta lo que pida su palabra más larga. Las estrechas de separación y las ocultas, igual.
     anchos_viejos = {c: ancho_col(c) for c in range(1, c2 + 1)}
     otras = [c for c in range(primera + 1, c2 + 1) if COLUMNA_ESTRECHA <= ancho_col(c)]
-    fijas = [c for c in range(primera + 1, c2 + 1) if c not in otras]
+    fijas = [c for c in range(primera + 1, c2 + 1) if c not in otras and ancho_col(c) > 0]
     # Columnas de separación (estrechas, visibles y sin texto): 3 pt, iguales en Mac y en Windows
     separaciones = [c for c in fijas if ancho_col(c) > 0 and not any(d(c, f)["texto"].strip() for f in range(f1, f2 + 1))]
-    if separaciones:
+    # La de justo detrás de la primera columna no separa grupos: sobra (TERMINADO 1.5 publicado la quitó); se oculta
+    pegada = [c for c in separaciones if c == primera + 1]
+    separaciones = [c for c in separaciones if c not in pegada]
+    if pegada:
+        detalle.append(f"Columna de separación entre la primera columna y los datos ({ref(pegada[0], 1)[:-1]}): oculta, "
+                       "no separa grupos (como el publicado del 1.5)")
+    if separaciones or pegada:
         w_sep = ancho_comun(SEPARACION_PT, mdw, digito_windows(estilos.xml))
         ancho_previo = ancho_col
-        ancho_col = lambda c, _v=ancho_previo, _s=set(separaciones), _w=w_sep: _w if c in _s else _v(c)
+        ancho_col = lambda c, _v=ancho_previo, _s=set(separaciones), _w=w_sep, _p=set(pegada): 0.0 if c in _p else (_w if c in _s else _v(c))
     espacio_pt = (ancho_ret - sum(unidades_a_emu(ancho_col(c)) for c in list(range(1, primera)) + fijas)) / EMU_PT
     def medir_de(c, f):
         """La medida de la variante que llevará la celda: Roboto Medium si el autor la puso en negrita."""
@@ -2198,6 +2205,8 @@ def celdas(z, hoja, idioma="es"):
     nuevos_anchos = {primera: ancho_comun(primera_final, mdw, mdw_win)}
     for c in separaciones:
         nuevos_anchos[c] = w_sep
+    for c in pegada:
+        nuevos_anchos[c] = 0
     for c in otras:
         nuevos_anchos[c] = ancho_comun(otros_pt[c], mdw, mdw_win)
     ancho_col_viejo = ancho_col
