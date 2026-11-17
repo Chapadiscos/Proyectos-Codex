@@ -98,6 +98,14 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      cifras al centro; textos de datos al centro, o a la izquierda en columnas de textos largos (media > 80 —umbral en pruebas—
      caracteres, como G y H del 1.2); en altura al centro, o arriba si la fila lleva textos de 2 o más líneas
      en las columnas de datos (si solo la primera columna ocupa varias líneas, al centro, como el 1.5).
+   - **Sitio del cuadro** (decisión del usuario, 2026-11-17): las unidades, justo bajo la pastilla (0,3 mm); la
+     cabecera, 4 mm bajo un cuadro de unidades de 5 mm (2,5 mm más por línea de más) o, sin unidades, 5 mm bajo
+     la pastilla (1.4: fila 2 = 51,25 pt; TERMINADO 51). Lo da la fila de encima del cuadro; si las de arriba ya
+     ocupan más, se encogen. Todo lo de encima del cuadro se vuelve a anclar en su sitio (no se mueve).
+   - **FUENTES, 5 mm bajo el final del cuadro**, anclada a su fila.
+   - «<34» → «< 34»: espacio tras «<», «>», «≤», «≥» pegados a cifra o letra (TERMINADO 1.4).
+   - Hijos de un título de bloque, sangrados aunque el autor no los sangrara (si hay otros hijos sangrados).
+   - Textos de la cabecera repetidos en filas de datos (1.3), borrados con aviso.
    - Primera columna: sangrías (de Excel o con espacios) → 4, 8 o 12 espacios por nivel; con varias líneas, la
      sangría se repite en cada una (saltos manuales, como el TERMINADO del 1.5); sin viñetas «- »; «Total» → «TOTAL» (también en la cabecera).
 3. **Cabeceras** (`paso3`, en pruebas desde 2026-11-13; exige el paso 2, que deja en el estado dónde está el
@@ -115,7 +123,8 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
    - Solo líneas horizontales finas: blanco matiz 2 (#D9D9D9) entre filas; la última fila, sin línea.
    - Línea oscura (blanco matiz 5, #808080) **siempre encima de la fila TOTAL** (decisión del usuario) y en ningún
      otro sitio: el detalle recuerda en rojo que, si hay que separar otros conceptos importantes, se añade a mano.
-   - Primera columna: fondo blanco matiz 1 (#F2F2F2) con líneas blancas; sin línea entre conceptos sangrados.
+   - Primera columna: fondo blanco matiz 1 (#F2F2F2) con líneas blancas entre todas las filas, también entre
+     sangrados (como el TERMINADO, decisión del usuario; la guía decía que no).
    - Títulos de bloque (concepto sin sangría y sin datos en las demás columnas): blanco matiz 2 en la primera
      columna. Subtotales («Total …»): blanco matiz 2 en toda la fila.
    - Fila TOTAL: blanco matiz 2, o matiz 5 con el texto en blanco si el matiz 2 ya lo usan bloques o subtotales

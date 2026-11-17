@@ -1209,6 +1209,7 @@ def textos(z, hoja, estado):
 # ---------------------------------------------------------------- paso 2: celdas
 
 CELDAS = "Celdas"
+RE_TOTAL = re.compile(r'\s*total\b', re.I)
 CUERPO_CELDA = 7.5
 LETRA_CELDA = "Roboto Light"
 LETRA_CELDA_NEGRITA = "Roboto Medium"      # lo que el autor puso en negrita (TOTAL…): el peso lo da la variante
@@ -1656,6 +1657,143 @@ def partir(texto, ancho, medir, sangria=""):
     return salida
 
 
+CABECERA_BAJO_UNIDADES = 4 * MM     # de las unidades (su cuadro) a la cabecera del cuadro (TERMINADO 1.4: 3,95 mm)
+UNIDADES_BAJO_PASTILLA = 0.3 * MM   # el cuadro de las unidades, justo bajo la pastilla (TERMINADO 1.4)
+ALTO_UNIDADES = 5 * MM              # cuadro de unidades de una línea (TERMINADO 1.4)
+LINEA_UNIDADES = 6 * 1.171875       # cada línea de más de las unidades (Roboto 6 pt, interlineado sencillo)
+CABECERA_BAJO_PASTILLA = 5 * MM     # sin unidades, de la pastilla a la cabecera (Ejemplos 1.3, 1.5)
+FUENTES_BAJO_CUADRO = 5 * MM        # del final del cuadro al cuadro de FUENTES (como en los gráficos)
+
+
+def asegurar_filas(hoja_xml, filas):
+    """Crea (vacías) las filas que no estén en sheetData, en su orden."""
+    for f in filas:
+        if re.search(rf'<row\b[^>]*\br="{f}"', hoja_xml):
+            continue
+        siguiente = next((m for m in re.finditer(r'<row\b[^>]*\br="(\d+)"', hoja_xml) if int(m.group(1)) > f), None)
+        nueva = f'<row r="{f}"/>'
+        if siguiente:
+            hoja_xml = hoja_xml[:siguiente.start()] + nueva + hoja_xml[siguiente.start():]
+        elif "<sheetData/>" in hoja_xml:
+            hoja_xml = hoja_xml.replace("<sheetData/>", f"<sheetData>{nueva}</sheetData>", 1)
+        else:
+            hoja_xml = hoja_xml.replace("</sheetData>", nueva + "</sheetData>", 1)
+    return hoja_xml
+
+
+def anclar_celda(ancla, c, co, r, ro, cx, cy):
+    """La forma anclada (una celda) en la celda (c, r) con esos desplazamientos y tamaño fijo."""
+    cuerpo = re.search(r'(?:</xdr:to>|<xdr:ext\b[^>]*/>)(.*)</xdr:(?:twoCellAnchor|oneCellAnchor|absoluteAnchor)>',
+                       ancla, re.S).group(1)
+    return (f'<xdr:oneCellAnchor><xdr:from><xdr:col>{c}</xdr:col><xdr:colOff>{co}</xdr:colOff><xdr:row>{r}</xdr:row>'
+            f'<xdr:rowOff>{ro}</xdr:rowOff></xdr:from><xdr:ext cx="{cx}" cy="{cy}"/>{cuerpo}</xdr:oneCellAnchor>')
+
+
+def colocar_y(ancla, y):
+    """Marca la forma con la altura (EMU desde A1) a la que hay que anclarla al recolocar."""
+    return ancla.replace("<xdr:oneCellAnchor>", f'<xdr:oneCellAnchor y_nueva="{y}">', 1).replace(
+        "<xdr:twoCellAnchor>", f'<xdr:twoCellAnchor y_nueva="{y}">', 1).replace(
+        '<xdr:twoCellAnchor editAs="oneCell">', f'<xdr:twoCellAnchor editAs="oneCell" y_nueva="{y}">', 1)
+
+
+def colocar_cuadro(dibujo, caja, filas_viejas, altos_nuevos, f1, f2):
+    """Alto de la fila de encima del cuadro para que la cabecera empiece donde toca (4 mm bajo las unidades o 5 mm
+    bajo la pastilla) y FUENTES 5 mm bajo el cuadro. Devuelve (dibujo, notas, alto de esa fila en pt o None)."""
+    altos_emu, defecto = filas_viejas
+
+    def alto_viejo(f):          # f desde 1, en EMU
+        return altos_emu.get(f - 1, defecto)
+    partes = list(partes_dibujo(dibujo))
+    notas = []
+    pastilla = next((a for a in partes if ANCLA.fullmatch(a) and nombre_forma(a) == "Pastilla"), None)
+    fondo_pastilla = caja(pastilla)[1] + caja(pastilla)[3] if pastilla else 0
+    inicio_viejo = sum(alto_viejo(f) for f in range(1, f1))
+    # Unidades: cuadros de texto en 6 pt (así los deja el paso 1) entre la pastilla y el cuadro
+    unidades = []
+    for k, a in enumerate(partes):
+        if not ANCLA.fullmatch(a) or sin_texto(a) or "<xdr:grpSp>" in a[:1500]:
+            continue
+        tamanos = set(re.findall(r'<a:rPr\b[^>]*\bsz="(\d+)"', a))
+        y = caja(a)[1]
+        if tamanos == {"600"} and fondo_pastilla - 3 * EMU_MM <= y < inicio_viejo + 2 * EMU_MM:
+            unidades.append(k)
+    if unidades:
+        # Las unidades, en un sitio fijo bajo la pastilla (el autor las deja donde cae); la cabecera, 4 mm bajo un
+        # cuadro de unidades de 5 mm (y 2,5 mm más por cada línea de más)
+        medir_l = medidor("Roboto-Light.ttf")
+        lineas = 1
+        for k in unidades:
+            l, _, r, _ = margenes(partes[k])
+            if medir_l:
+                lineas = max(lineas, lineas_parrafos(textos_lineas(partes[k]), (caja(partes[k])[2] - l - r) / EMU_PT, 6, medir_l))
+        arriba_unidades = fondo_pastilla + round(UNIDADES_BAJO_PASTILLA * EMU_PT)
+        for k in unidades:
+            x, y, w, h = caja(partes[k])
+            partes[k] = colocar_y(partes[k], arriba_unidades)
+        objetivo = arriba_unidades + round((ALTO_UNIDADES + CABECERA_BAJO_UNIDADES + (lineas - 1) * LINEA_UNIDADES) * EMU_PT)
+        motivo = "4 mm bajo las unidades" + (f" ({lineas} líneas)" if lineas > 1 else "")
+    else:
+        objetivo = fondo_pastilla + round(CABECERA_BAJO_PASTILLA * EMU_PT)
+        motivo = "5 mm bajo la pastilla"
+    # Altos nuevos de las filas de encima del cuadro: las de arriba se quedan como están y la de justo encima toma el
+    # hueco; si las de arriba ya ocupan más, se encogen todas por igual (dejando 1 pt a la de encima)
+    encima = sum(alto_viejo(f) for f in range(1, f1 - 1))
+    altos_encima = {f: alto_viejo(f) for f in range(1, f1 - 1)}
+    if objetivo - encima < EMU_PT and encima > 0:
+        escala = (objetivo - EMU_PT) / encima
+        altos_encima = {f: v * escala for f, v in altos_encima.items()}
+        notas.append(f"Filas 1-{f1 - 2} encogidas para que el cuadro quede {motivo}")
+    altos_encima = {f: round(v / EMU_PT * 4) / 4 for f, v in altos_encima.items()}
+    alto_hueco = max(1.0, round((objetivo / EMU_PT - sum(altos_encima.values())) * 4) / 4)
+    notas.append(f"Cuadro {motivo}: la fila {f1 - 1} pasa a {alto_hueco:g} pt".replace(".", ","))
+
+    def alto_nuevo(f):
+        if f in altos_nuevos:
+            return round(altos_nuevos[f] * EMU_PT)
+        if f == f1 - 1:
+            return round(alto_hueco * EMU_PT)
+        if f in altos_encima:
+            return round(altos_encima[f] * EMU_PT)
+        return alto_viejo(f)
+
+    def fila_de(y):
+        """(fila desde 0, desplazamiento) de la altura y (EMU) con los altos nuevos."""
+        f = 1
+        while y >= alto_nuevo(f) and f < 100000:
+            y -= alto_nuevo(f)
+            f += 1
+        return f - 1, y
+    # Todo lo que queda por encima del cuadro, anclado otra vez donde está (con los altos nuevos) y tamaño fijo:
+    # así no se mueve al cambiar las filas
+    for k, a in enumerate(partes):
+        if not ANCLA.fullmatch(a):
+            continue
+        marca = re.match(r'<xdr:\w+Anchor\b[^>]*\by_nueva="(\d+)"', a)
+        a = re.sub(r'\sy_nueva="\d+"', "", a, count=1)
+        x, y, w, h = caja(a)
+        if marca:
+            y = int(marca.group(1))
+        if (y < inicio_viejo or marca) and nombre_forma(a) not in ("Retícula", "Pastilla"):
+            c, co, _, _ = caja.a_celda(x, y)
+            r, ro = fila_de(y)
+            partes[k] = anclar_celda(a, c, co, r, ro, w, h)
+    # FUENTES, 5 mm bajo el final del cuadro (con los altos nuevos)
+    fin_cuadro = sum(alto_nuevo(f) for f in range(1, f2 + 1))
+    for k, a in enumerate(partes):
+        if not ANCLA.fullmatch(a) or sin_texto(a):
+            continue
+        primera_linea = html.unescape(texto_forma(a)).strip().split("\n")[0]
+        x, y, w, h = caja(a)
+        if ROTULO.match(primera_linea) and y >= inicio_viejo:
+            f, resto = f2 + 1, round(FUENTES_BAJO_CUADRO * EMU_PT)
+            while resto >= alto_nuevo(f) and f < f2 + 500:
+                resto -= alto_nuevo(f)
+                f += 1
+            partes[k] = anclar_celda(a, 0, 0, f - 1, resto, w, h)
+            notas.append("FUENTES, 5 mm bajo el final del cuadro")
+    return "".join(partes), notas, (alto_hueco, altos_encima)
+
+
 def paso2(trabajo, pid=None):
     """Celdas del cuadro: Roboto Light 7,5 pt sin negrita; alto de fila por líneas (14, 28, 40, 50…);
     cabecera: la primera a la izquierda y las demás al centro; primera columna a la izquierda, con las
@@ -1677,6 +1815,7 @@ def celdas(z, hoja):
     comp_xml, compartidos = leer_compartidos(z)
     estilos = Estilos(z.read("xl/styles.xml").decode("utf-8"))
     dibujo = z.read(dibujo_de_hoja(z, hoja)).decode("utf-8") if dibujo_de_hoja(z, hoja) else ""
+    cambios_dibujo = {}
     mdw = digito_maximo(estilos.xml)
 
     def unidades_a_emu(w):
@@ -1745,6 +1884,18 @@ def celdas(z, hoja):
             fin_cab = max(fin_cab, b + n - 1)
     detalle.append(f"Cabecera: filas {f1}-{fin_cab}" if fin_cab > f1 else f"Cabecera: fila {f1}")
 
+    # Textos de la cabecera repetidos por el autor en filas de datos (1.3: «Cuota de Oriente Medio…» otra vez en el
+    # segundo bloque): se borran, como en el TERMINADO, y la fila queda como título de bloque
+    textos_cab = {c: {d(c, f)["texto"].strip() for f in range(f1, fin_cab + 1) if d(c, f)["texto"].strip()} for c in range(c1, c2 + 1)}
+    repetidos = [(c, f) for f in range(fin_cab + 1, f2 + 1) for c in range(primera + 1, c2 + 1)
+                 if (c, f) not in tapadas and d(c, f)["texto"].strip() and not d(c, f)["numero"]
+                 and d(c, f)["texto"].strip() in textos_cab.get(c, set())]
+    for k in repetidos:
+        todas[k] = {**todas[k], "texto": "", "borrar": True}
+    if repetidos:
+        detalle.append("Aviso: textos de la cabecera repetidos en filas de datos, borrados: "
+                       + ", ".join(ref(c, f) for c, f in repetidos[:8]))
+
     # Sangrías de la primera columna: niveles (sangría de Excel y espacios del autor) → 4, 8, 12 espacios
     def sangria_autor(f):
         x = d(primera, f)
@@ -1756,6 +1907,33 @@ def celdas(z, hoja):
     if len(valores) > 3:
         detalle.append(f"Aviso: la primera columna tiene {len(valores)} niveles de sangría; la guía prevé 3")
     nivel_de = {v: min(i + 1, 3) for i, v in enumerate(valores)}
+
+    # Hijos de un título de bloque (concepto sin sangría ni datos, como «Edad»): van sangrados al menos un nivel
+    # aunque el autor no los sangrara, si en el cuadro hay otros hijos sangrados (TERMINADO 1.4)
+    def es_bloque(f):
+        t = d(primera, f)["texto"].strip()
+        return bool(t) and sangria_autor(f) == 0 and not RE_TOTAL.match(t) and \
+            not any(d(c, f)["texto"].strip() for c in range(primera + 1, c2 + 1) if (c, f) not in tapadas)
+    hijos, bloque_abierto = set(), False
+    for f in range(fin_cab + 1, f2 + 1):
+        t = d(primera, f)["texto"].strip()
+        if es_bloque(f):
+            bloque_abierto = True
+        elif bloque_abierto and t and not RE_TOTAL.match(t):
+            hijos.add(f)
+        elif RE_TOTAL.match(t):
+            bloque_abierto = False
+    sangrar_hijos = any(sangria_autor(f) > 0 for f in hijos)
+    if not nivel_de and sangrar_hijos:
+        nivel_de = {}
+
+    def nivel_fila(f):
+        n = nivel_de.get(sangria_autor(f), 0)
+        return max(n, 1) if sangrar_hijos and f in hijos else n
+    sin_sangria = [d(primera, f)["texto"].strip() for f in sorted(hijos) if sangrar_hijos and nivel_de.get(sangria_autor(f), 0) == 0]
+    if sin_sangria:
+        detalle.append("Sangrados por ser de un bloque (el autor no los sangró): "
+                       + ", ".join(f"«{t[:25]}»" for t in sin_sangria[:6]) + ("…" if len(sin_sangria) > 6 else ""))
 
     # Anchos de columna: el cuadro llega al borde derecho de la retícula. Manda la primera columna (el ancho de su
     # texto más largo en una línea); las demás, si se puede, iguales. Si no caben, la primera cede (su texto pasa a
@@ -1793,7 +1971,7 @@ def celdas(z, hoja):
         t = d(primera, f)["texto"]
         if not t.strip() or (primera, f) in tapadas:
             continue
-        espacios = " " * (SANGRIA * nivel_de.get(sangria_autor(f), 0)) if f > fin_cab else ""
+        espacios = " " * (SANGRIA * nivel_fila(f)) if f > fin_cab else ""
         cuerpo = VINETA.sub("", t.strip(" \u00a0"))
         mc = medir_de(primera, f)
         natural = max(natural, max(mc(espacios + l.strip(), CUERPO_CELDA) for l in cuerpo.split("\n")))
@@ -1920,6 +2098,11 @@ def celdas(z, hoja):
                 lineas[(c, f)] = 1
                 continue
             nuevo = t
+            # «<34» → «< 34»: espacio tras los signos de comparación (TERMINADO 1.4)
+            con_espacio = re.sub(r'([<>≤≥])(?=[\w(])', r'\1 ', t)
+            if con_espacio != t:
+                cambios_txt.append(f"«{t.strip()[:20]}» → «{con_espacio.strip()[:20]}»")
+                nuevo = t = con_espacio
             if f <= fin_cab and re.fullmatch(r'\s*total\s*', t, re.I) and t.strip() != "TOTAL":
                 # «TOTAL» también en la cabecera (guía: ejemplos A4.6 y 4.2; Memoria 3.4 TERMINADO)
                 cambios_txt.append(f"«{t.strip()}» → «TOTAL» (cabecera)")
@@ -1933,7 +2116,7 @@ def celdas(z, hoja):
                 if re.fullmatch(r'total', cuerpo, re.I) and cuerpo != "TOTAL":
                     cambios_txt.append(f"«{cuerpo}» → «TOTAL»")
                     cuerpo = "TOTAL"
-                espacios = " " * (SANGRIA * nivel_de.get(sangria_autor(f), 0))
+                espacios = " " * (SANGRIA * nivel_fila(f))
                 mc = medir_de(c, f)
                 partes = partir("\n".join(l.strip() for l in cuerpo.split("\n")), ancho - mc(espacios, CUERPO_CELDA), mc)
                 if espacios and len(partes) > 1:
@@ -2022,6 +2205,9 @@ def celdas(z, hoja):
         if s_nuevo is not None:
             apertura = re.sub(r'\ss="\d+"', "", apertura)
             apertura = apertura.replace("<c ", f'<c s="{s_nuevo}" ', 1)
+        if todas.get((c, f), {}).get("borrar"):
+            apertura = re.sub(r'\st="\w+"', "", apertura)
+            return (apertura if apertura.endswith("/>") else apertura[:-1] + "/>")
         if (c, f) in nuevos_textos:
             nuevas_si.append(f'<si><t xml:space="preserve">{html.escape(nuevos_textos[(c, f)], quote=False)}</t></si>')
             apertura = re.sub(r'\st="\w+"', "", apertura).replace("<c ", '<c t="s" ', 1)
@@ -2048,11 +2234,29 @@ def celdas(z, hoja):
         return fila[:-1].rstrip("/") + f' ht="{altos[f]}" customHeight="1"' + ("/>" if fila.endswith("/>") else ">")
     hoja_xml = re.sub(r'<row\b[^>]*?/?>', cambiar_fila, hoja_xml)
     hoja_xml = poner_anchos(hoja_xml, nuevos_anchos)
+
+    # Sitio del cuadro (decisión del usuario, 2026-11-17): la cabecera empieza 4 mm bajo las unidades o, si no hay,
+    # 5 mm bajo la pastilla; FUENTES, 5 mm bajo el final del cuadro. Lo ajusta la fila de encima del cuadro.
+    ruta_dibujo = dibujo_de_hoja(z, hoja)
+    if ruta_dibujo and f1 > 1:
+        caja = medidas_hoja(z, hoja, dibujo)
+        dibujo_nuevo, notas_sitio, alto_hueco = colocar_cuadro(dibujo, caja, altos_filas(z, hoja), altos, f1, f2)
+        alto_hueco, altos_encima = alto_hueco
+        cambiadas = {f: v for f, v in altos_encima.items() if abs(v * EMU_PT - altos_filas(z, hoja)[0].get(f - 1, altos_filas(z, hoja)[1])) > 0.5 * EMU_PT}
+        altos.update(cambiadas)
+        altos[f1 - 1] = alto_hueco
+        hoja_xml = asegurar_filas(hoja_xml, [f1 - 1] + list(cambiadas))
+        hoja_xml = re.sub(r'<row\b[^>]*?/?>', cambiar_fila, hoja_xml)
+        if dibujo_nuevo != dibujo:
+            cambios_dibujo[ruta_dibujo] = dibujo_nuevo.encode("utf-8")
+        detalle += notas_sitio
+    elif f1 <= 1:
+        detalle.append("Aviso: el cuadro empieza en la fila 1: no hay fila encima para separarlo de la pastilla")
     faltan = [f for f in altos if not re.search(rf'<row\b[^>]*\br="{f}"', hoja_xml)]
     if faltan:
         detalle.append(f"Aviso: filas sin definir en la hoja ({', '.join(map(str, faltan))}): su alto no se ha cambiado")
 
-    cambios = {ruta_hoja: hoja_xml.encode("utf-8"), "xl/styles.xml": estilos.resultado().encode("utf-8")}
+    cambios = {ruta_hoja: hoja_xml.encode("utf-8"), "xl/styles.xml": estilos.resultado().encode("utf-8"), **cambios_dibujo}
     if nuevas_si != compartidos or nuevos_textos:
         comp = comp_xml
         cuerpo = "".join(nuevas_si)
@@ -2212,7 +2416,6 @@ LINEAS_Y_FONDOS = "Líneas y fondos"
 BLANCO_MATIZ_1, BLANCO_MATIZ_2, BLANCO_MATIZ_5 = "F2F2F2", "D9D9D9", "808080"
 LINEA_FILAS = ("thin", BLANCO_MATIZ_2)      # separa filas
 LINEA_OSCURA = ("thin", BLANCO_MATIZ_5)     # separa la fila TOTAL (y lo que se añada a mano)
-RE_TOTAL = re.compile(r'\s*total\b', re.I)
 
 
 def paso4(trabajo, pid=None):
@@ -2290,11 +2493,10 @@ def lineas_y_fondos(z, hoja, cuadro):
                 relleno = BLANCO_MATIZ_1
                 if f in bloques:
                     relleno = BLANCO_MATIZ_2
-                # Primera columna: líneas blancas, salvo entre conceptos sangrados (sin línea)
+                # Primera columna: líneas blancas entre todas las filas, también entre conceptos sangrados
+                # (TERMINADO 1.4; la guía decía que no, decisión del usuario 2026-11-17)
                 if siguiente is not None and siguiente != principal:
-                    lados["bottom"] = None if sangrada(f) and sangrada(siguiente) else ("thin", BLANCO)
-                    if lados["bottom"] is None:
-                        del lados["bottom"]
+                    lados["bottom"] = ("thin", BLANCO)
             if c == col_total and not es_total:
                 relleno = BLANCO_MATIZ_2
                 lados["left"] = ("thin", BLANCO)
@@ -2307,7 +2509,7 @@ def lineas_y_fondos(z, hoja, cuadro):
                                               letra=letra if letra else None)
     # Detalle
     detalle.append("Líneas horizontales finas entre filas en blanco matiz 2 (#D9D9D9); la última fila, sin línea")
-    detalle.append("Primera columna: fondo blanco matiz 1 (#F2F2F2) con líneas blancas; sin línea entre conceptos sangrados")
+    detalle.append("Primera columna: fondo blanco matiz 1 (#F2F2F2) con líneas blancas entre todas las filas")
     if bloques:
         detalle.append(f"Títulos de bloque (sin datos en las demás columnas), fondo blanco matiz 2: "
                        + ", ".join(f"«{texto(primera, f).strip()[:30]}»" for f in bloques[:6]) + ("…" if len(bloques) > 6 else ""))
