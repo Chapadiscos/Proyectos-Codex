@@ -83,6 +83,9 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      cabiendo. En cuadros de texto con muchas columnas (1.2) no.
    - **Separación pegada a la primera columna**: la columna estrecha vacía justo detrás de la primera no separa
      grupos y se oculta (ancho 0), como en el publicado del 1.5 (que la borró).
+   - **Separaciones solo entre grupos** (decisión del usuario, 2026-11-17, publicado del 3.1): una columna de
+     separación se queda solo si separa grupos (una cabecera combinada sobre varias columnas acaba justo antes o
+     empieza justo después). Entre columnas sueltas sobra y se oculta (ancho 0), como la de la primera columna.
    - **Múltiplos de 3 pt** (decisión del usuario, 2026-11-13: «visualmente ni se aprecia»): cada columna mide un
      múltiplo de 3 pt, la medida en que coinciden el Mac (puntos enteros) y Windows (píxeles de 0,75 pt). Las de
      datos se redondean hacia arriba y la primera se queda con el resto: el cuadro mide 468 pt (retícula 468,9).
@@ -120,6 +123,11 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      cifras al centro; textos de datos al centro, o a la izquierda en columnas de textos largos (media > 80 —umbral en pruebas—
      caracteres, como G y H del 1.2); en altura al centro, o arriba si la fila lleva textos de 2 o más líneas
      en las columnas de datos (si solo la primera columna ocupa varias líneas, al centro, como el 1.5).
+   - **Formato de número sin relleno** (2026-11-17, publicado del 3.1): el relleno de los lados del formato del autor
+     («0.00_m_m_m», «#,##0\ _€», «@_m_m_n») descentra las cifras; se quita («0.00», «#,##0», «@»). Los formatos de
+     contabilidad («_-* …») se dejan.
+   - **Salto de línea del autor en la cabecera** (publicado del 3.1): si el texto cabe en una línea, se quita
+     («Peso VAB⏎2023» → «Peso VAB 2023») y se avisa; el de antes de un paréntesis se queda (publicado del 1.5).
    - **Sitio del cuadro** (decisión del usuario, 2026-11-17): las unidades, justo bajo la pastilla (0,3 mm); la
      cabecera, 4 mm bajo un cuadro de unidades de 5 mm (2,5 mm más por línea de más) o, sin unidades, 4 mm bajo
      la pastilla (1.4: fila 2 = 51,25 pt; TERMINADO 51). Lo da la fila de encima del cuadro; si las de arriba ya

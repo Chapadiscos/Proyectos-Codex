@@ -1320,6 +1320,7 @@ class Estilos:
         self.rellenos = re.findall(r'<fill\b.*?</fill>|<fill/>', re.search(r'<fills\b[^>]*>(.*?)</fills>', xml, re.S).group(1), re.S)
         self.bordes = re.findall(r'<border\b.*?</border>|<border/>', re.search(r'<borders\b[^>]*>(.*?)</borders>', xml, re.S).group(1), re.S)
         self.nuevos_rellenos, self.nuevos_bordes = [], []
+        self.nuevos_formatos = []   # [(id, código)] de numFmt nuevos (cifras sin el relleno «_m_m_m» del autor)
 
     def xf(self, i):
         return self.xfs[i] if i < len(self.xfs) else self.xfs[0]
@@ -1432,8 +1433,30 @@ class Estilos:
         self.nuevas_fuentes.append(nueva)
         return len(todas)
 
+    def sin_relleno(self, i):
+        """numFmtId del formato de número de `i` sin el relleno a los lados («0.00_m_m_m» → «0.00»): ese hueco
+        invisible descentra las cifras (TERMINADO 3.1 publicado: «#,##0.00» sin relleno). None si no lo lleva."""
+        codigo = formato_numero(self, i)
+        if "*" in codigo:
+            return None   # contabilidad («_-* #,##0…»): el relleno es parte del formato
+        nuevo = ";".join(re.sub(r'(?:_.|\\ )+$', "", re.sub(r'^(?:_.)+', "", sec)) for sec in codigo.split(";"))
+        if nuevo == codigo:
+            return None
+        internos = {v: k for k, v in FORMATOS_INTERNOS.items()}
+        if nuevo in internos:
+            return internos[nuevo]
+        propios = dict((html.unescape(c), int(n)) for n, c in re.findall(r'<numFmt\b[^>]*\bnumFmtId="(\d+)"[^>]*\bformatCode="([^"]*)"', self.xml))
+        propios.update({c: n for n, c in self.nuevos_formatos})
+        if nuevo in propios:
+            return propios[nuevo]
+        ids = [int(n) for n in re.findall(r'<numFmt\b[^>]*\bnumFmtId="(\d+)"', self.xml)] + [n for n, _ in self.nuevos_formatos]
+        n = max(ids + [163]) + 1
+        self.nuevos_formatos.append((n, nuevo))
+        return n
+
     def nuevo(self, i, alineacion):
-        """Índice de un formato como el `i` del autor con la fuente de celda y esta alineación."""
+        """Índice de un formato como el `i` del autor con la fuente de celda y esta alineación (y el formato de
+        número sin relleno a los lados)."""
         clave = (i, tuple(sorted(alineacion.items())))
         if clave in self.cache:
             return self.cache[clave]
@@ -1441,7 +1464,11 @@ class Estilos:
         fid = self.fuente_celda(self.fuente_de(i))
         apertura = re.match(r'<xf\b[^>]*?(/?)>', xf)
         atributos = apertura.group(0)[3:-(2 if apertura.group(1) else 1)]
-        for nombre, valor in (("fontId", fid), ("applyFont", 1), ("applyAlignment", 1)):
+        nf = self.sin_relleno(i)
+        cambios = [("fontId", fid), ("applyFont", 1), ("applyAlignment", 1)]
+        if nf is not None:
+            cambios += [("numFmtId", nf), ("applyNumberFormat", 1)]
+        for nombre, valor in cambios:
             atributos = re.sub(rf'\s{nombre}="[^"]*"', "", atributos) + f' {nombre}="{valor}"'
         dentro = "" if apertura.group(1) else xf[apertura.end():xf.rindex("</xf>")]
         dentro = re.sub(r'<alignment\b[^>]*/>', "", dentro)
@@ -1458,6 +1485,14 @@ class Estilos:
 
     def resultado(self):
         xml = self.xml
+        if self.nuevos_formatos:
+            nuevos = "".join(f'<numFmt numFmtId="{n}" formatCode="{html.escape(c)}"/>' for n, c in self.nuevos_formatos)
+            if "<numFmts" in xml:
+                total = len(re.findall(r'<numFmt\b', xml)) + len(self.nuevos_formatos)
+                xml = re.sub(r'(<numFmts\b[^>]*?)\scount="\d+"', rf'\1 count="{total}"', xml, count=1)
+                xml = xml.replace("</numFmts>", nuevos + "</numFmts>", 1)
+            else:
+                xml = re.sub(r'(<styleSheet\b[^>]*>)', rf'\1<numFmts count="{len(self.nuevos_formatos)}">{nuevos}</numFmts>', xml, count=1)
         if self.nuevas_fuentes:
             total = len(self.fuentes) + len(self.nuevas_fuentes)
             xml = re.sub(r'(<fonts\b[^>]*?)\scount="\d+"', rf'\1 count="{total}"', xml, count=1)
@@ -2044,6 +2079,19 @@ def celdas(z, hoja, idioma="es"):
     if pegada:
         detalle.append(f"Columna de separación entre la primera columna y los datos ({ref(pegada[0], 1)[:-1]}): oculta, "
                        "no separa grupos (como el publicado del 1.5)")
+    # Las demás solo se quedan si separan grupos: una cabecera combinada sobre varias columnas que acaba justo antes
+    # o empieza justo después. Entre columnas sueltas sobran (publicado 3.1: las quitó) y se ocultan
+    grupos = [(a1, a2) for a1, b1, a2, b2 in rangos if a2 > a1 and f1 <= b1 <= fin_cab]
+    def separa_grupos(c):
+        antes = max([k for k in otras if k < c] or [0])
+        despues = min([k for k in otras if k > c] or [0])
+        return any(a2 == antes or a1 == despues for a1, a2 in grupos if not (a1 < c < a2))
+    sueltas_sep = [c for c in separaciones if not separa_grupos(c)]
+    if sueltas_sep:
+        separaciones = [c for c in separaciones if c not in sueltas_sep]
+        pegada = pegada + sueltas_sep
+        detalle.append("Columnas de separación entre columnas sueltas (sin cabecera de grupo): ocultas, como el publicado "
+                       "del 3.1: " + ", ".join(ref(c, 1)[:-1] for c in sueltas_sep))
     if separaciones or pegada:
         w_sep = ancho_comun(SEPARACION_PT, mdw, digito_windows(estilos.xml))
         ancho_previo = ancho_col
@@ -2056,7 +2104,11 @@ def celdas(z, hoja, idioma="es"):
 
     def vista(c, f):
         x = d(c, f)
-        return cifra_vista(x["texto"], formato_numero(estilos, x["s"])) if x["numero"] else x["texto"]
+        nf = estilos.sin_relleno(x["s"])
+        codigo = formato_numero(estilos, x["s"])
+        if nf is not None:
+            codigo = FORMATOS_INTERNOS.get(nf) or dict(estilos.nuevos_formatos).get(nf, codigo)
+        return cifra_vista(x["texto"], codigo) if x["numero"] else x["texto"]
     necesita = {c: 0.0 for c in otras}
     for f in range(f1, f2 + 1):
         for c in otras:
@@ -2244,6 +2296,7 @@ def celdas(z, hoja, idioma="es"):
 
     # Textos nuevos (sangrías, viñetas, TOTAL) y líneas de cada celda
     nuevos_textos, lineas, cambios_txt, porcentajes, correcciones, saltos, sangrados, propuestas = {}, {}, [], [], [], [], [], []
+    juntadas = []
     for f in range(f1, f2 + 1):
         for c in range(c1, c2 + 1):
             if (c, f) in tapadas:
@@ -2306,6 +2359,14 @@ def celdas(z, hoja, idioma="es"):
                 lineas[(c, f)] = len(partes)
             else:
                 mc = medir_de(c, f)
+                if f <= fin_cab and "\n" in t.strip() and not re.search(r"\n\s*\(", t):
+                    # Salto de línea del autor en una cabecera que cabe en una línea: sobra (publicado 3.1,
+                    # «Peso VAB⏎2023» → «Peso VAB 2023»); el de antes de un paréntesis se queda (publicado 1.5,
+                    # «Deflactor del VAB⏎(crecimiento interanual promedio)»)
+                    junta = re.sub(r"\s*\n\s*", " ", t.strip())
+                    if len(partir(junta, ancho, mc)) == 1:
+                        nuevo = t = junta
+                        juntadas.append(f"{ref(c, f)} «{junta[:40]}»")
                 partes = partir(t, ancho, mc)
                 if f <= fin_cab and len(partes) == 2 and "\n" not in t.strip():
                     # Cabecera de 2 líneas: el salto, puesto a mano por una frase (como los publicados)
@@ -2316,6 +2377,9 @@ def celdas(z, hoja, idioma="es"):
                 lineas[(c, f)] = len(partes)
             if nuevo != x["texto"]:
                 nuevos_textos[(c, f)] = nuevo
+    if juntadas:
+        detalle.append("Cabecera: salto de línea del autor quitado, el texto cabe en una línea: " + "; ".join(juntadas[:6])
+                       + marca([j.split(" ", 1)[0] for j in juntadas]))
     if saltos:
         detalle.append("Cabecera en 2 líneas, con el salto por una frase (como los publicados): " + "; ".join(saltos[:6]))
     if sangrados:
