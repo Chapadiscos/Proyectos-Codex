@@ -2070,6 +2070,14 @@ def celdas(z, hoja, idioma="es"):
     if otras:
         hace_falta = max(necesita.values())
         primera_pt = max(minimo, min(natural, espacio_pt - len(otras) * hace_falta))
+        # Como mínimo un tercio del cuadro para la primera columna en cuadros de cifras o de pocas columnas (los
+        # publicados 1.3, 1.4, 1.5, 2.7 y 2.9 le dan el 31-34 %), si las demás siguen cabiendo (decisión del usuario)
+        de_cifras = all(es_cifra(d(c, f)) for f in range(fin_cab + 1, f2 + 1) for c in otras
+                        if (c, f) not in tapadas and d(c, f)["texto"].strip())
+        tercio = espacio_pt / 3
+        if primera_pt < tercio and (de_cifras or len(otras) <= 3) and (espacio_pt - tercio) / len(otras) >= hace_falta:
+            detalle.append(f"Primera columna a un tercio del cuadro ({tercio / MM:.1f} mm), como los publicados".replace(".", ","))
+            primera_pt = tercio
         resto = (espacio_pt - primera_pt) / len(otras)
         if resto < hace_falta - 0.1:
             detalle.append(f"Aviso: el cuadro no cabe en la retícula a {CUERPO_CELDA:g} pt: las columnas necesitan "
@@ -2245,7 +2253,7 @@ def celdas(z, hoja, idioma="es"):
             if con_espacio != t:
                 cambios_txt.append(f"«{t.strip()[:20]}» → «{con_espacio.strip()[:20]}»")
             con_por = re.sub(r'(\d)[ \u202f]?%', '\\1\u00a0%', con_espacio)
-            corregido, tipos_c = corregir_texto(con_por, idioma, cabecera=f <= fin_cab)
+            corregido, tipos_c = corregir_texto(con_por, idioma, cabecera=f <= fin_cab, provincias=f > fin_cab)
             if tipos_c:
                 correcciones.append(f"{ref(c, f)} «{con_por.strip()[:35]}» → «{corregido.strip()[:35]}» ({', '.join(tipos_c)})")
                 con_por = corregido
@@ -3069,6 +3077,13 @@ def trimestres(texto, idioma):
     return RE_TRIMESTRE.sub(cambiar, texto)
 
 
+# Nombres oficiales de provincias (publicado 2.7, decisión del usuario 2026-11-17)
+PROVINCIAS_OFICIALES = [
+    (r'(?<![/\w])Vizcaya\b', "Bizkaia"), (r'(?<![/\w])Guipúzcoa\b', "Gipuzkoa"), (r'(?<![/\w])Guipuzcoa\b', "Gipuzkoa"),
+    (r'(?<![/\w])Álava\b(?!/)', "Araba/Álava"), (r'(?<![/\w])Orense\b', "Ourense"), (r'(?<![/\w])Gerona\b', "Girona"),
+    (r'(?<![/\w])Lérida\b', "Lleida"), (r'(?<![\w])La Coruña\b', "A Coruña"),
+    (r'(?<![\w])(?:Islas |Illes )?Baleares\b', "Illes Balears")]
+
 RE_ANIOS_CORTOS = re.compile(r'(?<![\d.,])((?:19|20)\d\d)\s?([–-])\s?(\d\d)(?![\d.,%])')
 
 
@@ -3118,7 +3133,7 @@ LUGARES_Y_INSTITUCIONES = {
 ROMANOS_RE = re.compile(r'(?=[IVXLC]+$)M*(C[MD]|D?C{0,3})(X[CL]|L?X{0,3})(I[XV]|V?I{0,3})$')
 
 
-def corregir_texto(texto, idioma="es", cabecera=False):
+def corregir_texto(texto, idioma="es", cabecera=False, provincias=False):
     """Las correcciones ortotipográficas automáticas; devuelve el texto y la lista de lo que ha cambiado."""
     cambios = []
     nuevo = trimestres(texto, idioma)
@@ -3129,6 +3144,17 @@ def corregir_texto(texto, idioma="es", cabecera=False):
         if n2 != nuevo:
             cambios.append("EEUU")
         nuevo = n2
+    if idioma != "en" and provincias:
+        # Solo si la celda es la provincia sola (con su llamada a nota o asterisco): «Banco Bilbao Vizcaya Argentaria»
+        # no se toca
+        solo = re.fullmatch(r'(\s*)(.+?)(\s*(?:\([a-z]\)|\*)?\s*)', nuevo)
+        if solo:
+            nombre = solo.group(2)
+            for viejo, oficial in PROVINCIAS_OFICIALES:
+                if re.fullmatch(viejo, nombre):
+                    nuevo = solo.group(1) + oficial + solo.group(3)
+                    cambios.append("nombre oficial de provincia")
+                    break
     n2 = re.sub(r'\bMb/d\b', "mb/d", nuevo)
     if n2 != nuevo:
         cambios.append("mb/d")

@@ -78,6 +78,9 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
    - **Separaciones de la cabecera** (columnas estrechas sin texto): 3 pt (≈ 1,06 mm; Memoria 3.4 TERMINADO, que
      Excel enseña como «0,25» de ancho en caracteres). Ancho guardado elegido para que mida 3 pt en Mac y 4 px en
      Windows (`ancho_comun`; Windows calculado, no medido).
+   - **Primera columna, como mínimo un tercio del cuadro** (decisión del usuario, 2026-11-17; los publicados 1.3,
+     1.4, 1.5, 2.7 y 2.9 le dan el 31-34 %), en cuadros de cifras o de hasta 3 columnas de datos, si las demás siguen
+     cabiendo. En cuadros de texto con muchas columnas (1.2) no.
    - **Separación pegada a la primera columna**: la columna estrecha vacía justo detrás de la primera no separa
      grupos y se oculta (ancho 0), como en el publicado del 1.5 (que la borró).
    - **Múltiplos de 3 pt** (decisión del usuario, 2026-11-13: «visualmente ni se aprecia»): cada columna mide un
@@ -131,6 +134,10 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
    - **Correcciones ortotipográficas** (decisión del usuario, 2026-11-17), en celdas, título, unidades y FUENTES,
      con aviso en rojo para revisarlas: trimestres como en Gráficos (es «I TR 2024», en «Q1 2024»), «EE.UU.» →
      «EEUU», «Mb/d» → «mb/d», años abreviados «1973–74» → «1973–1974» y, en la cabecera, minúscula en las palabras
+     con mayúscula de título; nombres oficiales de provincias (Vizcaya → Bizkaia, Guipúzcoa → Gipuzkoa, Álava →
+     Araba/Álava, Orense → Ourense, Gerona → Girona, Lérida → Lleida, La Coruña → A Coruña, Baleares → Illes
+     Balears) solo en celdas que son la provincia sola (no en «Banco Bilbao Vizcaya Argentaria») y, en la cabecera,
+     minúscula en las palabras
      con mayúscula de título (salvo la primera, siglas, nombres propios y lo que va pegado a ellos: «Oriente Medio»,
      «ICO Crecimiento»).
    - Hijos de un título de bloque, sangrados aunque el autor no los sangrara (si hay otros hijos sangrados).
