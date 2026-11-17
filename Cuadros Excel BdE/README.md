@@ -188,6 +188,14 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
    - Fila TOTAL: blanco matiz 2, o matiz 5 con el texto en blanco si el matiz 2 ya lo usan bloques o subtotales
      (Ejemplos 1.4 y A2.2); sin hueco en las columnas de separación. Columna TOTAL (cabecera «TOTAL»): blanco
      matiz 2 con línea blanca a la izquierda y entre filas (Ejemplos 4.2 y A4.6).
+   - **Columnas ocultas del autor** (Memoria 2.1: textos de traducción en A-C que la columna D enseña con una
+     fórmula; «Descuadre» en G): ni se miden para el alto de fila ni se les cambia el formato.
+   - **«Cuadro N» y unidades en celdas** encima del cuadro (Memoria 2.1, 3.2, 4.2): el paso 1 los pasa a cuadros de
+     texto como en el Informe Anual (rótulo con el marco de la plantilla; unidades en Roboto Light 6 pt, colocadas
+     como las demás) y vacía la celda. Solo celdas solas en su fila, por encima de la primera fila con dos textos,
+     y, las unidades, si empiezan como unas unidades («Datos a…», «Millones…», «%»…). Al comparar con el
+     original salen como «pasados de celdas a cuadros de texto», no como datos que faltan.
+   - Al comparar con el original, el formato de número sin el relleno que quita el paso 2 no cuenta como cambio.
    - Líneas y fondos sueltos del autor en celdas vacías a la derecha del cuadro, quitados (1.2, columnas I-K), y
      también encima del cuadro (filas entre la pastilla y la cabecera) y en las columnas ocultas (publicado del 3.3).
    - **Regresiones** (publicado del 3.3): la fila del coeficiente y la de su error estándar (entre paréntesis, sin

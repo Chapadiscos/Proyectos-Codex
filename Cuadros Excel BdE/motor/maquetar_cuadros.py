@@ -1122,6 +1122,11 @@ def mayusculas(texto):
     return len(letras) > 3 and all(c.isupper() for c in letras)
 
 
+RE_UNIDADES = re.compile(r'\s*(datos|millones|miles|millardos|porcentajes?|%|tasas?|n[úu]mero|euros?|en\s|unidades|'
+                         r'puntos|variaci[óo]n|data|millions|thousands|billions|percentages?|rates?|number|units|'
+                         r'eur\b|€|points|change|year-end)', re.I)
+
+
 def textos(z, hoja, estado):
     """«Cuadro N» y título con el marco de la plantilla (el título con el final «(a)» / «(cont.)» en Regular y,
     si ocupa más de una línea, la pastilla crece); unidades en Roboto Light 6 pt; FUENTES en Roboto Light 7 pt
@@ -1158,6 +1163,54 @@ def textos(z, hoja, estado):
             tipos[k] = "unidades"
         else:
             tipos[k] = "otro"
+
+    # «Cuadro N» y unidades escritos en celdas encima del cuadro (Memoria 2.1: D1 «Cuadro 2.1», D3 «Datos a 31 de
+    # diciembre»): pasan a cuadros de texto, como en el Informe Anual, y la celda se vacía
+    cambios_hoja = {}
+    if "cuadro" not in tipos.values() or "unidades" not in tipos.values():
+        ruta_hoja = hoja_de(z, hoja)
+        hoja_xml = z.read(ruta_hoja).decode("utf-8")
+        _, compartidos = leer_compartidos(z)
+        mdw = digito_maximo(z.read("xl/styles.xml").decode("utf-8"))
+        ancho_col = anchos_columnas(hoja_xml)
+        altos, defecto = filas
+        pasadas = []
+        todas_c = celdas_hoja(hoja_xml, compartidos)
+        # Solo por encima del cuadro: antes de la primera fila con dos o más textos en columnas visibles
+        por_fila = Counter(f for (c, f), x in todas_c.items() if x["texto"].strip() and ancho_col(c) > 0)
+        inicio_tabla = min([f for f, n in por_fila.items() if n >= 2] or [10 ** 6])
+        for (c, f), x in sorted(todas_c.items(), key=lambda kv: (kv[0][1], kv[0][0])):
+            t = x["texto"].strip()
+            if f >= inicio_tabla or por_fila[f] != 1:
+                continue
+            if not t or x["numero"] or ancho_col(c) == 0 or altos.get(f - 1, defecto) == 0 or "<f>" in (x["xml"] or "") or "<f " in (x["xml"] or ""):
+                continue
+            cx = sum(round(round(ancho_col(k) * mdw) * EMU_PT) for k in range(1, c))
+            cy = sum(altos.get(r, defecto) for r in range(f - 1))
+            if cx >= ancho_ret or cy >= alto_pastilla + 12 * EMU_MM:
+                continue
+            if RE_CUADRO_LINEA.match(t) and "cuadro" not in tipos.values():
+                tipo, marco = "cuadro", pl["marco_cuadro"]
+                ancho_f, alto_f = tamano(marco)
+            elif cy >= alto_pastilla * 0.75 and RE_UNIDADES.match(t) and "unidades" not in tipos.values():
+                tipo, marco = "unidades", pl["marco_fuentes"]
+                ancho_f, alto_f = ancho_ret // 2, round(5 * EMU_MM)
+            else:
+                continue
+            linea = next((l for l in lineas_de(marco) if texto_de(l).strip()), [("<a:rPr lang=\"es-ES\"/>", "")])
+            nueva = con_parrafos(marco, [[(linea[0][0], t)]])
+            r_, desp = celda_de(filas, cy)
+            nueva, sig = renumerar(anclar_celda(nueva, 0, cx, r_, desp, ancho_f, alto_f), sig,
+                                   "Cuadro" if tipo == "cuadro" else "Unidades")
+            partes.insert(len(partes) - 1, nueva)
+            tipos[partes.index(nueva)] = tipo
+            hoja_xml = re.sub(rf'<c r="{ref(c, f)}"([^>]*?)(?:/>|>.*?</c>)',
+                              lambda m: "<c r=\"" + ref(c, f) + "\"" + re.sub(r'\st="\w+"', "", m.group(1)) + "/>", hoja_xml, count=1, flags=re.S)
+            pasadas.append(f"{ref(c, f)} «{t[:40]}»")
+        if pasadas:
+            cambios_hoja[ruta_hoja] = hoja_xml.encode("utf-8")
+            detalle.append("Textos del autor en celdas encima del cuadro, pasados a cuadros de texto (como en el Informe "
+                           "Anual) y vaciadas sus celdas: " + "; ".join(pasadas))
 
     medir_medium = medidor("Roboto-Medium.ttf")
     medir_light = medidor("Roboto-Light.ttf")
@@ -1245,7 +1298,7 @@ def textos(z, hoja, estado):
                            "unidades más abajo (un interlineado del título por línea de más)".replace(".", ",", 1))
         else:
             detalle.append("Título de 1 línea")
-    return {ruta: "".join(partes).encode("utf-8")}, detalle
+    return {ruta: "".join(partes).encode("utf-8"), **cambios_hoja}, detalle
 
 # ---------------------------------------------------------------- paso 2: celdas
 
@@ -1589,6 +1642,13 @@ def digito_maximo(estilos_xml):
 FORMATOS_INTERNOS = {0: "General", 1: "0", 2: "0.00", 3: "#,##0", 4: "#,##0.00", 9: "0%", 10: "0.00%", 11: "0.00E+00",
                      37: "#,##0 ;(#,##0)", 38: "#,##0 ;[Red](#,##0)", 39: "#,##0.00;(#,##0.00)", 40: "#,##0.00;[Red](#,##0.00)"}
 COLUMNA_ESTRECHA = 3          # columnas de menos de este ancho (en caracteres): separaciones del autor
+
+
+def sin_relleno_codigo(codigo):
+    """El código de formato sin el relleno de los lados (lo que quita el paso 2): para comparar formatos."""
+    if "*" in codigo:
+        return codigo
+    return ";".join(re.sub(r'(?:_.|\\ )+$', "", re.sub(r'^(?:_.)+', "", sec)) for sec in codigo.split(";"))
 
 
 def formato_numero(estilos, s):
@@ -2308,8 +2368,8 @@ def celdas(z, hoja, idioma="es"):
     sangrar_ricos, ricos_sin_tocar, asteriscos = {}, [], []
     for f in range(f1, f2 + 1):
         for c in range(c1, c2 + 1):
-            if (c, f) in tapadas:
-                continue
+            if (c, f) in tapadas or ancho_col(c) == 0:
+                continue   # columnas ocultas (Memoria 2.1: textos de traducción en A-C): ni se miden ni se tocan
             x = d(c, f)
             t = x["texto"]
             if not t.strip():
@@ -2465,6 +2525,8 @@ def celdas(z, hoja, idioma="es"):
             x = d(c, f)
             if x["xml"] is None and (c, f) not in tapadas:
                 continue
+            if ancho_col(c) == 0 and c not in pegada:
+                continue   # columna oculta del autor: su formato se queda
             if f <= fin_cab:
                 h = "left" if c == primera else "center"
             elif c == primera:
@@ -2685,6 +2747,8 @@ def cabeceras(z, hoja, cuadro, pub):
         for c in range(primera, c2 + 1):
             a1, b1, a2, b2 = combinada.get((c, f), (c, f, c, f))
             ancla = (a1, b1)
+            if ancho_col(c) == 0 and texto(*ancla):
+                continue   # columna oculta del autor con texto («Descuadre», Memoria 2.1): no se toca
             estrecha = ancho_col(c) < COLUMNA_ESTRECHA and a1 == a2
             vacia = not texto(*ancla) and ancla not in [(k[0], k[1]) for k in combinada.values()]
             if estrecha or vacia or (c == primera and not texto(*ancla)):
@@ -3036,6 +3100,12 @@ def comparar_libros(zo, zf, idioma_="es", hoja_cuadro=None):
             continue
         fin = cf[hoja]
         perdidas = [r for r in celdas if r not in fin]
+        # Las que el paso 1 pasó a cuadros de texto («Cuadro 2.1», unidades: Memoria 2.1) no se han perdido
+        en_formas = {re.sub(r'\s+', " ", t).strip() for t in textos_libro(zf)}
+        movidas = [r for r in perdidas if hoja == hoja_cuadro and re.sub(r'\s+', " ", celdas[r][0]).strip() in en_formas]
+        if movidas:
+            info.append("pasados de celdas a cuadros de texto: " + lista_corta(f"{r} («{recortar(celdas[r][0].strip(), 25)}»)" for r in movidas))
+            perdidas = [r for r in perdidas if r not in movidas]
         if perdidas:
             faltan.append((f"faltan {len(perdidas)} datos" if len(perdidas) > 1 else "falta 1 dato")
                           + f" en la hoja «{hoja}»: "
@@ -3063,7 +3133,7 @@ def comparar_libros(zo, zf, idioma_="es", hoja_cuadro=None):
                 for r in refs) + m_celdas(hoja, refs))
         formatos = {}
         for r in celdas:
-            if r in fin and celdas[r][1] != fin[r][1]:
+            if r in fin and sin_relleno_codigo(celdas[r][1]) != sin_relleno_codigo(fin[r][1]):
                 formatos.setdefault((celdas[r][1], fin[r][1]), []).append(r)
         for (a, b), refs in formatos.items():
             que = "fechas" if re.search(r'[ymd]', re.sub(r'"[^"]*"|\[[^\]]*\]', "", b), re.I) else "formato de números"
@@ -3138,8 +3208,9 @@ def comparar_libros(zo, zf, idioma_="es", hoja_cuadro=None):
         if all(palabras[w.lower()] for w in t.split(" ")):
             continue
         faltan.append(f"falta el texto «{recortar(t)}»")
+    movidos = {re.sub(r'\s+', " ", v[0]).strip().lower() for c_ in co.values() for v in c_.values()}
     for t in resto_f:
-        if not any(t.lower() in u.lower() for u in to):
+        if not any(t.lower() in u.lower() for u in to) and t.lower() not in movidos:
             info.append(f"Texto nuevo: «{recortar(t)}»" + m_forma(t))
     lineas = [f"Aviso: {f}" for f in faltan]
     if cambios:
