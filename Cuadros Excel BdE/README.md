@@ -123,6 +123,10 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      ocupan más, se encogen. Todo lo de encima del cuadro se vuelve a anclar en su sitio (no se mueve).
    - **FUENTES, 5 mm bajo el final del cuadro**, anclada a su fila.
    - «<34» → «< 34»: espacio tras «<», «>», «≤», «≥» pegados a cifra o letra (TERMINADO 1.4).
+   - **Primera columna con mayúsculas de título** («Industria Manufacturera»): no se cambia (puede haber nombres de
+     entidades); aviso con la propuesta («Industria manufacturera») para revisarla (decisión del usuario, 2026-11-17).
+     La lista de nombres propios incluye provincias, comunidades e instituciones (Banco, Central, Europeo…); tras un
+     punto que cierra frase se respeta la mayúscula, tras una abreviatura («Act.») no.
    - «7%» → «7 %» en las celdas (espacio que no parte línea; TERMINADO 1.2), como en FUENTES.
    - **Correcciones ortotipográficas** (decisión del usuario, 2026-11-17), en celdas, título, unidades y FUENTES,
      con aviso en rojo para revisarlas: trimestres como en Gráficos (es «I TR 2024», en «Q1 2024»), «EE.UU.» →

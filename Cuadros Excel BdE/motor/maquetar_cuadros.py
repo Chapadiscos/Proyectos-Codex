@@ -2221,7 +2221,7 @@ def celdas(z, hoja, idioma="es"):
                       if len(fijas) > len(separaciones) else ""))
 
     # Textos nuevos (sangrías, viñetas, TOTAL) y líneas de cada celda
-    nuevos_textos, lineas, cambios_txt, porcentajes, correcciones, saltos, sangrados = {}, {}, [], [], [], [], []
+    nuevos_textos, lineas, cambios_txt, porcentajes, correcciones, saltos, sangrados, propuestas = {}, {}, [], [], [], [], [], []
     for f in range(f1, f2 + 1):
         for c in range(c1, c2 + 1):
             if (c, f) in tapadas:
@@ -2263,6 +2263,11 @@ def celdas(z, hoja, idioma="es"):
                 if sin_vineta != cuerpo:
                     cambios_txt.append(f"«{cuerpo[:30]}» sin viñeta")
                 cuerpo = sin_vineta
+                # Minúsculas de título en la primera columna: no se cambian (puede haber nombres de entidades), se
+                # proponen en un aviso (decisión del usuario, 2026-11-17, publicado del 1.5)
+                propuesta = minuscula_titulo(cuerpo, idioma)
+                if propuesta != cuerpo:
+                    propuestas.append((ref(c, f), cuerpo, propuesta))
                 if re.fullmatch(r'total', cuerpo, re.I) and cuerpo != "TOTAL":
                     cambios_txt.append(f"«{cuerpo}» → «TOTAL»")
                     cuerpo = "TOTAL"
@@ -2298,6 +2303,10 @@ def celdas(z, hoja, idioma="es"):
                        + ("…" if len(sangrados) > 10 else "")
                        + (f"; de ellas, sangradas por ser de un bloque (el autor no las sangró): {', '.join(de_bloque[:8])}" if de_bloque else "")
                        + marca(sangrados))
+    if propuestas:
+        detalle.append("Aviso (propuesta, sin aplicar): en la primera columna, ¿minúscula en las palabras con mayúscula de "
+                       "título? " + "; ".join(f"{r} «{a[:35]}» → «{b[:35]}»" for r, a, b in propuestas[:8])
+                       + (f" y {len(propuestas) - 8} más" if len(propuestas) > 8 else "") + marca([r for r, _, _ in propuestas]))
     if correcciones:
         detalle.append("Aviso (corrección ortotipográfica), revísalas: " + "; ".join(correcciones[:10])
                        + (f" y {len(correcciones) - 10} más" if len(correcciones) > 10 else "")
@@ -3054,7 +3063,7 @@ RE_ANIOS_CORTOS = re.compile(r'(?<![\d.,])((?:19|20)\d\d)\s?([–-])\s?(\d\d)(?!
 def minuscula_titulo(texto, idioma="es"):
     """«Respuesta de Política y Eficacia» → «Respuesta de política y eficacia»: las palabras con mayúscula de título
     pasan a minúscula, salvo la primera, las siglas, los nombres propios y los números romanos."""
-    propios = (NOMBRES_PROPIOS | {"ORIENTE", "OCCIDENTE", "PRÓXIMO"}) - (set() if idioma == "en" else NOMBRES_PROPIOS_SOLO_EN)
+    propios = (NOMBRES_PROPIOS | LUGARES_Y_INSTITUCIONES | {"ORIENTE", "OCCIDENTE", "PRÓXIMO"}) - (set() if idioma == "en" else NOMBRES_PROPIOS_SOLO_EN)
     primera = [True]
     anterior_propio = [False]
 
@@ -3068,8 +3077,12 @@ def minuscula_titulo(texto, idioma="es"):
             anterior_propio[0] = es_sigla or es_propio
             return w
         # Tras un nombre propio o una sigla, la palabra con mayúscula forma parte del nombre («Oriente Medio»,
-        # «ICO Crecimiento»): se deja
+        # «ICO Crecimiento»): se deja. Tras un punto que cierra frase («…bancaria. Proporción»), también; tras una
+        # abreviatura («Act. Profesionales»), no
         seguido = anterior_propio[0] and texto[m.start() - 1:m.start()] == " "
+        antes = texto[:m.start()].rstrip()
+        if antes.endswith(".") and len(re.findall(r"[^\W\d_]+$", antes[:-1])[0] if re.findall(r"[^\W\d_]+$", antes[:-1]) else "") > 4:
+            seguido = True
         titulo = len(w) > 1 and w[0].isupper() and w[1:].islower()
         anterior_propio[0] = es_sigla or es_propio or (titulo and seguido)
         if titulo and not es_propio and not es_sigla and not seguido and not ROMANOS_RE.match(w):
@@ -3078,6 +3091,18 @@ def minuscula_titulo(texto, idioma="es"):
     return re.sub(r"[^\W\d_]+", palabra, texto)
 
 
+# Más nombres propios para cuadros: provincias, comunidades e islas (2.7, 2.9) e instituciones (Memoria 3.1)
+LUGARES_Y_INSTITUCIONES = {
+    "ÁLAVA", "ALBACETE", "ALICANTE", "ALMERÍA", "ASTURIAS", "ÁVILA", "BADAJOZ", "BARCELONA", "BURGOS", "CÁCERES",
+    "CÁDIZ", "CANTABRIA", "CASTELLÓN", "CIUDAD", "REAL", "CÓRDOBA", "CUENCA", "GIRONA", "GRANADA", "GUADALAJARA",
+    "GIPUZKOA", "GUIPÚZCOA", "HUELVA", "HUESCA", "JAÉN", "CORUÑA", "RIOJA", "PALMAS", "LEÓN", "LLEIDA", "LUGO",
+    "MÁLAGA", "MURCIA", "NAVARRA", "OURENSE", "ORENSE", "PALENCIA", "PONTEVEDRA", "SALAMANCA", "SEGOVIA", "SEVILLA",
+    "SORIA", "TARRAGONA", "TENERIFE", "TERUEL", "TOLEDO", "VALENCIA", "VALLADOLID", "BIZKAIA", "VIZCAYA", "ZAMORA",
+    "ZARAGOZA", "CEUTA", "MELILLA", "BALEARS", "BALEARES", "ILLES", "CANARIAS", "ARAGÓN", "CASTILLA", "MANCHA",
+    "EXTREMADURA", "GALICIA", "PAÍS", "VASCO", "EUSKADI", "COMUNIDAD", "VALENCIANA", "ARABA", "CRUZ", "SANTA",
+    "BANCO", "CENTRAL", "EUROPEO", "EUROPEA", "FEDERAL", "RESERVA", "MONETARIO", "INTERNACIONAL", "MUNDIAL",
+    "COMISIÓN", "CONSEJO", "PARLAMENTO", "TESORO", "MINISTERIO", "TRIBUNAL", "AUTORIDAD", "BANCARIA", "ORMUZ",
+    "HORMUZ", "IRAQ", "UE", "OPEP"}
 ROMANOS_RE = re.compile(r'(?=[IVXLC]+$)M*(C[MD]|D?C{0,3})(X[CL]|L?X{0,3})(I[XV]|V?I{0,3})$')
 
 
