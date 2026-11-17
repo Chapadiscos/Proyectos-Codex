@@ -547,6 +547,16 @@ def fuentes_con_formulas(ancla, idioma):
     return ancla, notas
 
 
+def entidades_fuente(texto, idioma="es"):
+    """Las entidades que cita una fuente: lo que va antes de «con datos de», «a partir de»…, sin paréntesis,
+    partido por comas, punto y coma, «y» / «e» («and» en inglés)."""
+    t = re.sub(r'\([^)]*\)', "", texto)
+    t = re.split(r',?\s+(?:con datos|a partir de|según|elaboración propia|with data|based on)\b', t, flags=re.I)[0]
+    t = t.strip().rstrip(".")
+    separadores = r'\s*[,;]\s*|\s+(?:y|e)\s+' if idioma == "es" else r'\s*[,;]\s*|\s+and\s+'
+    return [p for p in re.split(separadores, t) if p.strip()]
+
+
 def maquetar_fuentes(ancla, idioma):
     """El marco de FUENTES con las reglas de «Gráficos Illus BdE»:
     - Rótulo FUENTE(S)/SOURCE(S)/NOTA(S) en mayúsculas y con dos puntos; en inglés, FUENTE → SOURCE.
@@ -614,9 +624,21 @@ def maquetar_fuentes(ancla, idioma):
         else:
             parrafos.append(["otro", linea])
 
-    # La fuente acaba en punto (plantilla y ejemplos: «FUENTE: Banco de España.»)
+    # FUENTE o FUENTES según las entidades citadas (decisión del usuario, 2026-11-17): «Instituto Nacional de
+    # Estadística y Banco de España» → FUENTES; «Banco de España, con datos del INE…» → FUENTE (un solo autor)
     for tipo, trozos in parrafos:
-        if tipo == "fuente" and trozos and not texto_de(trozos).rstrip().endswith((".", ":")):
+        if tipo == "fuente" and len(trozos) > 2:
+            nombre = texto_de(trozos[:1]).rstrip(":")
+            plural = len(entidades_fuente(texto_de(trozos[2:]), idioma)) >= 2
+            base = "SOURCE" if nombre.startswith("SOURCE") else "FUENTE"
+            nuevo = base + ("S" if plural else "")
+            if nuevo != nombre:
+                trozos[0] = (trozos[0][0], nuevo + ":")
+                cuenta["numero"] = f"«{nombre}» → «{nuevo}» ({'varias entidades' if plural else 'una sola entidad'})"
+                rotulos[:] = [r.replace(nombre + ":", nuevo + ":", 1) for r in rotulos]
+    # La fuente y las notas acaban en punto (plantilla y ejemplos: «FUENTE: Banco de España.»)
+    for tipo, trozos in parrafos:
+        if tipo in ("fuente", "letra", "nota") and trozos and not texto_de(trozos).rstrip().endswith((".", ":", "?", "!")):
             rpr, t = trozos[-1]
             trozos[-1] = (rpr, t.rstrip() + ".")
             cuenta["punto"] = cuenta.get("punto", 0) + 1
@@ -643,8 +665,10 @@ def maquetar_fuentes(ancla, idioma):
         notas.append(f"comillas españolas ({cuenta['comillas']})")
     if cuenta["porcentajes"]:
         notas.append(("espacio antes de «%»" if idioma == "es" else "«%» sin espacio") + f" ({cuenta['porcentajes']})")
+    if cuenta.get("numero"):
+        notas.append(cuenta["numero"])
     if cuenta.get("punto"):
-        notas.append("punto final en la fuente")
+        notas.append(f"punto final en la fuente o las notas ({cuenta['punto']})")
     if quitar:
         notas.append("sin la negrita general del autor")
     return ancla, notas
@@ -1847,6 +1871,18 @@ def celdas(z, hoja):
                 f2 -= 1
             break
     detalle.insert(0, f"Cuadro en {ref(c1, f1)}:{ref(c2, f2)} ({f2 - f1 + 1} filas, {c2 - c1 + 1} columnas)")
+    # Textos en celdas fuera del cuadro y dentro de la retícula (3.4: A28, que el TERMINADO borró)
+    x_col, pos = {}, 0
+    for c in range(1, max([k[0] for k in todas] or [1]) + 1):
+        x_col[c] = pos
+        pos += unidades_a_emu(ancho_col(c))
+    fuera = [(c, f) for (c, f), x in sorted(todas.items(), key=lambda kv: (kv[0][1], kv[0][0]))
+             if x["texto"].strip() and not (c1 <= c <= c2 and f1 <= f <= f2) and ancho_col(c) > 0
+             and x_col.get(c, ancho_ret) < ancho_ret and not (f > f2 and ROTULO.match(x["texto"]))]
+    if fuera:
+        detalle.append("Aviso: hay textos en celdas fuera del cuadro, dentro de la retícula (¿restos del autor?): "
+                       + ", ".join(f"{ref(c, f)} «{todas[(c, f)]['texto'].strip()[:30]}»" for c, f in fuera[:5])
+                       + ("…" if len(fuera) > 5 else ""))
 
     # Celdas combinadas: la de arriba a la izquierda manda; las demás se saltan
     tapadas, ancho_comb, filas_comb = set(), {}, {}
@@ -1967,6 +2003,7 @@ def celdas(z, hoja):
             tramo_cols = [k for k in otras if k == c or ((k, f) in tapadas and k > c and all((j, f) in tapadas for j in range(c + 1, k + 1)))]
             necesita[c] = max(necesita[c], w / max(1, len(tramo_cols)) + 2 * RELLENO_CELDA_PT)
     natural = minimo = 0.0
+    textos_primera = []
     for f in range(f1, f2 + 1):
         t = d(primera, f)["texto"]
         if not t.strip() or (primera, f) in tapadas:
@@ -1975,6 +2012,7 @@ def celdas(z, hoja):
         cuerpo = VINETA.sub("", t.strip(" \u00a0"))
         mc = medir_de(primera, f)
         natural = max(natural, max(mc(espacios + l.strip(), CUERPO_CELDA) for l in cuerpo.split("\n")))
+        textos_primera.append((f, espacios, "\n".join(l.strip() for l in cuerpo.split("\n")), mc))
         minimo = max(minimo, mc(espacios, CUERPO_CELDA) + palabra(cuerpo, mc))
     natural += 2 * RELLENO_CELDA_PT + 1.5   # holgura: el redondeo a píxeles no debe partir el texto más largo
     minimo += 2 * RELLENO_CELDA_PT
@@ -2022,6 +2060,43 @@ def celdas(z, hoja):
                            "(mismas líneas, más parejas) y la primera columna gana el resto".replace(".", ","))
             primera_pt += (resto - nuevo_resto) * len(otras)
             resto = nuevo_resto
+
+    # Cabecera de datos muy alta (más de 3 líneas, 3.4): la primera columna cede ancho, hasta que sus textos ocupen 2
+    # líneas como mucho; se queda el reparto con el cuadro más bajo (decisión del usuario, 2026-11-17)
+    def lineas_primera(t, espacios, m, w):
+        return len(partir(t, w - 2 * RELLENO_CELDA_PT - m(espacios, CUERPO_CELDA), m))
+    if otras and resto > 0 and textos_primera:
+        maximo_cab = max([lineas_texto(t, k * resto, m) for c, f, t, k, m in celdas_otras if f <= fin_cab] or [1])
+        if maximo_cab > 3:
+            def alto_cuadro(wp, wr):
+                filas_l = {}
+                for f, espacios, t, m in textos_primera:
+                    filas_l[f] = max(filas_l.get(f, 1), lineas_primera(t, espacios, m, wp))
+                for c, f, t, k, m in celdas_otras:
+                    filas_l[f] = max(filas_l.get(f, 1), lineas_texto(t, k * wr, m))
+                return sum(alto_fila(n) for n in filas_l.values())
+            # Lo más que puede ceder: que sus textos ocupen 2 líneas como mucho o, si ya ocupan 2 (porque la primera ya
+            # cedió para que quepan las cifras, 3.4), una más (el TERMINADO del 3.4 llega a 3)
+            tope = max(2, max(lineas_primera(t, e, m, primera_pt) for _, e, t, m in textos_primera) + 1)
+            minimo_2 = minimo
+            while minimo_2 < primera_pt and any(lineas_primera(t, e, m, minimo_2) > tope for _, e, t, m in textos_primera):
+                minimo_2 += 1
+            mejor = (alto_cuadro(primera_pt, resto), -primera_pt, primera_pt)
+            wp = primera_pt - MULTIPLO_PT
+            while wp >= minimo_2:
+                wr = (espacio_pt - wp) / len(otras)
+                mejor = min(mejor, (alto_cuadro(wp, wr), -wp, wp))
+                wp -= MULTIPLO_PT
+            if mejor[2] < primera_pt:
+                detalle.append(f"Cabecera de datos muy alta ({maximo_cab} líneas): la primera columna cede de {primera_pt / MM:.1f} "
+                               f"a {mejor[2] / MM:.1f} mm (sus textos, en {tope} líneas como mucho) y el cuadro queda más bajo".replace(".", ","))
+                primera_pt = mejor[2]
+                resto = (espacio_pt - primera_pt) / len(otras)
+
+    # 1) Muchas columnas de datos: aviso para valorar bajar la letra a 7 pt (decisión del usuario, 2026-11-17)
+    if otras and (len(otras) >= 10 or resto < 30):
+        detalle.append(f"Aviso: el cuadro tiene {len(otras)} columnas de datos de {resto:.0f} pt: valora bajar la letra a 7 pt "
+                       "(la guía permite de 6 a 7,5 pt según el tamaño del cuadro)")
 
     # Columnas de textos largos: si con anchos iguales sus filas salen mucho más altas, ganan ancho a costa de las que
     # tienen holgura (sin que estas pasen a tener más líneas que la más alta), hasta que ya no mejora
@@ -2476,6 +2551,8 @@ def lineas_y_fondos(z, hoja, cuadro):
     fondo_total = BLANCO_MATIZ_5 if usa_matiz_2 else BLANCO_MATIZ_2
     letra_total = BLANCO if fondo_total == BLANCO_MATIZ_5 else None
 
+    separaciones = {c for c in datos_cols if ancho_col(c) < COLUMNA_ESTRECHA
+                    and not any(texto(c, f).strip() for f in range(f1, f2 + 1))}
     nuevos = {}
     ultima = filas[-1]
     for i, f in enumerate(filas):
@@ -2483,6 +2560,11 @@ def lineas_y_fondos(z, hoja, cuadro):
         es_total = f in totales
         for c in range(primera, c2 + 1):
             if ancho_col(c) == 0:
+                continue
+            if c in separaciones and not es_total:
+                # Columnas de separación: sin líneas ni fondo (las líneas se cortan entre grupos, TERMINADO 3.4);
+                # en la fila TOTAL sí, sin hueco (guía)
+                nuevos[(c, f)] = estilos.variante(estilo(c, f), relleno="", borde={})
                 continue
             lados, relleno, letra = {}, None, None
             # Línea de debajo: entre filas, gris claro; encima de la fila TOTAL, oscura; la última fila, sin línea
@@ -2521,6 +2603,9 @@ def lineas_y_fondos(z, hoja, cuadro):
                        "; línea oscura encima (blanco matiz 5); sin hueco en las columnas de separación")
     else:
         detalle.append("Sin fila TOTAL")
+    if separaciones:
+        detalle.append("Columnas de separación sin líneas en las filas de datos (las líneas se cortan entre grupos): "
+                       + ", ".join(ref(c, 1)[:-1] for c in sorted(separaciones)))
     if col_total:
         detalle.append(f"Columna TOTAL ({ref(col_total, 1)[:-1]}): fondo blanco matiz 2 con línea blanca a la izquierda y entre filas")
     detalle.append("Aviso (recordatorio): la línea oscura (blanco matiz 5) solo va encima de la fila TOTAL; si hay que "

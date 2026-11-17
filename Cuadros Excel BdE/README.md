@@ -46,6 +46,10 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      «(a) (b)», «(a, b)») y «(cont.)» / «(cont'd)» van en Roboto Regular, como en Gráficos. Con un título de
      2-3 líneas, el marco del título y la pastilla crecen un interlineado (3,5 mm) por línea y las unidades bajan.
    - Unidades (texto bajo la pastilla): Roboto Light 6 pt, donde las dejó el autor.
+   - **FUENTE / FUENTES** según las entidades citadas (decisión del usuario, 2026-11-17): «INE y Banco de España»,
+     «Encuesta…, Encuesta… y Banco de España» → FUENTES; «Banco de España, con datos del INE…» o «elaboración propia
+     a partir de…» → FUENTE (lo que va tras «con datos de», «a partir de»… no cuenta; los paréntesis tampoco).
+     La fuente y las notas acaban siempre en punto.
    - FUENTES: reglas de Gráficos (Roboto Light 7 pt, rótulo en Medium, notas con letra —también «a.», «a)»,
      «(a)» y «a» + espacio + mayúscula— con sangría de 8,5 pt, línea en blanco, comillas, «%»), punto final en
      la fuente, en el ancho de la plantilla desde la columna A y anclada a su fila (sigue al cuadro).
@@ -72,6 +76,11 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      datos se redondean hacia arriba y la primera se queda con el resto: el cuadro mide 468 pt (retícula 468,9).
      El ancho guardado de cada columna (`ancho_comun`) da esa medida exacta en el Mac y, si la fuente «Normal» lo
      permite, también en Windows.
+   - **Cabecera de datos muy alta** (> 3 líneas; decisión del usuario, 2026-11-17): la primera columna puede ceder
+     ancho (sus textos, hasta 2 líneas, o una más si ya ocupaban 2) y se queda el reparto con el cuadro más bajo;
+     si ceder no lo baja, no cede (3.4: con 7,5 pt no gana nada; el TERMINADO usa 7 pt).
+   - **Aviso de muchas columnas** (10 o más de datos, o de menos de 30 pt): valorar bajar la letra a 7 pt.
+   - **Aviso de textos en celdas fuera del cuadro** dentro de la retícula (3.4: A28, restos del autor).
    - **Pendiente (Windows)**: con las fuentes «Normal» de los autores (Calibri 11, Arial 12) el Excel de Windows
      mide las columnas distinto que el de Mac (−12 % / −3,6 %). Propuesta sin hacer: «Normal» = Roboto Light 11 (6 pt
      por carácter en los dos; los múltiplos de 3 pt ya están hechos). El usuario lo comprobará en Windows antes de decidir.
@@ -130,6 +139,8 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
    - Fila TOTAL: blanco matiz 2, o matiz 5 con el texto en blanco si el matiz 2 ya lo usan bloques o subtotales
      (Ejemplos 1.4 y A2.2); sin hueco en las columnas de separación. Columna TOTAL (cabecera «TOTAL»): blanco
      matiz 2 con línea blanca a la izquierda y entre filas (Ejemplos 4.2 y A4.6).
+   - Columnas de separación sin líneas ni fondo en las filas de datos (las líneas se cortan entre grupos, TERMINADO
+     3.4); en la fila TOTAL, sin hueco.
    - La línea que cierra cada bloque de sangrados (gris claro, como el resto) queda por revisar con más ejemplos.
    - Paso 2: si el autor escribió la FUENTE y las notas en celdas bajo el cuadro (DO, Memoria 3.2), el cuadro
      acaba antes y se avisa para pasarlas al cuadro de texto de FUENTES.

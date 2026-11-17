@@ -108,7 +108,7 @@ let pasosMaquetacion = [
                     detalle: "Fondo con el color de la publicación por nivel, desde la fila de abajo: cabecera 1 matiz 1, 2 matiz 2, 3 matiz 3 y 4 sólido (estas dos con el texto en blanco); líneas blancas finas entre celdas y entre niveles; la esquina de la primera columna solo si lleva texto; las columnas estrechas de separación, sin relleno",
                     icono: "rectangle.split.3x1", orden: "paso3"),
     PasoMaquetacion(id: 4, titulo: "Líneas y fondos",
-                    detalle: "Líneas horizontales finas en blanco matiz 2 entre filas y oscura (matiz 5) encima de la fila TOTAL; primera columna en blanco matiz 1 con líneas blancas entre todas las filas; títulos de bloque y subtotales en blanco matiz 2; fila TOTAL en matiz 2, o en matiz 5 con el texto en blanco si el matiz 2 ya está usado; columna TOTAL en matiz 2 con línea blanca a la izquierda. Recuerda: otras líneas oscuras, a mano",
+                    detalle: "Líneas horizontales finas en blanco matiz 2 entre filas y oscura (matiz 5) encima de la fila TOTAL; primera columna en blanco matiz 1 con líneas blancas entre todas las filas; títulos de bloque y subtotales en blanco matiz 2; fila TOTAL en matiz 2, o en matiz 5 con el texto en blanco si el matiz 2 ya está usado; columna TOTAL en matiz 2 con línea blanca a la izquierda; columnas de separación sin líneas (salvo en la fila TOTAL). Recuerda: otras líneas oscuras, a mano",
                     icono: "line.3.horizontal", orden: "paso4"),
 ]
 
