@@ -34,6 +34,11 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
 - **Reiniciar**: cierra la copia en Excel sin guardar, borra todo lo generado (las dos copias de trabajo, la carpeta
   «(pasos)» entera y los bloqueos «~$» de Excel) y empieza de nuevo desde el original, como la primera vez.
 
+- **Avisos que se ven en Excel** (petición del usuario, 2026-11-17): los avisos del motor llevan al final una marca
+  invisible «⟦A5 A6⟧» o «⟦forma:FUENTES⟧»; la app la quita al mostrarlos y, si la llevan, se pueden pulsar (icono de
+  diana): Excel selecciona esas celdas (separadas por «;» en el Excel en castellano; si falla, «,») o esa forma en
+  la hoja del cuadro, sin tocar el archivo.
+
 ## Pasos (se construyen y aprueban uno a uno)
 
 0. **App y copia exacta** (hecho, 2026-11-13).

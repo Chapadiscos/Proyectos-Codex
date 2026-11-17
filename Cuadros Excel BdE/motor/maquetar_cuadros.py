@@ -1172,7 +1172,7 @@ def textos(z, hoja, estado):
             a, _ = con_marco(a, pl["marco_cuadro"], filas)
             detalle.append(f"«{corto}»: Roboto Regular 7 pt, marco y posición de la plantilla")
             if mayusculas(corto):
-                detalle.append(f"Aviso: el rótulo «{corto}» va en mayúsculas")
+                detalle.append(f"Aviso: el rótulo «{corto}» va en mayúsculas" + marca(forma=nombre_forma(a)))
         elif tipo == "titulo":
             a, finales = con_marco(a, pl["marco_titulo"], filas, final_regular=FINAL_TITULO)
             titulo_k = k
@@ -1180,7 +1180,7 @@ def textos(z, hoja, estado):
             for f in finales:
                 detalle.append(f"  «{f}» al final del párrafo, en Roboto Regular")
             if mayusculas(corto):
-                detalle.append("Aviso: el título va en mayúsculas: pásalo a minúsculas a mano")
+                detalle.append("Aviso: el título va en mayúsculas: pásalo a minúsculas a mano" + marca(forma=nombre_forma(a)))
         elif tipo == "fuentes":
             a, notas = maquetar_fuentes(a, estado.get("idioma", "es"))
             # En el ancho de la plantilla, desde la columna A; el alto, el que pida el texto
@@ -1196,7 +1196,7 @@ def textos(z, hoja, estado):
             detalle.append(f"Fuentes «{corto[:50]}»: Roboto Light 7 pt" + "".join(f"; {n}" for n in notas if not n.startswith("Aviso")))
             detalle.append(f"  en el ancho de la plantilla ({ancho / EMU_MM:.1f} mm) desde la columna A, donde la dejó el autor"
                            .replace(".", ","))
-            detalle += [n for n in notas if n.startswith("Aviso")]
+            detalle += [n + marca(forma=nombre_forma(a)) for n in notas if n.startswith("Aviso")]
         elif tipo == "unidades":
             a = fijar_letra(a, 600, ROBOTO_LIGHT)
             detalle.append(f"Unidades «{corto}»: Roboto Light 6 pt, donde las dejó el autor")
@@ -1206,7 +1206,7 @@ def textos(z, hoja, estado):
         if tipo != "cuadro":
             a, hechos_c = corregir_forma(a, estado.get("idioma", "es"))
             if hechos_c:
-                detalle.append("Aviso (corrección ortotipográfica), revísalas: " + "; ".join(hechos_c[:6]))
+                detalle.append("Aviso (corrección ortotipográfica), revísalas: " + "; ".join(hechos_c[:6]) + marca(forma=nombre_forma(a)))
         a, _ = textos_en_negro(a)
         partes[k] = a
     if "fuentes" not in tipos.values():
@@ -1221,7 +1221,7 @@ def textos(z, hoja, estado):
         marco, _ = renumerar(anclar_celda(marco, 0, 0, fila, desp, cx, cy), sig_f, "FUENTES")
         partes.insert(len(partes) - 1, marco)
         detalle.append("Aviso: el autor no puso FUENTE: añadido el marco de la plantilla («FUENTE: Xxxxxxxxxx.»); "
-                       "escribe la fuente (y las notas, si las hay)")
+                       "escribe la fuente (y las notas, si las hay)" + marca(forma="FUENTES"))
     if "cuadro" not in tipos.values():
         detalle.append("Aviso: no encuentro el rótulo «Cuadro N»")
     if titulo_k is None:
@@ -1909,8 +1909,10 @@ def celdas(z, hoja, idioma="es"):
         fila_txt = [todas.get((c, f), {}).get("texto", "").strip() for c in range(c1, c2 + 1)]
         primero = next((t for t in fila_txt if t), "")
         if primero and ROTULO.match(primero) and len([t for t in fila_txt if t]) == 1:
+            en_celdas = [ref(cc, ff) for (cc, ff), x in sorted(todas.items(), key=lambda kv: (kv[0][1], kv[0][0]))
+                         if ff >= f and x["texto"].strip() and ROTULO.match(x["texto"]) is not None or (ff > f and x["texto"].strip() and c1 <= cc <= c2 and ff <= f + 12)]
             detalle.append(f"Aviso: la fuente y las notas van en celdas bajo el cuadro (desde la fila {f}): no son parte del "
-                           "cuadro y no se maquetan; pásalas al cuadro de texto de FUENTES")
+                           "cuadro y no se maquetan; pásalas al cuadro de texto de FUENTES" + marca(en_celdas[:20]))
             f2 = f - 1
             while f2 > f1 and not any(todas.get((c, f2), {}).get("texto", "").strip() for c in range(c1, c2 + 1)):
                 f2 -= 1
@@ -1927,7 +1929,7 @@ def celdas(z, hoja, idioma="es"):
     if fuera:
         detalle.append("Aviso: hay textos en celdas fuera del cuadro, dentro de la retícula (¿restos del autor?): "
                        + ", ".join(f"{ref(c, f)} «{todas[(c, f)]['texto'].strip()[:30]}»" for c, f in fuera[:5])
-                       + ("…" if len(fuera) > 5 else ""))
+                       + ("…" if len(fuera) > 5 else "") + marca([ref(c, f) for c, f in fuera]))
 
     # Celdas combinadas: la de arriba a la izquierda manda; las demás se saltan
     tapadas, ancho_comb, filas_comb = set(), {}, {}
@@ -1975,7 +1977,7 @@ def celdas(z, hoja, idioma="es"):
         todas[k] = {**todas[k], "texto": "", "borrar": True}
     if repetidos:
         detalle.append("Aviso: textos de la cabecera repetidos en filas de datos, borrados: "
-                       + ", ".join(ref(c, f) for c, f in repetidos[:8]))
+                       + ", ".join(ref(c, f) for c, f in repetidos[:8]) + marca([ref(c, f) for c, f in repetidos]))
 
     # Sangrías de la primera columna: niveles (sangría de Excel y espacios del autor) → 4, 8, 12 espacios
     def sangria_autor(f):
@@ -2011,10 +2013,7 @@ def celdas(z, hoja, idioma="es"):
     def nivel_fila(f):
         n = nivel_de.get(sangria_autor(f), 0)
         return max(n, 1) if sangrar_hijos and f in hijos else n
-    sin_sangria = [d(primera, f)["texto"].strip() for f in sorted(hijos) if sangrar_hijos and nivel_de.get(sangria_autor(f), 0) == 0]
-    if sin_sangria:
-        detalle.append("Sangrados por ser de un bloque (el autor no los sangró): "
-                       + ", ".join(f"«{t[:25]}»" for t in sin_sangria[:6]) + ("…" if len(sin_sangria) > 6 else ""))
+    sin_sangria = [f for f in sorted(hijos) if sangrar_hijos and nivel_de.get(sangria_autor(f), 0) == 0]
 
     # Anchos de columna: el cuadro llega al borde derecho de la retícula. Manda la primera columna (el ancho de su
     # texto más largo en una línea); las demás, si se puede, iguales. Si no caben, la primera cede (su texto pasa a
@@ -2213,7 +2212,7 @@ def celdas(z, hoja, idioma="es"):
                       if len(fijas) > len(separaciones) else ""))
 
     # Textos nuevos (sangrías, viñetas, TOTAL) y líneas de cada celda
-    nuevos_textos, lineas, cambios_txt, porcentajes, correcciones, saltos = {}, {}, [], [], [], []
+    nuevos_textos, lineas, cambios_txt, porcentajes, correcciones, saltos, sangrados = {}, {}, [], [], [], [], []
     for f in range(f1, f2 + 1):
         for c in range(c1, c2 + 1):
             if (c, f) in tapadas:
@@ -2261,6 +2260,8 @@ def celdas(z, hoja, idioma="es"):
                 espacios = " " * (SANGRIA * nivel_fila(f))
                 mc = medir_de(c, f)
                 partes = partir("\n".join(l.strip() for l in cuerpo.split("\n")), ancho - mc(espacios, CUERPO_CELDA), mc)
+                if espacios and not x["texto"].startswith(espacios + cuerpo.split("\n")[0][:1]):
+                    sangrados.append(ref(c, f))
                 if espacios and len(partes) > 1:
                     # Con varias líneas, la sangría se repite en cada una (saltos de línea manuales)
                     nuevo = "\n".join(espacios + l for l in partes)
@@ -2281,9 +2282,17 @@ def celdas(z, hoja, idioma="es"):
                 nuevos_textos[(c, f)] = nuevo
     if saltos:
         detalle.append("Cabecera en 2 líneas, con el salto por una frase (como los publicados): " + "; ".join(saltos[:6]))
+    if sangrados:
+        de_bloque = [ref(primera, f) for f in sin_sangria]
+        detalle.append(f"Aviso (corrección ortotipográfica): sangría con espacios ({', '.join(f'{SANGRIA * n} espacios' for n in sorted(set(nivel_de.values())) or [1])} "
+                       f"según el nivel) en {len(sangrados)} celda{'s' if len(sangrados) > 1 else ''}: " + ", ".join(sangrados[:10])
+                       + ("…" if len(sangrados) > 10 else "")
+                       + (f"; de ellas, sangradas por ser de un bloque (el autor no las sangró): {', '.join(de_bloque[:8])}" if de_bloque else "")
+                       + marca(sangrados))
     if correcciones:
         detalle.append("Aviso (corrección ortotipográfica), revísalas: " + "; ".join(correcciones[:10])
-                       + (f" y {len(correcciones) - 10} más" if len(correcciones) > 10 else ""))
+                       + (f" y {len(correcciones) - 10} más" if len(correcciones) > 10 else "")
+                       + marca([l.split(" ", 1)[0] for l in correcciones]))
     if porcentajes:
         cambios_txt.append(f"espacio que no parte línea antes de «%» ({len(porcentajes)} celda{'s' if len(porcentajes) > 1 else ''})")
     if cambios_txt:
@@ -3103,6 +3112,15 @@ def corregir_forma(xml, idioma="es"):
         return m.group(1) + html.escape(nuevo, quote=False) + m.group(3)
     return re.sub(r'(<a:t(?:\s[^>]*)?>)([^<]*)(</a:t>)', t, xml), hechos
 
+
+
+def marca(celdas=(), forma=None):
+    """Marca invisible al final de un aviso con lo que hay que enseñar en Excel: la app la quita al mostrarlo y, al
+    pulsar el aviso, selecciona esas celdas (o esa forma) en Excel (petición del usuario, 2026-11-17)."""
+    if forma:
+        return f" ⟦forma:{forma}⟧"
+    celdas = [c for c in celdas if c]
+    return f" ⟦{' '.join(celdas)}⟧" if celdas else ""
 
 
 def pendiente(nombre):

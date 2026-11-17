@@ -295,6 +295,13 @@ let formatoHora: DateFormatter = {
     return f
 }()
 
+/// Un aviso del motor puede acabar en una marca «⟦A5 A6⟧» o «⟦forma:FUENTES⟧» con lo que hay que enseñar en Excel:
+/// se quita para mostrarlo y, al pulsar el aviso, Excel selecciona esas celdas o esa forma.
+func partirMarca(_ linea: String) -> (texto: String, marca: String?) {
+    guard linea.hasSuffix("⟧"), let r = linea.range(of: " ⟦", options: .backwards) else { return (linea, nil) }
+    return (String(linea[..<r.lowerBound]), String(linea[r.upperBound..<linea.index(before: linea.endIndex)]))
+}
+
 func duracion(_ s: Int) -> String { s < 60 ? "\(s) s" : "\(s / 60) min \(s % 60) s" }
 
 let colorApp = Color(red: 0.13, green: 0.55, blue: 0.36)
@@ -486,7 +493,7 @@ final class Taller: ObservableObject {
             self.tarea(paso.id > 0 ? "\(paso.id). \(paso.titulo)" : paso.titulo) { id in
                 guard let r = await self.llamarMotor([paso.orden, trabajo.path, self.publicacion], registro: id) else { return false }
                 self.aplicar(r)
-                self.pasoActual?.detalle.forEach { self.anotar(id, "• " + $0) }
+                self.pasoActual?.detalle.forEach { self.anotar(id, "• " + partirMarca($0).texto) }
                 return await self.mostrar(id)
             }
         }
@@ -942,6 +949,54 @@ final class Taller: ObservableObject {
         tarea("Ver en Excel") { id in await self.mostrarEnExcel(id, recargar: false) }
     }
 
+    /// Selecciona en Excel (en el libro abierto, hoja del cuadro) las celdas o la forma de un aviso, sin tocar el archivo
+    func verEnExcel(_ marca: String) {
+        guard let ruta = trabajo else { return }
+        let guion = """
+        on run argv
+            set ruta to item 1 of argv
+            set rutaB to item 2 of argv
+            set hoja to item 3 of argv
+            set que to item 4 of argv
+            tell application "Microsoft Excel"
+                set wb to missing value
+                repeat with i from 1 to (count workbooks)
+                    if full name of workbook i is ruta or full name of workbook i is rutaB then set wb to workbook i
+                end repeat
+                if wb is missing value then return "sin libro"
+                activate object wb
+                set h to worksheet hoja of wb
+                activate object h
+                if que starts with "forma:" then
+                    select (shape (text 7 thru -1 of que) of h)
+                else
+                    -- Varias celdas: el Excel en castellano las separa con «;»; en otros idiomas, con «,»
+                    try
+                        select (range que of h)
+                    on error
+                        set AppleScript's text item delimiters to ";"
+                        set trozos to text items of que
+                        set AppleScript's text item delimiters to ","
+                        set otra to trozos as text
+                        set AppleScript's text item delimiters to ""
+                        select (range otra of h)
+                    end try
+                end if
+                return "ok"
+            end tell
+        end run
+        """
+        let celdas = marca.hasPrefix("forma:") ? marca : marca.replacingOccurrences(of: " ", with: ";")
+        Task {
+            let r = await osascript(guion, [ruta.path, Taller.copiaB(ruta).path, hoja, celdas], espera: 15)
+            if !r.ok || r.texto == "sin libro" {
+                aviso = Aviso(titulo: "No se puede enseñar en Excel",
+                              texto: r.texto == "sin libro" ? "La copia de trabajo no está abierta en Excel: pulsa «Colocar Excel»."
+                                                           : "Excel no ha podido seleccionarlo (\(r.texto)).")
+            }
+        }
+    }
+
     func colocarExcel() {
         tarea("Colocar Excel") { id in await self.mostrarEnExcel(id, recargar: false) }
     }
@@ -1323,16 +1378,31 @@ struct TarjetaVersiones: View {
             if let p = taller.pasoActual, !p.detalle.isEmpty {
                 VStack(alignment: .leading, spacing: 5) {
                     Rotulo("Cambios de la versión \(p.n)")
-                    ForEach(p.detalle, id: \.self) { linea in
-                        // Los avisos, en rojo y negrita: piden comprobar algo a mano
+                    ForEach(p.detalle, id: \.self) { entera in
+                        // Los avisos, en rojo y negrita: piden comprobar algo a mano. Si llevan marca, se pulsan y
+                        // Excel selecciona las celdas o la forma de las que hablan
+                        let (linea, marca) = partirMarca(entera)
                         let aviso = linea.hasPrefix("Aviso")
-                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        let fila = HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Image(systemName: aviso ? "exclamationmark.triangle.fill" : "circle.fill")
                                 .font(.system(size: aviso ? 10 : 4))
                                 .foregroundStyle(aviso ? Color.red : colorVersiones)
                             Text(linea).font(.system(size: 11.5, weight: aviso ? .bold : .regular))
                                 .foregroundStyle(aviso ? Color.red : Color.primary)
                                 .fixedSize(horizontal: false, vertical: true)
+                                .multilineTextAlignment(.leading)
+                            if marca != nil {
+                                Image(systemName: "scope").font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(aviso ? Color.red : colorVersiones)
+                            }
+                        }
+                        if let marca {
+                            Button { taller.verEnExcel(marca) } label: { fila.contentShape(Rectangle()) }
+                                .buttonStyle(.plain)
+                                .help(marca.hasPrefix("forma:") ? "Seleccionar en Excel la forma «\(marca.dropFirst(6))»"
+                                      : "Seleccionar en Excel: \(marca.replacingOccurrences(of: " ", with: ", "))")
+                        } else {
+                            fila
                         }
                     }
                 }
