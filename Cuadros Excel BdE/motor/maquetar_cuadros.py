@@ -1835,6 +1835,34 @@ def colocar_cuadro(dibujo, caja, filas_viejas, altos_nuevos, f1, f2):
     return "".join(partes), notas, (alto_hueco, altos_encima)
 
 
+COMPENSAR_CABECERA = False
+NEXOS_FUERTES = {"en", "entre", "y", "e", "o", "u", "para", "por", "con", "sin", "sobre", "según", "hasta", "desde",
+                 "frente", "and", "or", "in", "for", "with", "by", "on", "from", "to", "vs", "vs."}
+NEXOS_DEBILES = {"de", "del", "a", "al", "of", "the"}
+
+
+def salto_cabecera(texto, ancho, medir):
+    """El texto de una cabecera de 2 líneas con el salto puesto como en los publicados: antes de un nexo («en las
+    importaciones», «entre 2017», «y eficacia») o tras dos puntos («Impacto: / inflación»); si no, antes de «de»
+    («Disrupción / de oferta»); entre los posibles, el que deja las líneas más parejas. None si no cabe en 2."""
+    palabras = texto.split(" ")
+    candidatos = []
+    for i in range(1, len(palabras)):
+        l1, l2 = " ".join(palabras[:i]), " ".join(palabras[i:])
+        w1, w2 = medir(l1, CUERPO_CELDA), medir(l2, CUERPO_CELDA)
+        if w1 > ancho or w2 > ancho:
+            continue
+        sig = palabras[i].lower().strip("(«\"")
+        if sig in NEXOS_FUERTES or palabras[i - 1].endswith(":"):
+            prioridad = 0
+        elif sig in NEXOS_DEBILES:
+            prioridad = 1
+        else:
+            prioridad = 2
+        candidatos.append((prioridad, abs(w1 - w2), l1 + "\n" + l2))
+    return min(candidatos)[2] if candidatos else None
+
+
 def paso2(trabajo, pid=None):
     """Celdas del cuadro: Roboto Light 7,5 pt sin negrita; alto de fila por líneas (14, 28, 40, 50…);
     cabecera: la primera a la izquierda y las demás al centro; primera columna a la izquierda, con las
@@ -2045,7 +2073,7 @@ def celdas(z, hoja, idioma="es"):
     if primera_pt < natural - 0.1:
         detalle.append("La primera columna cede ancho: algún texto suyo pasa a varias líneas")
 
-    # Cabeceras compensadas (petición del usuario, 1.4): si los textos de la cabecera de las demás columnas ocupan
+    # Cabeceras compensadas (petición del usuario, 1.4; desactivado el 2026-11-17, ver COMPENSAR_CABECERA): si los textos de la cabecera de las demás columnas ocupan
     # varias líneas, esas columnas se estrechan hasta el ancho mínimo en que siguen ocupando las mismas líneas (así
     # las líneas quedan parejas) y lo que sobra pasa a la primera columna. Solo si ninguna celda gana líneas.
     def lineas_texto(t, w, m=medir):
@@ -2056,7 +2084,9 @@ def celdas(z, hoja, idioma="es"):
     celdas_otras = [(c, f, d(c, f)["texto"], tramos.get((c, f), 1), medir_de(c, f)) for f in range(f1, f2 + 1) for c in otras
                     if (c, f) not in tapadas and d(c, f)["texto"].strip()
                     and not (f > fin_cab and es_cifra(d(c, f)))]
-    if otras and resto > 0 and any(f <= fin_cab and lineas_texto(t, k * resto, m) > 1 for c, f, t, k, m in celdas_otras):
+    # Desactivada (2026-11-17): los publicados (1.3, 1.4) dejan las columnas de datos anchas y parten la cabecera a
+    # mano por una frase; ahora se hace eso (salto de línea en la cabecera, más abajo)
+    if COMPENSAR_CABECERA and otras and resto > 0 and any(f <= fin_cab and lineas_texto(t, k * resto, m) > 1 for c, f, t, k, m in celdas_otras):
         antes = {(c, f): lineas_texto(t, k * resto, m) for c, f, t, k, m in celdas_otras}
 
         def sirve(w):
@@ -2157,6 +2187,13 @@ def celdas(z, hoja, idioma="es"):
     otros_pt = {c: max(MULTIPLO_PT, MULTIPLO_PT * math.ceil(anchos_pt[c] / MULTIPLO_PT - 1e-6)) for c in otras}
     disponible = MULTIPLO_PT * math.floor(espacio_pt / MULTIPLO_PT + 1e-6)
     primera_final = disponible - sum(otros_pt.values())
+    if primera_final < primera_pt - 0.01:
+        # Redondear hacia arriba las de datos quitaba sitio a la primera (1.3: su texto pasaba a 2 líneas): hacia
+        # abajo, si su contenido sigue cabiendo
+        abajo = {c: max(MULTIPLO_PT, MULTIPLO_PT * math.floor(anchos_pt[c] / MULTIPLO_PT + 1e-6)) for c in otras}
+        if all(abajo[c] >= necesita[c] for c in otras):
+            otros_pt = abajo
+            primera_final = disponible - sum(otros_pt.values())
     if primera_final < MULTIPLO_PT:
         primera_final = MULTIPLO_PT * max(1, round(primera_pt / MULTIPLO_PT))
     nuevos_anchos = {primera: ancho_comun(primera_final, mdw, mdw_win)}
@@ -2176,7 +2213,7 @@ def celdas(z, hoja, idioma="es"):
                       if len(fijas) > len(separaciones) else ""))
 
     # Textos nuevos (sangrías, viñetas, TOTAL) y líneas de cada celda
-    nuevos_textos, lineas, cambios_txt, porcentajes, correcciones = {}, {}, [], [], []
+    nuevos_textos, lineas, cambios_txt, porcentajes, correcciones, saltos = {}, {}, [], [], [], []
     for f in range(f1, f2 + 1):
         for c in range(c1, c2 + 1):
             if (c, f) in tapadas:
@@ -2231,9 +2268,19 @@ def celdas(z, hoja, idioma="es"):
                     nuevo = espacios + cuerpo
                 lineas[(c, f)] = len(partes)
             else:
-                lineas[(c, f)] = len(partir(t, ancho, medir_de(c, f)))
+                mc = medir_de(c, f)
+                partes = partir(t, ancho, mc)
+                if f <= fin_cab and len(partes) == 2 and "\n" not in t.strip():
+                    # Cabecera de 2 líneas: el salto, puesto a mano por una frase (como los publicados)
+                    dos = salto_cabecera(t.strip(), ancho, mc)
+                    if dos and dos != t.strip():
+                        nuevo = t = dos
+                        saltos.append(f"«{dos.replace(chr(10), ' / ')[:60]}»")
+                lineas[(c, f)] = len(partes)
             if nuevo != x["texto"]:
                 nuevos_textos[(c, f)] = nuevo
+    if saltos:
+        detalle.append("Cabecera en 2 líneas, con el salto por una frase (como los publicados): " + "; ".join(saltos[:6]))
     if correcciones:
         detalle.append("Aviso (corrección ortotipográfica), revísalas: " + "; ".join(correcciones[:10])
                        + (f" y {len(correcciones) - 10} más" if len(correcciones) > 10 else ""))

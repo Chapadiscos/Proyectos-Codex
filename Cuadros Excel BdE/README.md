@@ -86,10 +86,11 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
    - **Pendiente (Windows)**: con las fuentes «Normal» de los autores (Calibri 11, Arial 12) el Excel de Windows
      mide las columnas distinto que el de Mac (−12 % / −3,6 %). Propuesta sin hacer: «Normal» = Roboto Light 11 (6 pt
      por carácter en los dos; los múltiplos de 3 pt ya están hechos). El usuario lo comprobará en Windows antes de decidir.
-   - **Cabecera compensada** (petición del usuario, 1.4): si los textos de cabecera de las columnas de datos ocupan
-     varias líneas, esas columnas se estrechan hasta el ancho mínimo con las mismas líneas (líneas parejas: «Incremento
-     de la tasa de / ahorro entre 2017 y 2024») y la primera columna se queda con el resto. Solo si ninguna celda
-     (cabecera o datos) gana líneas.
+   - **Cabecera de 2 líneas** (decisión del usuario, 2026-11-17, como los publicados 1.3 y 1.4; sustituye a la
+     «cabecera compensada», que estrechaba las columnas de datos): las columnas de datos se quedan con todo el ancho
+     y la app pone el salto de línea antes de un nexo («en», «entre», «y», «para»…, o tras «:»), si no antes de «de»,
+     y entre los posibles el que deja las líneas más parejas («Cuota de Oriente Medio / en las importaciones de la
+     UE (%)»). Con 3 líneas o más, Excel parte solo. Al redondear a 3 pt, la primera columna no pierde sitio.
    - **Ancho de columna en el Excel de Mac** (medido en Excel, 2026-11-13): puntos = ancho guardado × el dígito
      más ancho de la fuente por defecto del libro en puntos enteros (Calibri 11 y Aptos Narrow 12 → 6, Arial 12 →
      7), redondeado. No la fórmula de Windows (píxeles a 96 ppp), que dejaba el cuadro un 14 % más ancho que la
