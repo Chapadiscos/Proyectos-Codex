@@ -1205,6 +1205,19 @@ def textos(z, hoja, estado):
             continue
         a, _ = textos_en_negro(a)
         partes[k] = a
+    if "fuentes" not in tipos.values():
+        # Sin FUENTE (1.2): el marco de la plantilla, con su texto de muestra, para escribirla (el paso 2 lo coloca
+        # 5 mm bajo el cuadro)
+        marco = pl["marco_fuentes"]
+        lineas = [l for l in lineas_de(marco) if texto_de(l).strip()][:1]
+        marco = con_parrafos(marco, lineas) if lineas else marco
+        fila, desp = celda_de(filas, posicion(marco)[1])
+        cx, cy = tamano(marco)
+        sig_f = max([int(i) for i in re.findall(r'<xdr:cNvPr\s+id="(\d+)"', "".join(partes))] or [0]) + 1
+        marco, _ = renumerar(anclar_celda(marco, 0, 0, fila, desp, cx, cy), sig_f, "FUENTES")
+        partes.insert(len(partes) - 1, marco)
+        detalle.append("Aviso: el autor no puso FUENTE: añadido el marco de la plantilla («FUENTE: Xxxxxxxxxx.»); "
+                       "escribe la fuente (y las notas, si las hay)")
     if "cuadro" not in tipos.values():
         detalle.append("Aviso: no encuentro el rótulo «Cuadro N»")
     if titulo_k is None:
@@ -2159,7 +2172,7 @@ def celdas(z, hoja):
                       if len(fijas) > len(separaciones) else ""))
 
     # Textos nuevos (sangrías, viñetas, TOTAL) y líneas de cada celda
-    nuevos_textos, lineas, cambios_txt = {}, {}, []
+    nuevos_textos, lineas, cambios_txt, porcentajes = {}, {}, [], []
     for f in range(f1, f2 + 1):
         for c in range(c1, c2 + 1):
             if (c, f) in tapadas:
@@ -2177,11 +2190,16 @@ def celdas(z, hoja):
                 lineas[(c, f)] = 1
                 continue
             nuevo = t
-            # «<34» → «< 34»: espacio tras los signos de comparación (TERMINADO 1.4)
+            # «<34» → «< 34»: espacio tras los signos de comparación (TERMINADO 1.4); «7%» → «7 %» con espacio que no
+            # parte línea, como en FUENTES (TERMINADO 1.2)
             con_espacio = re.sub(r'([<>≤≥])(?=[\w(])', r'\1 ', t)
             if con_espacio != t:
                 cambios_txt.append(f"«{t.strip()[:20]}» → «{con_espacio.strip()[:20]}»")
-                nuevo = t = con_espacio
+            con_por = re.sub(r'(\d)[ \u202f]?%', '\\1\u00a0%', con_espacio)
+            if con_por != con_espacio:
+                porcentajes.append(ref(c, f))
+            if con_por != t:
+                nuevo = t = con_por
             if f <= fin_cab and re.fullmatch(r'\s*total\s*', t, re.I) and t.strip() != "TOTAL":
                 # «TOTAL» también en la cabecera (guía: ejemplos A4.6 y 4.2; Memoria 3.4 TERMINADO)
                 cambios_txt.append(f"«{t.strip()}» → «TOTAL» (cabecera)")
@@ -2208,6 +2226,8 @@ def celdas(z, hoja):
                 lineas[(c, f)] = len(partir(t, ancho, medir_de(c, f)))
             if nuevo != x["texto"]:
                 nuevos_textos[(c, f)] = nuevo
+    if porcentajes:
+        cambios_txt.append(f"espacio que no parte línea antes de «%» ({len(porcentajes)} celda{'s' if len(porcentajes) > 1 else ''})")
     if cambios_txt:
         detalle.append("Textos: " + "; ".join(cambios_txt[:8]))
     if nivel_de:
@@ -2614,6 +2634,15 @@ def lineas_y_fondos(z, hoja, cuadro):
         detalle.append(f"Columna TOTAL ({ref(col_total, 1)[:-1]}): fondo blanco matiz 2 con línea blanca a la izquierda y entre filas")
     detalle.append("Aviso (recordatorio): la línea oscura (blanco matiz 5) solo va encima de la fila TOTAL; si hay que "
                    "separar otros conceptos importantes, añádela a mano en Excel")
+    # Formato suelto del autor a la derecha del cuadro (líneas, rellenos en celdas vacías: 1.2, columnas I-K), fuera
+    sueltas = [(c, f) for (c, f), x in todas.items() if f1 <= f <= f2 and c > c2 and not x["texto"].strip()
+               and (re.search(r'\bborderId="[1-9]', estilos.xf(x["s"])) or re.search(r'\bfillId="([2-9]|\d\d+)"', estilos.xf(x["s"])))]
+    for k in sueltas:
+        nuevos[k] = estilos.variante(estilo(*k), relleno="", borde={})
+    if sueltas:
+        columnas_s = sorted({c for c, _ in sueltas})
+        detalle.append("Quitadas líneas y fondos sueltos del autor a la derecha del cuadro (columnas "
+                       + ", ".join(ref(c, 1)[:-1] for c in columnas_s) + ")")
     hoja_xml = con_estilo(hoja_xml, nuevos)
     return {ruta_hoja: hoja_xml.encode("utf-8"), "xl/styles.xml": estilos.resultado().encode("utf-8")}, detalle
 

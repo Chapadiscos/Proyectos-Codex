@@ -45,6 +45,8 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      el mismo cuadro, se separan. Al final de cada párrafo del título, las letras entre paréntesis («(a)»,
      «(a) (b)», «(a, b)») y «(cont.)» / «(cont'd)» van en Roboto Regular, como en Gráficos. Con un título de
      2-3 líneas, el marco del título y la pastilla crecen un interlineado (3,5 mm) por línea y las unidades bajan.
+   - Sin FUENTE del autor (1.2): se añade el marco de FUENTE de la plantilla («FUENTE: Xxxxxxxxxx.») con aviso para
+     escribirla; el paso 2 lo coloca 5 mm bajo el cuadro.
    - Unidades (texto bajo la pastilla): Roboto Light 6 pt, donde las dejó el autor.
    - **FUENTE / FUENTES** según las entidades citadas (decisión del usuario, 2026-11-17): «INE y Banco de España»,
      «Encuesta…, Encuesta… y Banco de España» → FUENTES; «Banco de España, con datos del INE…» o «elaboración propia
@@ -113,6 +115,7 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      ocupan más, se encogen. Todo lo de encima del cuadro se vuelve a anclar en su sitio (no se mueve).
    - **FUENTES, 5 mm bajo el final del cuadro**, anclada a su fila.
    - «<34» → «< 34»: espacio tras «<», «>», «≤», «≥» pegados a cifra o letra (TERMINADO 1.4).
+   - «7%» → «7 %» en las celdas (espacio que no parte línea; TERMINADO 1.2), como en FUENTES.
    - Hijos de un título de bloque, sangrados aunque el autor no los sangrara (si hay otros hijos sangrados).
    - Textos de la cabecera repetidos en filas de datos (1.3), borrados con aviso.
    - Primera columna: sangrías (de Excel o con espacios) → 4, 8 o 12 espacios por nivel; con varias líneas, la
@@ -139,6 +142,7 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
    - Fila TOTAL: blanco matiz 2, o matiz 5 con el texto en blanco si el matiz 2 ya lo usan bloques o subtotales
      (Ejemplos 1.4 y A2.2); sin hueco en las columnas de separación. Columna TOTAL (cabecera «TOTAL»): blanco
      matiz 2 con línea blanca a la izquierda y entre filas (Ejemplos 4.2 y A4.6).
+   - Líneas y fondos sueltos del autor en celdas vacías a la derecha del cuadro, quitados (1.2, columnas I-K).
    - Columnas de separación sin líneas ni fondo en las filas de datos (las líneas se cortan entre grupos, TERMINADO
      3.4); en la fila TOTAL, sin hueco.
    - La línea que cierra cada bloque de sangrados (gris claro, como el resto) queda por revisar con más ejemplos.
