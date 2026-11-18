@@ -1331,7 +1331,7 @@ def textos(z, hoja, estado, propuestas=None):
             if propuestas is not None and frase != todo and recasar_xml(a, todo, frase):
                 propuestas.append({"tipo": "forma", "hoja": hoja, "forma": nombre_forma(a), "de": todo, "a": frase,
                                    "que": "título en minúsculas"})
-                detalle.append("Aviso (propuesta, sin aplicar): el título va en mayúsculas; en minúsculas: "
+                detalle.append("Aviso (propuesta, sin aplicar): el título va en mayúsculas. En minúsculas: "
                                + f"«{recortar(frase.replace(chr(10), ' ').strip(), 140)}»"
                                + f" ⟦aplicar:{len(propuestas) - 1}⟧" + marca(forma=nombre_forma(a)))
             else:

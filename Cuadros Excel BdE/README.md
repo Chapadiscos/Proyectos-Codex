@@ -39,6 +39,10 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
   invisible «⟦A5 A6⟧» o «⟦forma:FUENTES⟧»; la app la quita al mostrarlos y, si la llevan, se pueden pulsar (icono de
   diana), en «Cambios de la versión», en «Comparar con el original» y en la actividad: Excel pasa al frente y selecciona esas celdas (separadas por «;» en el Excel en castellano; si falla, «,») o esa forma en
   la hoja del cuadro, sin tocar el archivo.
+- Los avisos y cambios con varias entradas («…, revísalas: B7 «…» → «…»; A5 «…» → «…»», «Cambio de cifras en
+  «C1»: B9 «96» → «84», B10 …») se enseñan con su encabezado y, debajo, una entrada por línea (`partirLista`,
+  petición del usuario, 2026-11-18): se parte por «; » o por «, » antes de una celda, nunca dentro de «…», ⟪…⟫ ni
+  paréntesis; sin encabezado claro o con una sola entrada, de corrido.
 
 ## Pasos (se construyen y aprueban uno a uno)
 

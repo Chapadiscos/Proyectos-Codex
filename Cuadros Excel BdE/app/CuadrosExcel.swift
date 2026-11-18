@@ -337,6 +337,92 @@ func conResaltes(_ linea: String) -> AttributedString {
     return salida
 }
 
+/// Un aviso con varias entradas («Aviso (corrección…), revísalas: B7 «…» → «…»; A5 «…» → «…»») se parte en su
+/// encabezado y la lista de entradas, para enseñarlas una debajo de otra (petición del usuario, 2026-11-18).
+/// Las entradas van separadas por «; » o, en las de celdas («B9 «96» → «84», B10 …»), por «, » antes de una
+/// celda; nunca dentro de «…», ⟪…⟫ ni paréntesis. Sin encabezado claro o con una sola entrada, no se parte.
+func partirLista(_ linea: String) -> (cabecera: String, entradas: [String]) {
+    let t = Array(linea)
+    // Qué posiciones están fuera de «…», ⟪…⟫ y (…); dentro de «…» y ⟪…⟫ los paréntesis no cuentan
+    let cierre: [Character: Character] = ["«": "»", "⟪": "⟫", "(": ")", "⟦": "⟧"]
+    var pila: [Character] = [], fuera: [Bool] = []
+    for ch in t {
+        fuera.append(pila.isEmpty)
+        if let ultimo = pila.last, ch == ultimo { pila.removeLast() }
+        else if let c = cierre[ch], !(pila.last == "»" || pila.last == "⟫") { pila.append(c) }
+    }
+    func trozos(_ desde: Int, _ hasta: Int, _ sep: String) -> [(Int, Int)] {
+        let s = Array(sep)
+        var salida: [(Int, Int)] = [], a = desde, i = desde
+        while i < hasta {
+            if fuera[i], i + s.count <= hasta, Array(t[i..<i + s.count]) == s {
+                salida.append((a, i)); i += s.count; a = i
+            } else { i += 1 }
+        }
+        salida.append((a, hasta))
+        return salida
+    }
+    // ¿Empieza aquí una entrada de celda («B9 «» o «A4 («»)?
+    func celdaEn(_ i: Int) -> Bool {
+        var j = i
+        while j < t.count, t[j].isASCII, t[j].isUppercase { j += 1 }
+        guard j > i, j - i <= 3 else { return false }
+        let k = j
+        while j < t.count, t[j].isASCII, t[j].isNumber { j += 1 }
+        guard j > k, j + 1 < t.count, t[j] == " " else { return false }
+        return t[j + 1] == "«" || (t[j + 1] == "(" && j + 2 < t.count && t[j + 2] == "«")
+    }
+    var partes = trozos(0, t.count, "; ")
+    if partes.count < 2 {
+        var juntas: [(Int, Int)] = []
+        for p in trozos(0, t.count, ", ") {
+            if juntas.isEmpty || celdaEn(p.0) { juntas.append(p) } else { juntas[juntas.count - 1].1 = p.1 }
+        }
+        partes = juntas
+    }
+    let texto = { (a: Int, b: Int) in String(t[a..<b]) }
+    guard partes.count >= 2, !texto(partes.last!.0, partes.last!.1).trimmingCharacters(in: .whitespaces).hasSuffix(":")
+    else { return (linea, []) }
+    // El encabezado acaba donde empieza la primera entrada de celda o, si no hay, tras el último «: »
+    let (a0, b0) = partes[0]
+    var corte: Int? = (a0..<b0).first { fuera[$0] && ($0 == a0 || t[$0 - 1] == " ") && celdaEn($0) }
+    if corte == nil, let dos = (a0..<max(a0, b0 - 1)).last(where: { fuera[$0] && t[$0] == ":" && t[$0 + 1] == " " }) {
+        corte = dos + 2
+    }
+    guard let c = corte, c > a0 else { return (linea, []) }
+    let cabecera = texto(a0, c).trimmingCharacters(in: .whitespaces)
+    return (cabecera, [texto(c, b0)] + partes.dropFirst().map { texto($0.0, $0.1) })
+}
+
+/// El texto de un aviso: de corrido o, si tiene varias entradas, el encabezado y debajo la lista
+struct TextoAviso: View {
+    let linea: String
+    let aviso: Bool
+
+    var body: some View {
+        let (cabecera, entradas) = partirLista(linea)
+        VStack(alignment: .leading, spacing: 2) {
+            Text(conResaltes(entradas.isEmpty ? linea : cabecera))
+                .font(.system(size: 11.5, weight: aviso ? .bold : .regular))
+                .foregroundStyle(aviso ? Color.red : Color.primary)
+                .fixedSize(horizontal: false, vertical: true)
+                .multilineTextAlignment(.leading)
+            ForEach(Array(entradas.enumerated()), id: \.offset) { _, entrada in
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    Text("–").font(.system(size: 11.5, weight: aviso ? .bold : .regular))
+                        .foregroundStyle(aviso ? Color.red.opacity(0.7) : Color.secondary)
+                    Text(conResaltes(entrada))
+                        .font(.system(size: 11.5, weight: aviso ? .semibold : .regular))
+                        .foregroundStyle(aviso ? Color.red : Color.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .multilineTextAlignment(.leading)
+                }
+                .padding(.leading, 8)
+            }
+        }
+    }
+}
+
 func sinResaltes(_ linea: String) -> String {
     linea.replacingOccurrences(of: "⟪", with: "").replacingOccurrences(of: "⟫", with: "")
 }
@@ -1502,10 +1588,7 @@ struct TarjetaVersiones: View {
                             Image(systemName: aviso ? "exclamationmark.triangle.fill" : "circle.fill")
                                 .font(.system(size: aviso ? 10 : 4))
                                 .foregroundStyle(aviso ? Color.red : colorVersiones)
-                            Text(conResaltes(linea)).font(.system(size: 11.5, weight: aviso ? .bold : .regular))
-                                .foregroundStyle(aviso ? Color.red : Color.primary)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .multilineTextAlignment(.leading)
+                            TextoAviso(linea: linea, aviso: aviso)
                             if marca != nil {
                                 Image(systemName: "scope").font(.system(size: 10, weight: .semibold))
                                     .foregroundStyle(aviso ? Color.red : colorVersiones)
@@ -1579,10 +1662,7 @@ struct TarjetaTerminar: View {
                             Image(systemName: aviso ? "exclamationmark.triangle.fill" : cambio ? "arrow.left.arrow.right" : "circle.fill")
                                 .font(.system(size: aviso || cambio ? 10 : 4))
                                 .foregroundStyle(aviso ? Color.red : cambio ? Color.orange : color)
-                            Text(conResaltes(linea)).font(.system(size: 11.5, weight: aviso ? .bold : .regular))
-                                .foregroundStyle(aviso ? Color.red : Color.primary)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .multilineTextAlignment(.leading)
+                            TextoAviso(linea: linea, aviso: aviso)
                             if marca != nil {
                                 Image(systemName: "scope").font(.system(size: 10, weight: .semibold))
                                     .foregroundStyle(aviso ? Color.red : cambio ? Color.orange : color)
