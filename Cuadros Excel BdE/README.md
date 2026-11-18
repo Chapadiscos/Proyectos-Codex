@@ -228,6 +228,15 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
    - **Ajustes por publicación** (en `publicaciones.json`, se conservan al editar la publicación en la app):
      `cabecera_letra_blanca`: niveles de cabecera con el texto en blanco (Memoria Supervisión: `[2]`, el nivel 2 sobre
      el matiz 2, publicados 3.1 y 3.4; en el Informe Anual va en negro).
+     Documentos Ocasionales (color F06800, pastilla y cabecera #FFE0C9; publicados en «Cuadros Excel DO TERMINADOS»,
+     2026-11-18), con sus cuadros de texto:
+     - `cuadros_de_texto`: en los cuadros sin cifras en los datos, la primera columna a su medida (entre un octavo y un
+       tercio del cuadro), las columnas cortas a la medida de su texto en una línea y las de descripciones, el resto;
+       si todo cabe en una línea, lo que sobra va a las de datos (DO 05: 60/408 pt frente a 87/420; DO 09:
+       63/69/75/261 frente a 57/109/109/231);
+     - `texto_izquierda`: media de caracteres desde la que una columna de textos va a la izquierda (30; por defecto
+       80): «Percepción de un solo color…» a la izquierda y «Relajación, concentración» al centro;
+     - `centrado_en_altura`: también las filas de varias líneas, centradas en altura (en el Informe Anual, arriba).
    - **Columnas ocultas del autor** (Memoria 2.1: textos de traducción en A-C que la columna D enseña con una
      fórmula; «Descuadre» en G): ni se miden para el alto de fila ni se les cambia el formato.
    - **«Cuadro N» y unidades en celdas** encima del cuadro (Memoria 2.1, 3.2, 4.2): el paso 1 los pasa a cuadros de

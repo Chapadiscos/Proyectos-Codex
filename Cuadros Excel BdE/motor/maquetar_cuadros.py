@@ -303,6 +303,14 @@ def matices(color):
     return {k: matiz(color, t) for k, t in TINTES.items()}
 
 
+def pub_de(pid):
+    """Los ajustes de la publicación, o ninguno si no se sabe cuál es (pruebas sin publicación)."""
+    try:
+        return publicacion(pid) if pid else {}
+    except Fallo:
+        return {}
+
+
 def publicacion(pid):
     for p in CONFIG["publicaciones"]:
         if p["id"] == pid:
@@ -2077,11 +2085,11 @@ def paso2(trabajo, pid=None):
     hoja = estado.get("hoja") or "Cuadro datos"
     with zipfile.ZipFile(base) as z:
         propuestas = []
-        cambios, detalle, cuadro = celdas(z, hoja, estado.get("idioma", "es"), propuestas)
+        cambios, detalle, cuadro = celdas(z, hoja, estado.get("idioma", "es"), propuestas, pub_de(pid))
     return nuevo_paso(trabajo, CELDAS, cambios, detalle, cuadro, propuestas=propuestas)
 
 
-def celdas(z, hoja, idioma="es", propuestas_salida=None):
+def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None):
     ruta_hoja = hoja_de(z, hoja)
     hoja_xml = z.read(ruta_hoja).decode("utf-8")
     comp_xml, compartidos = leer_compartidos(z)
@@ -2332,7 +2340,46 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None):
         if espacio_pt - sum(con_linea.values()) >= natural:
             por_nombres = any(con_linea[c] > necesita[c] for c in otras)
             necesita = con_linea
-    if otras:
+    # Cuadros de textos (sin cifras en los datos) de las publicaciones con «cuadros_de_texto» (Documentos
+    # Ocasionales, publicados DO 02-09): la primera columna a su medida (hasta un tercio), las columnas cortas a la
+    # medida de su texto en una línea y las de descripciones, el resto a partes iguales; si todo cabe en una línea,
+    # lo que sobra, a partes iguales entre las de datos
+    pub = pub or {}
+    textos_cuadro = bool(otras) and pub.get("cuadros_de_texto") and not por_nombres and not any(
+        es_cifra(d(c, f)) for f in range(fin_cab + 1, f2 + 1) for c in otras if (c, f) not in tapadas and d(c, f)["texto"].strip())
+    if textos_cuadro:
+        linea = dict(necesita)
+        for f in range(fin_cab + 1, f2 + 1):
+            for c in otras:
+                if (c, f) in tapadas or not d(c, f)["texto"].strip():
+                    continue
+                tramo_cols = [k for k in otras if k == c or ((k, f) in tapadas and k > c and all((j, f) in tapadas for j in range(c + 1, k + 1)))]
+                w = max(medir_de(c, f)(l.strip(), CUERPO_CELDA) for l in vista(c, f).split("\n"))
+                linea[c] = max(linea[c], w / len(tramo_cols) + 2 * RELLENO_CELDA_PT)
+        hace_falta = max(necesita.values())
+        # Primera columna: como mínimo un octavo del cuadro (los publicados DO no bajan de 57 pt: «Modo», «M1»)
+        primera_pt = max(minimo, min(max(natural, espacio_pt / 8), espacio_pt / 3))
+        if sum(linea.values()) <= espacio_pt - primera_pt:
+            primera_pt = max(primera_pt, min(natural, espacio_pt - sum(linea.values())))
+            # Lo que sobra, a las columnas de datos (DO 05: «Color» 87 pt y la otra, 420; DO 09: 57/109/109/231)
+            sobra = (espacio_pt - primera_pt - sum(linea.values())) / len(otras)
+            medida = {c: linea[c] + sobra for c in otras}
+        else:
+            medida, pendientes, queda = {}, sorted(otras, key=lambda c: linea[c]), espacio_pt - primera_pt
+            while pendientes:
+                parte = queda / len(pendientes)
+                if linea[pendientes[0]] <= parte:
+                    c = pendientes.pop(0)
+                    medida[c] = linea[c]
+                    queda -= linea[c]
+                else:
+                    medida.update({c: max(parte, necesita[c]) for c in pendientes})
+                    break
+        a_medida = True
+        resto = min(medida.values())
+        detalle.append("Cuadro de textos: primera columna a su medida, las columnas cortas a la medida de su texto y las "
+                       "de descripciones, el resto (como los publicados de " + pub.get("nombre", "la publicación") + ")")
+    elif otras:
         hace_falta = max(necesita.values())
         primera_pt = max(minimo, min(natural, espacio_pt - len(otras) * hace_falta))
         # Como mínimo un tercio del cuadro para la primera columna en cuadros de cifras o de pocas columnas (los
@@ -2471,7 +2518,7 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None):
                 resto = (espacio_pt - primera_pt) / len(otras)
 
     # 1) Muchas columnas de datos: aviso para valorar bajar la letra a 7 pt (decisión del usuario, 2026-11-17)
-    if otras and (len(otras) >= 10 or resto < 30 or (a_medida and not por_nombres)):
+    if otras and (len(otras) >= 10 or resto < 30 or (a_medida and not por_nombres and not textos_cuadro)):
         detalle.append(f"Aviso: el cuadro tiene {len(otras)} columnas de datos" + ("" if a_medida else f" de {resto:.0f} pt")
                        + ": valora bajar la letra con «Probar letra a 7 pt» o «Probar letra a 6,5 pt» (la guía permite de 6 a "
                        "7,5 pt según el tamaño del cuadro; el publicado del Memoria 4.2 va a 6,5 pt)")
@@ -2684,7 +2731,7 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None):
     for c in range(primera + 1, c2 + 1):
         textos = [d(c, f)["texto"] for f in range(fin_cab + 1, f2 + 1)
                   if (c, f) not in tapadas and d(c, f)["texto"].strip() and not es_cifra(d(c, f))]
-        if textos and sum(len(t) for t in textos) / len(textos) > LARGO_TEXTO_IZQUIERDA:
+        if textos and sum(len(t) for t in textos) / len(textos) > pub.get("texto_izquierda", LARGO_TEXTO_IZQUIERDA):
             izquierda.add(c)
     if izquierda:
         detalle.append("Columnas de textos largos, a la izquierda: " + ", ".join(ref(c, 1)[:-1] for c in sorted(izquierda)))
@@ -2700,7 +2747,7 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None):
         if n == 0 and not any(d(c, f)["texto"].strip() for c in range(c1, c2 + 1)):
             continue   # fila vacía (separación del autor): se queda como está
         altos[f] = alto_fila(max(n, 1))
-        if f > fin_cab and any(lineas.get((c, f), 0) > 1 for c in range(primera + 1, c2 + 1)):
+        if f > fin_cab and not pub.get("centrado_en_altura") and any(lineas.get((c, f), 0) > 1 for c in range(primera + 1, c2 + 1)):
             arriba.add(f)
     cuenta = Counter(altos.values())
     detalle.append("Alto de fila: " + ", ".join(f"{h:g} pt ({n} fila{'s' if n > 1 else ''})" for h, n in sorted(cuenta.items())))
@@ -2762,7 +2809,8 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None):
                    + (f"; lo que iba en negrita, en {LETRA_CELDA_NEGRITA} ({len(negritas)} celda{'s' if len(negritas) > 1 else ''}: "
                       + ", ".join(negritas[:8]) + ("…" if len(negritas) > 8 else "") + ")" if negritas else ""))
     detalle.append("Alineación: cabecera, la primera a la izquierda y las demás al centro; primera columna a la "
-                   "izquierda; cifras al centro; centrado en altura salvo las filas de arriba")
+                   "izquierda; cifras al centro; " + ("centrado en altura, también las filas de varias líneas (como los "
+                   "publicados de " + pub.get("nombre", "") + ")" if pub.get("centrado_en_altura") else "centrado en altura salvo las filas de arriba"))
 
     # Textos enriquecidos (con varios formatos) de las celdas del cuadro: también en Roboto Light 7,5, sin negrita
     usados = {int(re.search(r'<v>(\d+)</v>', d(c, f)["xml"]).group(1))
@@ -3563,7 +3611,7 @@ def letra_pequena(trabajo, pid=None, cuerpo=LETRA_PEQUENA):
     try:
         with zipfile.ZipFile(base) as z:
             propuestas = []
-            cambios, detalle, cuadro = celdas(z, hoja, estado.get("idioma", "es"), propuestas)
+            cambios, detalle, cuadro = celdas(z, hoja, estado.get("idioma", "es"), propuestas, pub_de(pid))
         todo = dict(cambios)
         if CABECERAS in hechos:
             intermedio = io.BytesIO()
