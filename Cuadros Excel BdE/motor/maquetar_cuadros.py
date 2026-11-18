@@ -2813,6 +2813,11 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None):
         detalle.append(f"Unidades en la esquina de la cabecera ({ref(*k)} «{d(*k)['texto'].strip()[:40]}»): Roboto Light "
                        f"{UNIDADES_PT:g} pt, arriba a la izquierda y sin relleno" + marca([ref(*k)]))
 
+    a_todo_ancho = {(a, b) for a1, b1, a2, b2 in rangos if a1 == primera and a2 >= c2 and b1 <= fin_cab
+                    for a in range(a1, a2 + 1) for b in range(b1, b2 + 1)}
+    if any(d(*k)["texto"].strip() for k in a_todo_ancho):
+        k = min(a_todo_ancho, key=lambda k: (k[1], k[0]))
+        detalle.append(f"Cabecera combinada a todo el ancho del cuadro, al centro: «{d(*k)['texto'].strip()[:40]}»" + marca([ref(*k)]))
     # Formatos nuevos de cada celda del cuadro
     nuevos_s = {}
     for f in range(f1, f2 + 1):
@@ -2823,7 +2828,9 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None):
             if ancho_col(c) == 0 and c not in pegada:
                 continue   # columna oculta del autor: su formato se queda
             if f <= fin_cab:
-                h = "left" if c == primera else "center"
+                # La primera, a la izquierda, salvo si va combinada a todo el ancho del cuadro (DO 06: «Alteraciones
+                # del color» en A5:C5, centrada en el publicado)
+                h = "left" if c == primera and (c, f) not in a_todo_ancho else "center"
             elif c == primera:
                 h = "left"
             elif es_cifra(x) or not x["texto"].strip():

@@ -286,6 +286,9 @@ cerebral» (A15, sin combinar) en dos; mismo alto.
 celdas vacías de las 10 filas de debajo del cuadro (la línea azul que el autor ponía encima de la FUENTE se quedaba al
 pasar la FUENTE al cuadro de texto). Los bordes vacíos (IA 1.3, 1.4) no cuentan.
 
+**Cabecera combinada a todo el ancho** (DO 06, 2026-11-18: «Alteraciones del color» en A5:C5): al centro, como el
+publicado; la que empieza en la primera columna y no llega al final (DO 02, «Método» en A6:B6) sigue a la izquierda.
+
 **Herramienta «Probar letra a 6,5 pt»** (`letra65`, petición del usuario, 2026-11-18): como la de 7 pt, a 6,5 pt
 (versión «Letra 6,5 pt»).
 
