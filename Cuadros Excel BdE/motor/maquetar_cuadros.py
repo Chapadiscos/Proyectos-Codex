@@ -2296,6 +2296,21 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None):
             w = mc(t, CUERPO_CELDA) if es_cifra(d(c, f)) and f > fin_cab else palabra(t, mc)
             tramo_cols = [k for k in otras if k == c or ((k, f) in tapadas and k > c and all((j, f) in tapadas for j in range(c + 1, k + 1)))]
             necesita[c] = max(necesita[c], w / max(1, len(tramo_cols)) + 2 * RELLENO_CELDA_PT)
+    # Columnas de nombres propios (Memoria 6.1, «Entidad»: «Banco Bilbao Vizcaya Argentaria, SA»): solo textos, de
+    # una línea, y cada uno con 2 o más palabras, todas en mayúscula inicial salvo los conectores. El publicado las
+    # pone en una línea y a la izquierda; las de conceptos («Relajación, concentración», DO 05) siguen al centro
+    def textos_cuerpo(c):
+        return [vista(c, f).strip() for f in range(fin_cab + 1, f2 + 1) if (c, f) not in tapadas and d(c, f)["texto"].strip()]
+
+    def es_nombre(t):
+        palabras = [w for w in re.findall(r"[^\W\d_][\w.&'-]*", t) if w.upper() not in CONECTORES_PROPIOS]
+        return "\n" not in t and len(palabras) >= 2 and all(w[0].isupper() for w in palabras)
+    nombres = {c for c in otras if len(textos_cuerpo(c)) >= 2
+               and not any(es_cifra(d(c, f)) for f in range(fin_cab + 1, f2 + 1) if (c, f) not in tapadas and d(c, f)["texto"].strip())
+               and all(es_nombre(t) for t in textos_cuerpo(c))}
+    en_linea = {c: max(medir_de(c, f)(vista(c, f).strip(), CUERPO_CELDA) for f in range(fin_cab + 1, f2 + 1)
+                       if (c, f) not in tapadas and d(c, f)["texto"].strip()) + 2 * RELLENO_CELDA_PT for c in nombres}
+    nombres = {c for c in nombres if en_linea[c] <= espacio_pt / 3}
     natural = minimo = 0.0
     textos_primera = []
     for f in range(f1, f2 + 1):
@@ -2310,7 +2325,13 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None):
         minimo = max(minimo, mc(espacios, CUERPO_CELDA) + palabra(cuerpo, mc))
     natural += 2 * RELLENO_CELDA_PT + 1.5   # holgura: el redondeo a píxeles no debe partir el texto más largo
     minimo += 2 * RELLENO_CELDA_PT
-    a_medida, medida = False, {}
+    a_medida, medida, por_nombres = False, {}, False
+    if nombres:
+        # Los nombres en una línea, si caben sin partir la primera columna; si no, se parten como cualquier texto
+        con_linea = {c: max(necesita[c], en_linea.get(c, 0)) for c in otras}
+        if espacio_pt - sum(con_linea.values()) >= natural:
+            por_nombres = any(con_linea[c] > necesita[c] for c in otras)
+            necesita = con_linea
     if otras:
         hace_falta = max(necesita.values())
         primera_pt = max(minimo, min(natural, espacio_pt - len(otras) * hace_falta))
@@ -2331,12 +2352,44 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None):
             if espacio_pt - suma >= minimo:
                 a_medida = True
                 primera_pt = max(minimo, min(natural, espacio_pt - suma))
-                sobra = (espacio_pt - primera_pt - suma) / len(otras)
-                medida = {c: necesita[c] + sobra for c in otras}
+                # Con nombres en una línea, lo que sobra va a las demás columnas de datos (publicado del 6.1)
+                reciben = [c for c in otras if not (por_nombres and c in nombres)] or otras
+                sobra = (espacio_pt - primera_pt - suma) / len(reciben)
+                medida = {c: necesita[c] + (sobra if c in reciben else 0) for c in otras}
+                if por_nombres:
+                    # El sobrante, para bajar líneas de cabecera: cada vez, a la que ocupa más líneas, la que cuesta
+                    # menos quitarle una; lo que quede, a partes iguales. Así el publicado del 6.1: «Designación (b)»
+                    # en una línea y estrecha, «Colchón de capital…» en dos y anchas
+                    def cab_lineas(c, w):
+                        return max([len(partir(d(c, f)["texto"], w - 2 * RELLENO_CELDA_PT, medir_de(c, f)))
+                                    for f in range(f1, fin_cab + 1) if (c, f) not in tapadas and d(c, f)["texto"].strip()] or [1])
+
+                    def ancho_para(c, n, w):
+                        while cab_lineas(c, w) > n and w < espacio_pt:
+                            w += 1
+                        return w
+                    medida = {c: necesita[c] for c in otras}
+                    queda = espacio_pt - primera_pt - suma
+                    while True:
+                        lin = {c: cab_lineas(c, medida[c]) for c in reciben}
+                        opciones = [(lin[c], -(ancho_para(c, lin[c] - 1, medida[c]) - medida[c]), c) for c in reciben if lin[c] > 1]
+                        opciones = [o for o in opciones if -o[1] <= queda]
+                        if not opciones:
+                            break
+                        _, coste, c = max(opciones)
+                        medida[c] -= coste
+                        queda += coste
+                    for c in reciben:
+                        medida[c] += queda / len(reciben)
                 resto = min(medida.values())
-                detalle.append(f"Con columnas de datos iguales el cuadro no cabe a {CUERPO_CELDA:g} pt (necesitan {hace_falta:.0f} pt "
-                               "cada una)".replace(".", ",", 1) + ": cada una a su medida (su palabra o cifra más larga) y "
-                               "la primera, el resto, como el publicado del Memoria 4.2")
+                if por_nombres:
+                    detalle.append("Columna" + ("s" if len(nombres) > 1 else "") + " de nombres ("
+                                   + ", ".join(ref(c, 1)[:-1] for c in sorted(nombres)) + ") en una línea: cada columna de "
+                                   "datos a su medida y la primera, el resto, como el publicado del Memoria 6.1")
+                else:
+                    detalle.append(f"Con columnas de datos iguales el cuadro no cabe a {CUERPO_CELDA:g} pt (necesitan {hace_falta:.0f} pt "
+                                   "cada una)".replace(".", ",", 1) + ": cada una a su medida (su palabra o cifra más larga) y "
+                                   "la primera, el resto, como el publicado del Memoria 4.2")
             else:
                 detalle.append(f"Aviso: el cuadro no cabe en la retícula a {CUERPO_CELDA:g} pt ni con las columnas a su medida: "
                                f"necesitan {suma:.0f} pt y solo hay {espacio_pt - minimo:.0f}; baja la letra con «Probar letra» "
@@ -2418,7 +2471,7 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None):
                 resto = (espacio_pt - primera_pt) / len(otras)
 
     # 1) Muchas columnas de datos: aviso para valorar bajar la letra a 7 pt (decisión del usuario, 2026-11-17)
-    if otras and (len(otras) >= 10 or resto < 30 or a_medida):
+    if otras and (len(otras) >= 10 or resto < 30 or (a_medida and not por_nombres)):
         detalle.append(f"Aviso: el cuadro tiene {len(otras)} columnas de datos" + ("" if a_medida else f" de {resto:.0f} pt")
                        + ": valora bajar la letra con «Probar letra a 7 pt» o «Probar letra a 6,5 pt» (la guía permite de 6 a "
                        "7,5 pt según el tamaño del cuadro; el publicado del Memoria 4.2 va a 6,5 pt)")
@@ -2635,6 +2688,10 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None):
             izquierda.add(c)
     if izquierda:
         detalle.append("Columnas de textos largos, a la izquierda: " + ", ".join(ref(c, 1)[:-1] for c in sorted(izquierda)))
+    if nombres - izquierda:
+        detalle.append("Columna" + ("s" if len(nombres - izquierda) > 1 else "") + " de nombres, a la izquierda (como el "
+                       "publicado del Memoria 6.1; la cabecera, al centro): " + ", ".join(ref(c, 1)[:-1] for c in sorted(nombres - izquierda)))
+        izquierda |= nombres
 
     # Altos de fila y alineación en altura
     altos, arriba = {}, set()

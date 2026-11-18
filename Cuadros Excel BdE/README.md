@@ -255,6 +255,14 @@ siempre iguales; solo si así no caben (9 columnas que necesitan 64 pt cada una)
 o cifra más larga y la primera columna, el resto (si ni así cabe, aviso para bajar la letra). A 6,5 pt el 4.2 queda
 como el publicado (primera 99 pt frente a 106; datos 27-57 frente a 27-61).
 
+**Columnas de nombres propios** (publicado del Memoria 6.1, 2026-11-18): una columna de datos solo de textos de una
+línea, cada uno con 2 o más palabras en mayúscula inicial (salvo conectores: «Banco Bilbao Vizcaya Argentaria, SA»),
+va a la izquierda (su cabecera, al centro) y, si cabe sin partir la primera columna y no pasa de un tercio del cuadro,
+con cada nombre en una línea: las columnas de datos a su medida, la de nombres justa y el sobrante para bajar líneas de
+cabecera (cada vez a la más alta, la que menos cuesta), y lo que quede a partes iguales. Las de conceptos
+(«Relajación, concentración», DO 05) siguen al centro. Solo afecta al 6.1 de los 23 ejemplos: 99/132/66/81/90 pt
+frente a 124/135/62/82/93 del publicado (que se sale de la retícula).
+
 **Herramienta «Probar letra a 6,5 pt»** (`letra65`, petición del usuario, 2026-11-18): como la de 7 pt, a 6,5 pt
 (versión «Letra 6,5 pt»).
 
