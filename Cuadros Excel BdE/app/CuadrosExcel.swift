@@ -705,18 +705,18 @@ final class Taller: ObservableObject {
         }
     }
 
-    /// Nombre que tendrá el TERMINADO: el del original con «ORIGINAL» cambiado por «TERMINADO», o con
-    /// « TERMINADO» al final (si ya existe, el motor le pone « (2)»…)
+    /// Nombre que tendrá el resultado: el del original con «ORIGINALES»/«ORIGINAL» cambiado por «EXCEL», o con
+    /// « EXCEL» al final (si ya existe, el motor le pone « (2)»…) (petición del usuario, 2026-11-18; antes «TERMINADO»)
     var nombreTerminado: String {
         guard let trabajo else { return "" }
         var base = trabajo.deletingPathExtension().lastPathComponent
         if base.hasSuffix(" maquetado") { base = String(base.dropLast(" maquetado".count)) }
         if base.range(of: #"\bORIGINALES\b"#, options: .regularExpression) != nil {
-            base = base.replacingOccurrences(of: #"\bORIGINALES\b"#, with: "TERMINADOS", options: .regularExpression)
+            base = base.replacingOccurrences(of: #"\bORIGINALES\b"#, with: "EXCEL", options: .regularExpression)
         } else if base.range(of: #"\bORIGINAL\b"#, options: .regularExpression) != nil {
-            base = base.replacingOccurrences(of: #"\bORIGINAL\b"#, with: "TERMINADO", options: .regularExpression)
+            base = base.replacingOccurrences(of: #"\bORIGINAL\b"#, with: "EXCEL", options: .regularExpression)
         } else {
-            base += " TERMINADO"
+            base += " EXCEL"
         }
         return base + ".xlsx"
     }
@@ -737,7 +737,7 @@ final class Taller: ObservableObject {
     end run
     """
 
-    /// Guarda el resultado como «… TERMINADO.xlsx» junto al original y borra lo generado (las dos copias de
+    /// Guarda el resultado como «… EXCEL.xlsx» junto al original y borra lo generado (las dos copias de
     /// trabajo y la carpeta de pasos con todas las versiones). Antes: que no haya cambios sin guardar en Excel
     /// y confirmación.
     func terminar() {
@@ -746,13 +746,13 @@ final class Taller: ObservableObject {
             let estado = await osascript(Taller.guionGuardado, [trabajo.path, Taller.copiaB(trabajo).path], espera: 10)
             if estado.texto.contains("sin guardar") {
                 self.aviso = Aviso(titulo: "Hay cambios sin guardar en Excel",
-                                   texto: "Guarda el libro en Excel (⌘S) si quieres conservarlos, o deshazlos, y vuelve a pulsar «Guardar como TERMINADO».")
+                                   texto: "Guarda el libro en Excel (⌘S) si quieres conservarlos, o deshazlos, y vuelve a pulsar «Guardar como EXCEL».")
                 return
             }
-            self.pregunta = Pregunta(titulo: "¿Guardar como TERMINADO?",
-                                     texto: "Se guarda «\(self.nombreTerminado)» junto al original (si ya existe, no se pisa: se añade « (2)»). Después se cierra en Excel y se borran la copia de trabajo, su copia « (2)» y la carpeta «(pasos)» con todas las versiones. El original del autor no se toca. No se puede deshacer.",
+            self.pregunta = Pregunta(titulo: "¿Guardar como EXCEL?",
+                                     texto: "Se guarda «\(self.nombreTerminado)» junto al original (si ya existe, no se pisa: se añade « (2)») y se deja abierto en Excel en lugar de la copia de trabajo. Se borran la copia de trabajo, su copia « (2)» y la carpeta «(pasos)» con todas las versiones. El original del autor no se toca. No se puede deshacer.",
                                      boton: "Guardar y borrar") {
-                self.tarea("Guardar como TERMINADO") { id in
+                self.tarea("Guardar como EXCEL") { id in
                     await self.cerrarEnExcel(trabajo)
                     guard let r = await self.llamarMotor(["terminar", trabajo.path], registro: id),
                           let hecho = r.terminado else { return false }
@@ -763,7 +763,23 @@ final class Taller: ObservableObject {
                     self.pasos = []
                     self.actual = 0
                     self.comparacion = []
-                    NSWorkspace.shared.activateFileViewerSelecting([url])
+                    // El resultado se queda abierto en Excel, en el sitio de la copia de trabajo (petición del
+                    // usuario, 2026-11-18: antes se cerraba y se enseñaba en el Finder)
+                    if self.excel {
+                        let guion = """
+                        on run argv
+                            tell application "Microsoft Excel"
+                                open workbook workbook file name (item 1 of argv) update links do not update links
+                                activate
+                            end tell
+                            return "ok"
+                        end run
+                        """
+                        let abierto = await osascript(guion, [url.path], espera: 30)
+                        self.anotar(id, abierto.ok ? "Abierto en Excel: \(url.lastPathComponent)" : "⚠ No he podido abrirlo en Excel (\(abierto.texto))")
+                    } else {
+                        NSWorkspace.shared.activateFileViewerSelecting([url])
+                    }
                     return true
                 }
             }
@@ -1644,7 +1660,7 @@ struct TarjetaTerminar: View {
                 Accion(icono: "doc.text.magnifyingglass", titulo: "Comparar con el original",
                        detalle: "Textos, cifras y datos de todas las hojas frente al Excel del autor (no la colocación): avisa de lo que falte y de los cambios de cifras, fechas, trimestres, mayúsculas… No crea versión",
                        color: color, principal: taller.comparacion.isEmpty) { taller.comparar() }
-                Accion(icono: "checkmark.circle", titulo: "Guardar como TERMINADO",
+                Accion(icono: "checkmark.circle", titulo: "Guardar como EXCEL",
                        detalle: taller.trabajo == nil ? "Guarda el resultado junto al original y borra las copias y las versiones"
                            : "Guarda «\(taller.nombreTerminado)» junto al original y borra las copias de trabajo y la carpeta de versiones",
                        color: color, principal: !taller.comparacion.isEmpty) { taller.terminar() }

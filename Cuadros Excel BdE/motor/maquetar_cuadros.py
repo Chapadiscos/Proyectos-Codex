@@ -3918,11 +3918,11 @@ def pendiente(nombre):
 def nombre_terminado(origen, carpeta):
     stem = origen.stem
     if re.search(r'\bORIGINALES\b', stem):
-        base = re.sub(r'\bORIGINALES\b', "TERMINADOS", stem)
+        base = re.sub(r'\bORIGINALES\b', "EXCEL", stem)
     elif re.search(r'\bORIGINAL\b', stem):
-        base = re.sub(r'\bORIGINAL\b', "TERMINADO", stem)
+        base = re.sub(r'\bORIGINAL\b', "EXCEL", stem)
     else:
-        base = stem + " TERMINADO"
+        base = stem + " EXCEL"   # «… EXCEL.xlsx» (petición del usuario, 2026-11-18; antes «TERMINADO(S)»)
     destino, n = carpeta / f"{base}.xlsx", 2
     while destino.exists():   # nunca se pisa un TERMINADO que ya exista
         destino, n = carpeta / f"{base} ({n}).xlsx", n + 1
@@ -3937,7 +3937,7 @@ def copia_actual(trabajo):
 
 
 def terminar(trabajo):
-    """Guarda la copia de trabajo como «… TERMINADO.xlsx» junto al original y borra todo lo generado: las dos
+    """Guarda la copia de trabajo como «… EXCEL.xlsx» junto al original y borra todo lo generado: las dos
     copias de trabajo y la carpeta de pasos. El original del autor no se toca."""
     trabajo, pasos = nombres(trabajo)
     estado = leer_estado(trabajo)

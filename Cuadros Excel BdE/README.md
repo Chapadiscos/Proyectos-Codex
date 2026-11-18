@@ -31,7 +31,9 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
 - **Hoja del cuadro**: la primera hoja visible con el rótulo «Cuadro N» en sus formas; si ninguna lo tiene, la
   primera visible (los autores la llaman «Cuadro datos», «Cua», «C1», «Cuadro 2»…). Excel se abre en ella.
 - Idioma: inglés si el nombre lleva «Ing» (`CIng_…`, `…_Ing`) o el rótulo es «Table N»; si no, castellano.
-- Terminar: guarda «… TERMINADO.xlsx» («ORIGINALES» → «TERMINADOS») junto al original y borra copias y versiones.
+- Terminar («Guardar como EXCEL»): guarda «… EXCEL.xlsx» («ORIGINALES»/«ORIGINAL» → «EXCEL»; antes «TERMINADOS»)
+  junto al original, lo deja abierto en Excel en lugar de la copia de trabajo y borra copias y versiones (petición
+  del usuario, 2026-11-18).
 - **Reiniciar**: cierra la copia en Excel sin guardar, borra todo lo generado (las dos copias de trabajo, la carpeta
   «(pasos)» entera y los bloqueos «~$» de Excel) y empieza de nuevo desde el original, como la primera vez.
 
@@ -261,5 +263,5 @@ todo el ancho del cuadro salvo las separaciones, en una versión nueva («Línea
 
 5. **Terminar**: «Comparar con el original» (`comparar`, sin crear versión: datos de todas las hojas y textos de
    las formas frente al Excel del autor; avisa en rojo de lo que falte y lista los cambios —sangrías, viñetas,
-   «TOTAL», puntos, comillas—) y «Guardar como TERMINADO» («ORIGINALES» → «TERMINADOS», junto al original; borra
+   «TOTAL», puntos, comillas—) y «Guardar como EXCEL» («ORIGINALES» → «EXCEL», junto al original; lo deja abierto en Excel y borra
    copias y versiones).
