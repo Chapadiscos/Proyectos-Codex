@@ -358,16 +358,17 @@ def hijos_a(cuerpo):
         i = fin
 
 
-def textos_en_negro(xml):
-    """Todas las propiedades de letra (rPr, defRPr, endParaRPr) con relleno negro. Devuelve el xml y los
-    colores que tenía antes lo que no era negro (para el detalle)."""
+def textos_en_negro(xml, color=None):
+    """Todas las propiedades de letra (rPr, defRPr, endParaRPr) con relleno negro (o con `color`, hex). Devuelve el
+    xml y los colores que tenía antes lo que no era negro (para el detalle)."""
     antes = []
+    relleno_nuevo = f'<a:solidFill><a:srgbClr val="{color}"/></a:solidFill>' if color else NEGRO
 
     def cambiar(m):
         etiqueta, atributos, dentro = m.group(1), m.group(2), m.group(4) or ""
         h = hijos_a(dentro)
         relleno = next((t for n, t in h if n in RELLENOS_TEXTO), None)
-        if relleno and any(r in relleno for r in YA_NEGROS) and "<a:lumMod" not in relleno and "<a:lumOff" not in relleno:
+        if not color and relleno and any(r in relleno for r in YA_NEGROS) and "<a:lumMod" not in relleno and "<a:lumOff" not in relleno:
             return m.group(0)
         if relleno or etiqueta == "rPr":
             if relleno:
@@ -375,7 +376,7 @@ def textos_en_negro(xml):
                 antes.append(c.group(2) if c else ("sin relleno" if "noFill" in relleno else "degradado/trama"))
         h = [x for x in h if x[0] not in RELLENOS_TEXTO]
         pos = 1 if h and h[0][0] == "ln" else 0
-        h.insert(pos, ["solidFill", NEGRO])
+        h.insert(pos, ["solidFill", relleno_nuevo])
         return f"<a:{etiqueta}{atributos}>" + "".join(t for _, t in h) + f"</a:{etiqueta}>"
     return PROPIEDADES_LETRA.sub(cambiar, xml), antes
 
@@ -1003,7 +1004,7 @@ def paso1(trabajo, pid):
     reescribir_zip(base, intermedio, cambios)
     with zipfile.ZipFile(intermedio) as z:
         propuestas = []
-        cambios_textos, detalle_textos = textos(z, hoja, estado, propuestas)
+        cambios_textos, detalle_textos = textos(z, hoja, estado, propuestas, pub)
     return nuevo_paso(trabajo, RETICULA_Y_TEXTOS, {**cambios, **cambios_textos}, detalle + detalle_textos,
                       propuestas=propuestas)
 
@@ -1140,7 +1141,7 @@ RE_UNIDADES = re.compile(r'\s*(datos|millones|miles|millardos|porcentajes?|%|tas
                          r'eur\b|€|points|change|year-end)', re.I)
 
 
-def textos(z, hoja, estado, propuestas=None):
+def textos(z, hoja, estado, propuestas=None, pub=None):
     """«Cuadro N» y título con el marco de la plantilla (el título con el final «(a)» / «(cont.)» en Regular y,
     si ocupa más de una línea, la pastilla crece); unidades en Roboto Light 6 pt; FUENTES en Roboto Light 7 pt
     con las reglas de Gráficos, en el ancho de la plantilla. Todo en negro."""
@@ -1331,7 +1332,12 @@ def textos(z, hoja, estado, propuestas=None):
             a, hechos_c = corregir_forma(a, estado.get("idioma", "es"))
             if hechos_c:
                 detalle.append("Aviso (corrección ortotipográfica), revísalas: " + "; ".join(hechos_c[:6]) + marca(forma=nombre_forma(a)))
-        a, _ = textos_en_negro(a)
+        # «Cuadro N» y título en el color de la publicación si lo pide (Documentos Ocasionales: naranja F06800,
+        # como sus publicados; Informe Anual y Memoria, en negro)
+        en_color = tipo in ("cuadro", "titulo") and (pub or {}).get("rotulo_y_titulo_en_color")
+        a, _ = textos_en_negro(a, pub["color"].upper() if en_color else None)
+        if en_color:
+            detalle.append(f"«{re.sub(r'(\s*/\s*)+$', '', corto)[:40]}», en el color de la publicación (#{pub['color'].upper()})")
         partes[k] = a
         if tipo == "titulo" and titulo_mayus:
             # Propuesta con botón «Aplicar» en la app (petición del usuario, 2026-11-17, Memoria 3.2)

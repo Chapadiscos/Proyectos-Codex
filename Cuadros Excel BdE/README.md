@@ -237,6 +237,8 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      - `texto_izquierda`: media de caracteres desde la que una columna de textos va a la izquierda (30; por defecto
        80): «Percepción de un solo color…» a la izquierda y «Relajación, concentración» al centro;
      - `centrado_en_altura`: también las filas de varias líneas, centradas en altura (en el Informe Anual, arriba).
+     - `rotulo_y_titulo_en_color`: «Cuadro N» y el título, en el color de la publicación (DO: naranja F06800, como
+       sus publicados; Informe Anual y Memoria, en negro). FUENTES y unidades siguen en negro.
    - **Columnas ocultas del autor** (Memoria 2.1: textos de traducción en A-C que la columna D enseña con una
      fórmula; «Descuadre» en G): ni se miden para el alto de fila ni se les cambia el formato.
    - **«Cuadro N» y unidades en celdas** encima del cuadro (Memoria 2.1, 3.2, 4.2): el paso 1 los pasa a cuadros de
