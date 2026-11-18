@@ -282,6 +282,10 @@ datos cabe en una línea con un múltiplo (3 pt) más, esa columna sube (todas, 
 ancho, siempre que el cuadro no crezca. El 02 queda a 78/78 pt: «Resolución temporal» en una línea y «Estimulación
 cerebral» (A15, sin combinar) en dos; mismo alto.
 
+**Líneas del autor debajo del cuadro** (DO 05 y 09, 2026-11-18): el paso 4 quita las líneas y fondos que se ven en las
+celdas vacías de las 10 filas de debajo del cuadro (la línea azul que el autor ponía encima de la FUENTE se quedaba al
+pasar la FUENTE al cuadro de texto). Los bordes vacíos (IA 1.3, 1.4) no cuentan.
+
 **Herramienta «Probar letra a 6,5 pt»** (`letra65`, petición del usuario, 2026-11-18): como la de 7 pt, a 6,5 pt
 (versión «Letra 6,5 pt»).
 

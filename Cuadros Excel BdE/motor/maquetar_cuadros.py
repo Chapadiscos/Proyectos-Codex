@@ -3297,11 +3297,27 @@ def lineas_y_fondos(z, hoja, cuadro):
     encima = [(c, f) for (c, f), x in todas.items() if f < f1 and c1 <= c <= c2 and not x["texto"].strip() and con_formato(x)]
     ocultas = [(c, f) for (c, f), x in todas.items() if f1 <= f <= f2 and c1 <= c <= c2 and ancho_col(c) == 0
                and not x["texto"].strip() and con_formato(x)]
-    for k in encima + ocultas:
+    # …y debajo (DO 05: la línea azul del autor encima de la FUENTE, en A14:B14, que se queda al pasar la FUENTE al
+    # cuadro de texto; el publicado la quita)
+    def se_ve(x):
+        """Línea o fondo que se ven (no un borde vacío ni un relleno sin trama, como las celdas del 1.3 y 1.4)."""
+        xf = estilos.xf(x["s"])
+        b = re.search(r'\bborderId="(\d+)"', xf)
+        r = re.search(r'\bfillId="(\d+)"', xf)
+        borde = estilos.bordes[int(b.group(1))] if b and int(b.group(1)) < len(estilos.bordes) else ""
+        relleno = estilos.rellenos[int(r.group(1))] if r and int(r.group(1)) < len(estilos.rellenos) else ""
+        return 'style="' in borde or bool(re.search(r'patternType="(?!none|gray125)', relleno))
+    debajo = [(c, f) for (c, f), x in todas.items() if f2 < f <= f2 + 10 and c1 <= c <= c2 and not x["texto"].strip()
+              and con_formato(x) and se_ve(x)]
+    for k in encima + ocultas + debajo:
         nuevos[k] = estilos.variante(estilo(*k), relleno="", borde={})
     if encima:
         detalle.append("Quitadas líneas y fondos sueltos del autor encima del cuadro (fila"
                        + ("s " if len({f for _, f in encima}) > 1 else " ") + ", ".join(str(f) for f in sorted({f for _, f in encima})) + ")")
+    if debajo:
+        detalle.append("Quitadas líneas y fondos sueltos del autor debajo del cuadro (fila"
+                       + ("s " if len({f for _, f in debajo}) > 1 else " ") + ", ".join(str(f) for f in sorted({f for _, f in debajo})) + ")"
+                       + marca([ref(*min(debajo, key=lambda k: (k[1], k[0])))]))
     hoja_xml = con_estilo(hoja_xml, nuevos)
     if errores:
         hoja_xml = con_combinadas(hoja_xml, [f"{ref(primera, f - 1)}:{ref(primera, f)}" for f in errores])
