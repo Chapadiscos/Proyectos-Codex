@@ -2584,6 +2584,37 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None):
         if all(abajo[c] >= necesita[c] for c in otras):
             otros_pt = abajo
             primera_final = disponible - sum(otros_pt.values())
+    # Cabeceras de datos que se parten por muy poco (DO 02: «Resolución temporal» necesita 76 pt y la columna es de
+    # 75): esas columnas suben un múltiplo (todas, si eran iguales) y la primera cede ese ancho, si sus textos no
+    # hacen el cuadro más alto (las combinadas en vertical caben en tantas líneas como filas; decisión del usuario)
+    def cab_una_linea(c):
+        return max([max(medir_de(c, f)(l.strip(), CUERPO_CELDA) for l in d(c, f)["texto"].split("\n")) + 2 * RELLENO_CELDA_PT
+                    for f in range(f1, fin_cab + 1) if (c, f) not in tapadas and d(c, f)["texto"].strip()
+                    and tramos.get((c, f), 1) == 1] or [0])
+    por_poco = [c for c in otras if otros_pt[c] < cab_una_linea(c) <= otros_pt[c] + MULTIPLO_PT]
+    if por_poco:
+        suben = list(otras) if len(set(otros_pt.values())) == 1 else por_poco
+        nueva_primera = primera_final - MULTIPLO_PT * len(suben)
+
+        def lineas_filas(wp, wd):
+            """Líneas de cada fila con la primera columna a wp y las de datos a wd (combinadas en vertical: no cuentan
+            si caben en sus filas)."""
+            filas_l = {}
+            for f, espacios, t, m in textos_primera:
+                n = len(partir(t, wp - 2 * RELLENO_CELDA_PT - m(espacios, CUERPO_CELDA), m))
+                juntas = next((b2 - b1 + 1 for a1, b1, a2, b2 in rangos if a1 == a2 == primera and b1 == f and b2 > b1), 1)
+                filas_l[f] = max(filas_l.get(f, 1), 1 if n <= juntas else n)
+            for c, f, t, k, m in celdas_otras:
+                filas_l[f] = max(filas_l.get(f, 1), max(len(partir(l, k * wd[c] - 2 * RELLENO_CELDA_PT, m)) for l in t.split("\n")))
+            return sum(alto_fila(n) for n in filas_l.values())
+        nuevos_otros = {c: otros_pt[c] + (MULTIPLO_PT if c in suben else 0) for c in otras}
+        if nueva_primera >= minimo and lineas_filas(nueva_primera, nuevos_otros) <= lineas_filas(primera_final, otros_pt):
+            for c in suben:
+                otros_pt[c] += MULTIPLO_PT
+            primera_final = nueva_primera
+            detalle.append("Cabecera en una línea por " + str(MULTIPLO_PT) + " pt más: " + ", ".join(
+                f"«{d(c, next(f for f in range(f1, fin_cab + 1) if d(c, f)['texto'].strip()))['texto'].strip()[:30]}»" for c in por_poco)
+                + "; la primera columna cede ese ancho (el cuadro no crece)")
     if primera_final < MULTIPLO_PT:
         primera_final = MULTIPLO_PT * max(1, round(primera_pt / MULTIPLO_PT))
     nuevos_anchos = {primera: ancho_comun(primera_final, mdw, mdw_win)}

@@ -277,6 +277,10 @@ frente a 124/135/62/82/93 del publicado (que se sale de la retícula).
 **Celdas de la primera columna combinadas en vertical** (DO 02, 2026-11-18: «Indicadores directos de actividad
 neuronal» en A7:A9): caben en tantas líneas como filas juntan sin alargar el cuadro, así que su ancho natural es el
 mínimo con el que no pasan de esas líneas. El 02 pasa de 153/63 pt a 93/75 (publicado 130/75).
+**Cabeceras que se parten por poco** (DO 02, decisión del usuario, 2026-11-18): si la cabecera de una columna de
+datos cabe en una línea con un múltiplo (3 pt) más, esa columna sube (todas, si eran iguales) y la primera cede el
+ancho, siempre que el cuadro no crezca. El 02 queda a 78/78 pt: «Resolución temporal» en una línea y «Estimulación
+cerebral» (A15, sin combinar) en dos; mismo alto.
 
 **Herramienta «Probar letra a 6,5 pt»** (`letra65`, petición del usuario, 2026-11-18): como la de 7 pt, a 6,5 pt
 (versión «Letra 6,5 pt»).
