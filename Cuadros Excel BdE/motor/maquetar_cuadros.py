@@ -1337,7 +1337,8 @@ def textos(z, hoja, estado, propuestas=None, pub=None):
         en_color = tipo in ("cuadro", "titulo") and (pub or {}).get("rotulo_y_titulo_en_color")
         a, _ = textos_en_negro(a, pub["color"].upper() if en_color else None)
         if en_color:
-            detalle.append(f"«{re.sub(r'(\s*/\s*)+$', '', corto)[:40]}», en el color de la publicación (#{pub['color'].upper()})")
+            rotulo = re.sub(r'(\s*/\s*)+$', '', corto)[:40]
+            detalle.append(f"«{rotulo}», en el color de la publicación (#{pub['color'].upper()})")
         partes[k] = a
         if tipo == "titulo" and titulo_mayus:
             # Propuesta con botón «Aplicar» en la app (petición del usuario, 2026-11-17, Memoria 3.2)
