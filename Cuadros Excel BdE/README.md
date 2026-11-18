@@ -289,6 +289,10 @@ pasar la FUENTE al cuadro de texto). Los bordes vacíos (IA 1.3, 1.4) no cuentan
 **Cabecera combinada a todo el ancho** (DO 06, 2026-11-18: «Alteraciones del color» en A5:C5): al centro, como el
 publicado; la que empieza en la primera columna y no llega al final (DO 02, «Método» en A6:B6) sigue a la izquierda.
 
+**Cuadros de texto que caben en una línea** (DO 09, 2026-11-18): las columnas de descripciones se quedan con lo justo
+para su texto en una línea y lo que sobra iguala las columnas cortas (09: 54/90/90/234 pt frente a 57/109/109/231 del
+publicado); al redondear a múltiplos de 3 pt ninguna baja de lo que necesita su texto en una línea.
+
 **Herramienta «Probar letra a 6,5 pt»** (`letra65`, petición del usuario, 2026-11-18): como la de 7 pt, a 6,5 pt
 (versión «Letra 6,5 pt»).
 

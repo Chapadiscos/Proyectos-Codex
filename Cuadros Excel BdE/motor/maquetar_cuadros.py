@@ -2377,9 +2377,28 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None):
         primera_pt = max(minimo, min(max(natural, espacio_pt / 8), espacio_pt / 3))
         if sum(linea.values()) <= espacio_pt - primera_pt:
             primera_pt = max(primera_pt, min(natural, espacio_pt - sum(linea.values())))
-            # Lo que sobra, a las columnas de datos (DO 05: «Color» 87 pt y la otra, 420; DO 09: 57/109/109/231)
-            sobra = (espacio_pt - primera_pt - sum(linea.values())) / len(otras)
-            medida = {c: linea[c] + sobra for c in otras}
+            # Lo que sobra, a las columnas de datos (DO 05: «Color» 87 pt y la otra, 420). Si hay columnas de
+            # descripciones (a la izquierda) y columnas cortas, las de descripciones se quedan con lo justo y las cortas
+            # suben a un mismo ancho (DO 09: «Modo del billete» y «Modo del cerebro», 109 y 109; «Descripción», 231)
+            sobra = espacio_pt - primera_pt - sum(linea.values())
+
+            def media_textos(c):
+                ts = [d(c, f)["texto"] for f in range(fin_cab + 1, f2 + 1) if (c, f) not in tapadas and d(c, f)["texto"].strip()]
+                return sum(map(len, ts)) / len(ts) if ts else 0
+            largas_t = {c for c in otras if media_textos(c) > pub.get("texto_izquierda", LARGO_TEXTO_IZQUIERDA)}
+            cortas_t = [c for c in otras if c not in largas_t]
+            if largas_t and cortas_t:
+                # Nivel común de las cortas: el que gasta justo lo que sobra
+                bajo_n, alto_n = 0.0, max(linea[c] for c in cortas_t) + sobra
+                for _ in range(40):
+                    nivel = (bajo_n + alto_n) / 2
+                    if sum(max(0, nivel - linea[c]) for c in cortas_t) > sobra:
+                        alto_n = nivel
+                    else:
+                        bajo_n = nivel
+                medida = {c: (max(linea[c], bajo_n) if c in cortas_t else linea[c]) for c in otras}
+            else:
+                medida = {c: linea[c] + sobra / len(otras) for c in otras}
         else:
             medida, pendientes, queda = {}, sorted(otras, key=lambda c: linea[c]), espacio_pt - primera_pt
             while pendientes:
@@ -2393,6 +2412,8 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None):
                     break
         a_medida = True
         resto = min(medida.values())
+        # Al redondear a múltiplos de 3 pt, que ninguna baje de lo que le hace falta a su texto en una línea (si lo tenía)
+        necesita = {c: max(necesita[c], min(linea[c], medida[c])) for c in otras}
         detalle.append("Cuadro de textos: primera columna a su medida, las columnas cortas a la medida de su texto y las "
                        "de descripciones, el resto (como los publicados de " + pub.get("nombre", "la publicación") + ")")
     elif otras:
