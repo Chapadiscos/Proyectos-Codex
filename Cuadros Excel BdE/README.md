@@ -250,6 +250,14 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
    - La línea que cierra cada bloque de sangrados (gris claro, como el resto) queda por revisar con más ejemplos.
    - Paso 2: si quedan la FUENTE y las notas en celdas bajo el cuadro (las que el paso 1 no reconoce), el cuadro
      acaba antes y se avisa para pasarlas al cuadro de texto de FUENTES.
+**Columnas a su medida** (decisión del usuario, 2026-11-18, publicado del Memoria 4.2): las columnas de datos van
+siempre iguales; solo si así no caben (9 columnas que necesitan 64 pt cada una), cada una toma el ancho de su palabra
+o cifra más larga y la primera columna, el resto (si ni así cabe, aviso para bajar la letra). A 6,5 pt el 4.2 queda
+como el publicado (primera 99 pt frente a 106; datos 27-57 frente a 27-61).
+
+**Herramienta «Probar letra a 6,5 pt»** (`letra65`, petición del usuario, 2026-11-18): como la de 7 pt, a 6,5 pt
+(versión «Letra 6,5 pt»).
+
 **Herramienta «Probar letra a 7 pt»** (`letra7`, petición del usuario, 2026-11-17): rehace desde la versión del
 paso 1 los pasos 2, 3 y 4 que haya hechos con la letra de las celdas a 7 pt y lo guarda como una versión nueva
 («Letra 7 pt»); las de 7,5 pt quedan detrás para volver con ⌘←. El paso 2 la propone en su aviso de muchas

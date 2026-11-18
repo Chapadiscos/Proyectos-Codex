@@ -2310,6 +2310,7 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None):
         minimo = max(minimo, mc(espacios, CUERPO_CELDA) + palabra(cuerpo, mc))
     natural += 2 * RELLENO_CELDA_PT + 1.5   # holgura: el redondeo a píxeles no debe partir el texto más largo
     minimo += 2 * RELLENO_CELDA_PT
+    a_medida, medida = False, {}
     if otras:
         hace_falta = max(necesita.values())
         primera_pt = max(minimo, min(natural, espacio_pt - len(otras) * hace_falta))
@@ -2323,8 +2324,23 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None):
             primera_pt = tercio
         resto = (espacio_pt - primera_pt) / len(otras)
         if resto < hace_falta - 0.1:
-            detalle.append(f"Aviso: el cuadro no cabe en la retícula a {CUERPO_CELDA:g} pt: las columnas necesitan "
-                           f"{hace_falta:.0f} pt y solo hay {resto:.0f}; la guía permite bajar la letra hasta 6 pt".replace(".", ",", 1))
+            # Con columnas iguales no cabe: cada columna de datos a su medida (su palabra o cifra más larga) y la
+            # primera, el resto, como el publicado del Memoria 4.2 (decisión del usuario, 2026-11-18). Si aun así no
+            # cabe, se avisa para bajar la letra
+            suma = sum(necesita.values())
+            if espacio_pt - suma >= minimo:
+                a_medida = True
+                primera_pt = max(minimo, min(natural, espacio_pt - suma))
+                sobra = (espacio_pt - primera_pt - suma) / len(otras)
+                medida = {c: necesita[c] + sobra for c in otras}
+                resto = min(medida.values())
+                detalle.append(f"Con columnas de datos iguales el cuadro no cabe a {CUERPO_CELDA:g} pt (necesitan {hace_falta:.0f} pt "
+                               "cada una)".replace(".", ",", 1) + ": cada una a su medida (su palabra o cifra más larga) y "
+                               "la primera, el resto, como el publicado del Memoria 4.2")
+            else:
+                detalle.append(f"Aviso: el cuadro no cabe en la retícula a {CUERPO_CELDA:g} pt ni con las columnas a su medida: "
+                               f"necesitan {suma:.0f} pt y solo hay {espacio_pt - minimo:.0f}; baja la letra con «Probar letra» "
+                               "(7 o 6,5 pt; la guía permite hasta 6 pt)".replace(".", ",", 1))
     else:
         primera_pt, resto = espacio_pt, 0
     if primera_pt < natural - 0.1:
@@ -2369,7 +2385,7 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None):
     # líneas como mucho; se queda el reparto con el cuadro más bajo (decisión del usuario, 2026-11-17)
     def lineas_primera(t, espacios, m, w):
         return len(partir(t, w - 2 * RELLENO_CELDA_PT - m(espacios, CUERPO_CELDA), m))
-    if otras and resto > 0 and textos_primera:
+    if otras and resto > 0 and textos_primera and not a_medida:
         maximo_cab = max([lineas_texto(t, k * resto, m) for c, f, t, k, m in celdas_otras if f <= fin_cab] or [1])
         if maximo_cab > 3:
             def alto_cuadro(wp, wr):
@@ -2402,9 +2418,10 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None):
                 resto = (espacio_pt - primera_pt) / len(otras)
 
     # 1) Muchas columnas de datos: aviso para valorar bajar la letra a 7 pt (decisión del usuario, 2026-11-17)
-    if otras and (len(otras) >= 10 or resto < 30):
-        detalle.append(f"Aviso: el cuadro tiene {len(otras)} columnas de datos de {resto:.0f} pt: valora bajar la letra a 7 pt "
-                       "con «Probar letra a 7 pt» (la guía permite de 6 a 7,5 pt según el tamaño del cuadro)")
+    if otras and (len(otras) >= 10 or resto < 30 or a_medida):
+        detalle.append(f"Aviso: el cuadro tiene {len(otras)} columnas de datos" + ("" if a_medida else f" de {resto:.0f} pt")
+                       + ": valora bajar la letra con «Probar letra a 7 pt» o «Probar letra a 6,5 pt» (la guía permite de 6 a "
+                       "7,5 pt según el tamaño del cuadro; el publicado del Memoria 4.2 va a 6,5 pt)")
 
     # Columnas de textos largos: si con anchos iguales sus filas salen mucho más altas, ganan ancho a costa de las que
     # tienen holgura (sin que estas pasen a tener más líneas que la más alta), hasta que ya no mejora
@@ -2414,8 +2431,8 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None):
                   if (c, f) not in tapadas and d(c, f)["texto"].strip() and not es_cifra(d(c, f))]
         if textos and sum(len(t) for t in textos) / len(textos) > LARGO_TEXTO_IZQUIERDA:
             largas.append(c)
-    anchos_pt = {c: resto for c in otras}
-    if largas and len(otras) > 1:
+    anchos_pt = dict(medida) if a_medida else {c: resto for c in otras}
+    if largas and len(otras) > 1 and not a_medida:
         def lineas_col(c, w):
             return max([len(partir(d(c, f)["texto"], w - 2 * RELLENO_CELDA_PT, medir_de(c, f))) for f in range(fin_cab + 1, f2 + 1)
                         if (c, f) not in tapadas and d(c, f)["texto"].strip()] or [1])
@@ -3463,6 +3480,15 @@ LETRA_PEQUENA = 7
 
 
 def letra7(trabajo, pid=None):
+    return letra_pequena(trabajo, pid, 7)
+
+
+def letra65(trabajo, pid=None):
+    """Lo mismo a 6,5 pt (petición del usuario, 2026-11-18: el publicado del Memoria 4.2 va a 6,5 pt)."""
+    return letra_pequena(trabajo, pid, 6.5)
+
+
+def letra_pequena(trabajo, pid=None, cuerpo=LETRA_PEQUENA):
     """Rehace los pasos 2, 3 y 4 (los que haya hasta la versión elegida) con la letra de las celdas a 7 pt, desde
     la versión del paso 1, y lo guarda como una versión nueva: las de 7,5 pt se quedan para volver a ellas
     (petición del usuario, 2026-11-17: probar 7 pt en cuadros con muchas columnas y quedarse con lo mejor)."""
@@ -3470,13 +3496,13 @@ def letra7(trabajo, pid=None):
     estado = leer_estado(trabajo)
     hechos = [p["titulo"] for p in estado["pasos"][:estado["actual"] + 1]]
     if CELDAS not in hechos:
-        raise Fallo("Antes hay que hacer el paso «Celdas»: la prueba de 7 pt lo rehace con la letra más pequeña")
+        raise Fallo("Antes hay que hacer el paso «Celdas»: la prueba de letra lo rehace con la letra más pequeña")
     _, pasos = nombres(trabajo)
     n1 = max(p["n"] for p in estado["pasos"][:estado["actual"] + 1] if p["titulo"] == RETICULA_Y_TEXTOS)
     base = pasos / estado["pasos"][n1]["archivo"]
     hoja = estado.get("hoja") or "Cuadro datos"
     anterior = CUERPO_CELDA
-    CUERPO_CELDA = LETRA_PEQUENA
+    CUERPO_CELDA = cuerpo
     try:
         with zipfile.ZipFile(base) as z:
             propuestas = []
@@ -3513,12 +3539,12 @@ def letra7(trabajo, pid=None):
     finally:
         CUERPO_CELDA = anterior
     rehechos = ["Celdas"] + [t for t in (CABECERAS, LINEAS_Y_FONDOS) if t in hechos]
-    detalle.insert(0, f"Letra de las celdas a {LETRA_PEQUENA} pt: rehechos desde la versión {n1} los pasos "
+    detalle.insert(0, f"Letra de las celdas a {str(cuerpo).replace('.0', '').replace('.', ',')} pt: rehechos desde la versión {n1} los pasos "
                       + ", ".join(f"«{t}»" for t in rehechos) + ". Si no te convence, vuelve a la versión anterior (⌘←)")
     # Los avisos de bajar a 7 pt ya no vienen al caso
     detalle = [l for l in detalle if not l.startswith("Aviso: el cuadro tiene")]
     aplica = [f"{estado['actual'] + 1}:{k}" for k, p in enumerate(propuestas) if p in reaplicadas]
-    return nuevo_paso(trabajo, f"Letra {LETRA_PEQUENA} pt", todo, detalle, cuadro, propuestas=propuestas, aplica=aplica)
+    return nuevo_paso(trabajo, f"Letra {str(cuerpo).replace('.0', '').replace('.', ',')} pt", todo, detalle, cuadro, propuestas=propuestas, aplica=aplica)
 
 
 # ---------------------------------------------------------------- correcciones ortotipográficas (decisión del usuario,
@@ -4072,7 +4098,7 @@ def info(archivo):
 
 ORDENES = {"empezar": empezar, "estado": lambda t: {"trabajo": t, **leer_estado(t)}, "ir": ir, "reiniciar": reiniciar,
            "paso1": paso1, "paso2": paso2,
-           "paso3": paso3, "paso4": paso4, "letra7": letra7, "linea_oscura": linea_oscura, "aplicar": aplicar,
+           "paso3": paso3, "paso4": paso4, "letra7": letra7, "letra65": letra65, "linea_oscura": linea_oscura, "aplicar": aplicar,
            "comparar": comparar, "terminar": terminar, "info": info, "publicaciones": lambda: {},
            "guardar_publicacion": guardar_publicacion, "borrar_publicacion": borrar_publicacion, "paletas": paletas}
 
