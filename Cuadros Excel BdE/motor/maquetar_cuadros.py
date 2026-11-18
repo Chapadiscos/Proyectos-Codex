@@ -1126,6 +1126,7 @@ def mayusculas(texto):
     return len(letras) > 3 and all(c.isupper() for c in letras)
 
 
+UNIDADES_PT = 6
 RE_UNIDADES = re.compile(r'\s*(datos|millones|miles|millardos|porcentajes?|%|tasas?|n[úu]mero|euros?|en\s|unidades|'
                          r'puntos|variaci[óo]n|data|millions|thousands|billions|percentages?|rates?|number|units|'
                          r'eur\b|€|points|change|year-end)', re.I)
@@ -1540,7 +1541,7 @@ class Estilos:
         self.cache[clave] = n
         return n
 
-    def fuente_celda(self, fuente, negrita=False):
+    def fuente_celda(self, fuente, negrita=False, cuerpo=None):
         """Roboto Light 7,5 pt (o Roboto Medium si el autor la puso en negrita) con el formato local de la fuente
         del autor (cursiva, subrayado, tachado, índices, color), sin negrita de Excel: el peso lo da la familia."""
         partes = []
@@ -1548,7 +1549,7 @@ class Estilos:
             m = re.search(rf'<{etiqueta}\b[^>]*/>', fuente)
             if m and 'val="0"' not in m.group(0) and 'val="false"' not in m.group(0):
                 partes.append(m.group(0))
-        partes.append(f'<sz val="{CUERPO_CELDA:g}"/>')
+        partes.append(f'<sz val="{cuerpo or CUERPO_CELDA:g}"/>')
         # Siempre en negro: el color del autor (cifras en gris, Memoria 3.2) no se queda; las cabeceras las colorea
         # el paso 3 (decisión del usuario, 2026-11-17)
         partes.append('<color rgb="FF000000"/>')
@@ -1581,14 +1582,14 @@ class Estilos:
         self.nuevos_formatos.append((n, nuevo))
         return n
 
-    def nuevo(self, i, alineacion, negrita=False):
+    def nuevo(self, i, alineacion, negrita=False, cuerpo=None):
         """Índice de un formato como el `i` del autor con la fuente de celda y esta alineación (y el formato de
         número sin relleno a los lados)."""
-        clave = (i, tuple(sorted(alineacion.items())), negrita)
+        clave = (i, tuple(sorted(alineacion.items())), negrita, cuerpo)
         if clave in self.cache:
             return self.cache[clave]
         xf = self.xf(i)
-        fid = self.fuente_celda(self.fuente_de(i), negrita)
+        fid = self.fuente_celda(self.fuente_de(i), negrita, cuerpo)
         apertura = re.match(r'<xf\b[^>]*?(/?)>', xf)
         atributos = apertura.group(0)[3:-(2 if apertura.group(1) else 1)]
         nf = self.sin_relleno(i)
@@ -1852,7 +1853,16 @@ def buscar_tabla(celdas, rangos, ancho_col, a_emu, ancho_ret, estilos):
                 key=lambda g: sum(1 for k in g if celdas.get(k, {}).get("texto", "").strip()))
     # Sin las filas y columnas de los bordes que no tienen texto (bordes o rellenos sueltos del autor)
     texto = {k for k in grupo if celdas.get(k, {}).get("texto", "").strip()}
-    return (min(k[0] for k in texto), min(k[1] for k in texto), max(k[0] for k in texto), max(k[1] for k in texto))
+    c1, f1, c2, f2 = min(k[0] for k in texto), min(k[1] for k in texto), max(k[0] for k in texto), max(k[1] for k in texto)
+    # Columna del borde derecho con un solo texto suelto, sin cifras (Memoria 4.1: E16 «CAMBIADOS LOS NOMBRES», nota
+    # del autor pegada al cuadro): no es del cuadro (petición del usuario, 2026-11-18); el paso 2 avisa de ella
+    while c2 > c1 and f2 - f1 >= 3:
+        en_col = [k for k in texto if k[0] == c2]
+        if len(en_col) > 1 or any(celdas[k].get("numero") for k in en_col):
+            break
+        texto -= set(en_col)
+        c2 = max(k[0] for k in texto)
+    return c1, f1, c2, f2
 
 
 def indice_rico(d, compartidos):
@@ -2118,9 +2128,11 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None):
         pos += unidades_a_emu(ancho_col(c))
     fuera = [(c, f) for (c, f), x in sorted(todas.items(), key=lambda kv: (kv[0][1], kv[0][0]))
              if x["texto"].strip() and not (c1 <= c <= c2 and f1 <= f <= f2) and ancho_col(c) > 0
-             and x_col.get(c, ancho_ret) < ancho_ret and not (f > f2 and ROTULO.match(x["texto"]))]
+             and (x_col.get(c, ancho_ret) < ancho_ret or (f1 <= f <= f2 and c2 < c <= c2 + 3
+                  and sum(1 for (cc, ff), y in todas.items() if cc == c and f1 <= ff <= f2 and y["texto"].strip()) == 1))
+             and not (f > f2 and ROTULO.match(x["texto"]))]
     if fuera:
-        detalle.append("Aviso: hay textos en celdas fuera del cuadro, dentro de la retícula (¿restos del autor?): "
+        detalle.append("Aviso: hay textos en celdas fuera del cuadro, dentro de la retícula o pegados a él (¿notas o restos del autor?): "
                        + ", ".join(f"{ref(c, f)} «{todas[(c, f)]['texto'].strip()[:30]}»" for c, f in fuera[:5])
                        + ("…" if len(fuera) > 5 else "") + marca([ref(c, f) for c, f in fuera]))
 
@@ -2622,6 +2634,17 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None):
         detalle.append(f"Alineadas arriba (textos de 2 o más líneas en los datos): fila{'s' if len(arriba) > 1 else ''} "
                        + ", ".join(str(f) for f in sorted(arriba)))
 
+    # Unidades escritas en la esquina de la cabecera (Memoria 4.1: «Datos a 31 de diciembre» en A5:A9): como unas
+    # unidades, Roboto Light 6 pt arriba a la izquierda y sin relleno (publicado; petición del usuario, 2026-11-18)
+    esquina_unidades = {(c, f) for f in range(f1, fin_cab + 1) for c in [primera]
+                        if RE_UNIDADES.match(d(c, f)["texto"] or "") and (c, f) not in tapadas}
+    esquina_unidades |= {(a, b) for a1, b1, a2, b2 in rangos if (a1, b1) in esquina_unidades
+                         for a in range(a1, a2 + 1) for b in range(b1, b2 + 1)}
+    if esquina_unidades:
+        k = min(esquina_unidades, key=lambda k: (k[1], k[0]))
+        detalle.append(f"Unidades en la esquina de la cabecera ({ref(*k)} «{d(*k)['texto'].strip()[:40]}»): Roboto Light "
+                       f"{UNIDADES_PT:g} pt, arriba a la izquierda y sin relleno" + marca([ref(*k)]))
+
     # Formatos nuevos de cada celda del cuadro
     nuevos_s = {}
     for f in range(f1, f2 + 1):
@@ -2642,6 +2665,10 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None):
             al = {"horizontal": h, "vertical": "top" if f in arriba else "center"}
             if not es_cifra(x) or f <= fin_cab:
                 al["wrapText"] = "1"
+            if (c, f) in esquina_unidades:
+                nuevos_s[(c, f)] = estilos.nuevo(x["s"], {"horizontal": "left", "vertical": "top", "wrapText": "1"},
+                                                 cuerpo=UNIDADES_PT)
+                continue
             nuevos_s[(c, f)] = estilos.nuevo(x["s"], al, negrita=f in filas_suma or (c == primera and f in madres))
     negritas = [ref(c, f) for (c, f) in nuevos_s if es_negrita(estilos.fuente_de(d(c, f)["s"])) and d(c, f)["texto"].strip()]
     sumas_txt = [f for f in sorted(filas_suma) if not RE_TOTAL.match(d(primera, f)["texto"])]
@@ -2869,7 +2896,8 @@ def cabeceras(z, hoja, cuadro, pub):
                 continue   # columna oculta del autor con texto («Descuadre», Memoria 2.1): no se toca
             estrecha = ancho_col(c) < COLUMNA_ESTRECHA and a1 == a2
             vacia = not texto(*ancla) and ancla not in [(k[0], k[1]) for k in combinada.values()]
-            if estrecha or vacia or (c == primera and not texto(*ancla)):
+            unidades = c == primera and RE_UNIDADES.match(texto(*ancla)) is not None
+            if estrecha or vacia or (c == primera and not texto(*ancla)) or unidades:
                 # Sin relleno ni líneas (el autor puede haber dejado alguna: 3.4, línea azul en A4 y G4)
                 nuevos[(c, f)] = estilos.variante(estilo(c, f), relleno="", borde={})
                 continue
@@ -2902,6 +2930,8 @@ def cabeceras(z, hoja, cuadro, pub):
         detalle.append("Columnas de separación sin relleno (hueco blanco entre grupos): " + ", ".join(estrechas))
     if not texto(primera, fin_cab) and not any(texto(primera, f) for f in range(f1, fin_cab + 1)):
         detalle.append("Esquina de la primera columna sin relleno (no lleva texto)")
+    elif any(RE_UNIDADES.match(texto(primera, f)) for f in range(f1, fin_cab + 1)):
+        detalle.append("Esquina de la primera columna sin relleno (lleva las unidades)")
     hoja_xml = con_estilo(hoja_xml, nuevos)
     return {ruta_hoja: hoja_xml.encode("utf-8"), "xl/styles.xml": estilos.resultado().encode("utf-8")}, detalle
 

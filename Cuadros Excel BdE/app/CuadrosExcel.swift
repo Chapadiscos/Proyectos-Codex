@@ -766,16 +766,19 @@ final class Taller: ObservableObject {
                     // El resultado se queda abierto en Excel, en el sitio de la copia de trabajo (petición del
                     // usuario, 2026-11-18: antes se cerraba y se enseñaba en el Finder)
                     if self.excel {
+                        // Como desde el Finder («open -a»): macOS da a Excel permiso para el archivo y no pide
+                        // «Conceder acceso» (con «open workbook» lo pedía, petición del usuario, 2026-11-18)
                         let guion = """
                         on run argv
-                            tell application "Microsoft Excel"
-                                open workbook workbook file name (item 1 of argv) update links do not update links
-                                activate
-                            end tell
+                            do shell script "open -a 'Microsoft Excel' " & quoted form of (item 1 of argv)
+                            tell application "Microsoft Excel" to activate
                             return "ok"
                         end run
                         """
+                        let vinculos = AXIsProcessTrusted() ? Task.detached { await noActualizarVinculos() } : nil
                         let abierto = await osascript(guion, [url.path], espera: 30)
+                        try? await Task.sleep(nanoseconds: 1_500_000_000)
+                        vinculos?.cancel()
                         self.anotar(id, abierto.ok ? "Abierto en Excel: \(url.lastPathComponent)" : "⚠ No he podido abrirlo en Excel (\(abierto.texto))")
                     } else {
                         NSWorkspace.shared.activateFileViewerSelecting([url])

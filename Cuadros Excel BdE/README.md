@@ -33,7 +33,8 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
 - Idioma: inglés si el nombre lleva «Ing» (`CIng_…`, `…_Ing`) o el rótulo es «Table N»; si no, castellano.
 - Terminar («Guardar como EXCEL»): guarda «… EXCEL.xlsx» («ORIGINALES»/«ORIGINAL» → «EXCEL»; antes «TERMINADOS»)
   junto al original, lo deja abierto en Excel en lugar de la copia de trabajo y borra copias y versiones (petición
-  del usuario, 2026-11-18).
+  del usuario, 2026-11-18). Lo abre como desde el Finder («open -a»), igual que las copias de trabajo, para que
+  Excel no pida «Conceder acceso».
 - **Reiniciar**: cierra la copia en Excel sin guardar, borra todo lo generado (las dos copias de trabajo, la carpeta
   «(pasos)» entera y los bloqueos «~$» de Excel) y empieza de nuevo desde el original, como la primera vez.
 
@@ -191,6 +192,12 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
    - La celda de la primera columna, solo si lleva texto («Evento», 1.2); si no, esquina en blanco.
    - Columnas estrechas de separación (< 3), sin relleno: hueco blanco entre grupos.
    - Formatos nuevos (rellenos, bordes y fuentes con color) en styles.xml; los del autor no se tocan.
+   - **Unidades en la esquina de la cabecera** (Memoria 4.1: «Datos a 31 de diciembre» en A5:A9, con filas ocultas):
+     Roboto Light 6 pt, arriba a la izquierda y sin relleno (el paso 3 no la pinta), como el publicado (petición del
+     usuario, 2026-11-18).
+   - **Notas del autor pegadas al cuadro** (Memoria 4.1 E16 «CAMBIADOS LOS NOMBRES», 4.2 K12, 6.1 F6): una columna del
+     borde derecho con un solo texto y sin cifras no es del cuadro; el paso 2 avisa de ella (textos fuera del cuadro
+     «o pegados a él») para borrarla (petición del usuario, 2026-11-18).
    - **Fila TOTAL entera en Roboto Medium** (texto y cifras), en todas las publicaciones (decisión del usuario,
      2026-11-17: así todos los Memoria publicados).
    - **Toda la letra de las celdas en negro**: el color del autor no se queda (cifras grises del Memoria 3.2
