@@ -2335,7 +2335,16 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None):
         espacios = " " * (SANGRIA * nivel_fila(f)) if f > fin_cab else ""
         cuerpo = VINETA.sub("", t.strip(" \u00a0"))
         mc = medir_de(primera, f)
-        natural = max(natural, max(mc(espacios + l.strip(), CUERPO_CELDA) for l in cuerpo.split("\n")))
+        filas_juntas = next((b2 - b1 + 1 for a1, b1, a2, b2 in rangos if a1 == a2 == primera and b1 == f and b2 > b1), 1)
+        if filas_juntas > 1 and f > fin_cab:
+            # Combinada en vertical con N filas (DO 02: «Indicadores directos de actividad neuronal» en A7:A9): cabe
+            # en N líneas sin alargar el cuadro; su ancho natural es el mínimo con el que no pasa de N líneas
+            w = palabra(cuerpo, mc)
+            while len(partir(cuerpo, w, mc)) > filas_juntas and w < espacio_pt:
+                w += 1
+            natural = max(natural, mc(espacios, CUERPO_CELDA) + w)
+        else:
+            natural = max(natural, max(mc(espacios + l.strip(), CUERPO_CELDA) for l in cuerpo.split("\n")))
         textos_primera.append((f, espacios, "\n".join(l.strip() for l in cuerpo.split("\n")), mc))
         minimo = max(minimo, mc(espacios, CUERPO_CELDA) + palabra(cuerpo, mc))
     natural += 2 * RELLENO_CELDA_PT + 1.5   # holgura: el redondeo a píxeles no debe partir el texto más largo
