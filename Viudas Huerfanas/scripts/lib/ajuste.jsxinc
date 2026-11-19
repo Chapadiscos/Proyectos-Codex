@@ -1,0 +1,393 @@
+/*  Viudas Huerfanas — motor común
+    Lo incluyen el panel («Viudas Huerfanas.jsx») y los atajos («Apretar un paso.jsx», «Aflojar un paso.jsx»).
+
+    El ajuste de un párrafo es un NIVEL entero de −10 (apretar) a +10 (aflojar); 0 = valores de su estilo.
+    Cada nivel se calcula siempre desde el estilo de párrafo, no desde el valor actual:
+      1–4   espaciado entre palabras (mín., deseado y máx.) ±5 % por paso, hasta ±20 %
+      5–7   además espaciado entre letras ±1, ±2, ±3 % y escala de glifos ±1, ±1, ±2 %
+      8–10  además tracking ±5, ±10, ±15 (se suma al tracking que tenga cada tramo del texto)
+*/
+
+var VH = (typeof VH === "object" && VH) ? VH : {};
+
+VH.MAX = 10;
+VH.PREFIJO_CONDICION = "VH · ";
+VH.COLORES = {
+    // apretado: magenta; aflojado: violeta (de claro a intenso)
+    "-1": [255, 204, 240], "-2": [255, 128, 220], "-3": [230, 0, 170],
+    "1": [225, 210, 255], "2": [180, 140, 255], "3": [130, 60, 230]
+};
+
+// ---------------------------------------------------------------- tabla de niveles
+
+VH.desplazamientos = function (nivel) {
+    var s = nivel < 0 ? -1 : 1, n = Math.min(Math.abs(nivel), VH.MAX);
+    return {
+        palabras: s * 5 * Math.min(n, 4),
+        letras: s * Math.max(0, Math.min(n, 7) - 4),
+        glifos: s * [0, 0, 0, 0, 0, 1, 1, 2, 2, 2, 2][n],
+        tracking: s * 5 * Math.max(0, n - 7)
+    };
+};
+
+function vhLimitar(v, a, b) { return Math.max(a, Math.min(b, v)); }
+
+VH.base = function (para) {
+    var e = para.appliedParagraphStyle;
+    return {
+        pMin: e.minimumWordSpacing, pDes: e.desiredWordSpacing, pMax: e.maximumWordSpacing,
+        lMin: e.minimumLetterSpacing, lDes: e.desiredLetterSpacing, lMax: e.maximumLetterSpacing,
+        gMin: e.minimumGlyphScaling, gDes: e.desiredGlyphScaling, gMax: e.maximumGlyphScaling,
+        tracking: e.tracking
+    };
+};
+
+// Valores de espaciado que corresponden a un nivel
+VH.valores = function (base, nivel) {
+    var d = VH.desplazamientos(nivel);
+    return {
+        pMin: vhLimitar(base.pMin + d.palabras, 0, 1000),
+        pDes: vhLimitar(base.pDes + d.palabras, 0, 1000),
+        pMax: vhLimitar(base.pMax + d.palabras, 0, 1000),
+        lMin: vhLimitar(base.lMin + d.letras, -100, 500),
+        lDes: vhLimitar(base.lDes + d.letras, -100, 500),
+        lMax: vhLimitar(base.lMax + d.letras, -100, 500),
+        gMin: vhLimitar(base.gMin + d.glifos, 50, 200),
+        gDes: vhLimitar(base.gDes + d.glifos, 50, 200),
+        gMax: vhLimitar(base.gMax + d.glifos, 50, 200),
+        tracking: d.tracking
+    };
+};
+
+VH.actuales = function (para) {
+    return {
+        pMin: para.minimumWordSpacing, pDes: para.desiredWordSpacing, pMax: para.maximumWordSpacing,
+        lMin: para.minimumLetterSpacing, lDes: para.desiredLetterSpacing, lMax: para.maximumLetterSpacing,
+        gMin: para.minimumGlyphScaling, gDes: para.desiredGlyphScaling, gMax: para.maximumGlyphScaling
+    };
+};
+
+function vhIguales(a, b) {
+    var k;
+    for (k in a) {
+        if (k === "tracking") continue;
+        if (typeof a[k] !== "number" || typeof b[k] !== "number") return false;
+        if (Math.abs(a[k] - b[k]) > 0.01) return false;
+    }
+    return true;
+}
+
+// Tracking que tiene el primer carácter respecto al del estilo
+function vhDeltaTracking(para, base) {
+    try { return para.characters[0].tracking - base.tracking; } catch (e) { return 0; }
+}
+
+// Nivel actual del párrafo, o null si sus valores no salen de la tabla (cambiados a mano)
+VH.detectarNivel = function (para) {
+    var base = VH.base(para), act = VH.actuales(para), n, dt;
+    if (vhIguales(act, VH.valores(base, 0))) return 0;
+    for (n = 1; n <= 7; n++) {
+        if (vhIguales(act, VH.valores(base, -n))) { if (n < 7) return -n; dt = vhDeltaTracking(para, base); break; }
+        if (vhIguales(act, VH.valores(base, n))) { if (n < 7) return n; dt = vhDeltaTracking(para, base); break; }
+    }
+    if (n > 7) return null;
+    // Niveles 7 a 10: mismo espaciado; los distingue el tracking
+    var s = vhIguales(act, VH.valores(base, -7)) ? -1 : 1, m;
+    for (m = 10; m >= 8; m--) {
+        if (Math.abs(dt - s * 5 * (m - 7)) < 0.01) return s * m;
+    }
+    return s * 7;
+};
+
+// ---------------------------------------------------------------- aplicar
+
+function vhFijarTerna(para, pMin, pDes, pMax, a, b, c) {
+    // Ensanchar primero el intervalo para que InDesign no rechace ningún valor intermedio
+    para[pMin] = Math.min(a, para[pMin]);
+    para[pMax] = Math.max(c, para[pMax]);
+    para[pDes] = b;
+    para[pMin] = a;
+    para[pMax] = c;
+}
+
+function vhTramos(para) {
+    try { return para.textStyleRanges.everyItem().getElements(); } catch (e) { return []; }
+}
+
+// Pone el párrafo en el nivel pedido. Devuelve el nivel aplicado.
+VH.aplicar = function (para, nivel, colorear) {
+    nivel = vhLimitar(Math.round(nivel), -VH.MAX, VH.MAX);
+    var base = VH.base(para);
+    var antes = VH.detectarNivel(para);
+    var tAntes = (antes === null) ? 0 : VH.desplazamientos(antes).tracking;
+    var v = VH.valores(base, nivel);
+
+    vhFijarTerna(para, "minimumWordSpacing", "desiredWordSpacing", "maximumWordSpacing", v.pMin, v.pDes, v.pMax);
+    vhFijarTerna(para, "minimumLetterSpacing", "desiredLetterSpacing", "maximumLetterSpacing", v.lMin, v.lDes, v.lMax);
+    vhFijarTerna(para, "minimumGlyphScaling", "desiredGlyphScaling", "maximumGlyphScaling", v.gMin, v.gDes, v.gMax);
+
+    var dif = v.tracking - tAntes;
+    if (dif !== 0) {
+        var tr = vhTramos(para), i;
+        for (i = 0; i < tr.length; i++) tr[i].tracking = tr[i].tracking + dif;
+    }
+    if (colorear) VH.colorear(para, nivel);
+    else VH.quitarColor(para);
+    return nivel;
+};
+
+// Avanza un paso cada párrafo (d = −1 apretar, +1 aflojar)
+VH.paso = function (paras, d, colorear) {
+    var i, n;
+    for (i = 0; i < paras.length; i++) {
+        n = VH.detectarNivel(paras[i]);
+        if (n === null) n = 0;
+        VH.aplicar(paras[i], n + d, colorear);
+    }
+};
+
+// Busca el primer nivel en la dirección d que quita (d<0) o añade (d>0) una línea.
+// Devuelve el número de párrafos que no lo consiguieron (esos quedan como estaban).
+VH.cambiarLinea = function (paras, d, colorear) {
+    var i, fallos = 0;
+    for (i = 0; i < paras.length; i++) {
+        var p = paras[i], n0 = VH.detectarNivel(p), l0 = p.lines.length, n, ok = false;
+        if (n0 === null) n0 = 0;
+        for (n = n0 + d; Math.abs(n) <= VH.MAX; n += d) {
+            VH.aplicar(p, n, false);
+            var l = p.lines.length;
+            if ((d < 0 && l < l0) || (d > 0 && l > l0)) { ok = true; break; }
+        }
+        if (ok) { if (colorear) VH.colorear(p, n); }
+        else { VH.aplicar(p, n0, colorear); fallos++; }
+    }
+    return fallos;
+};
+
+VH.restablecer = function (paras) {
+    var i;
+    for (i = 0; i < paras.length; i++) VH.aplicar(paras[i], 0, false);
+};
+
+// ---------------------------------------------------------------- colores (texto condicional)
+
+VH.intensidad = function (nivel) {
+    var n = Math.abs(nivel);
+    if (n === 0) return 0;
+    var g = n <= 3 ? 1 : (n <= 7 ? 2 : 3);
+    return nivel < 0 ? -g : g;
+};
+
+VH.nombreCondicion = function (g) {
+    return VH.PREFIJO_CONDICION + (g < 0 ? "Apretado " : "Aflojado ") + Math.abs(g);
+};
+
+VH.condicion = function (doc, g) {
+    var nombre = VH.nombreCondicion(g), c = doc.conditions.itemByName(nombre);
+    if (!c.isValid) {
+        c = doc.conditions.add({
+            name: nombre,
+            indicatorMethod: ConditionIndicatorMethod.USE_HIGHLIGHT,
+            indicatorColor: VH.COLORES[String(g)]
+        });
+    }
+    // Recolorear las condiciones creadas con colores anteriores
+    var col = VH.COLORES[String(g)], act = c.indicatorColor;
+    if (!(act instanceof Array) || Math.round(act[0]) !== col[0] || Math.round(act[1]) !== col[1] || Math.round(act[2]) !== col[2])
+        c.indicatorColor = col;
+    if (!c.visible) c.visible = true;   // si se ocultara, el texto desaparecería
+    return c;
+};
+
+function vhEsNuestra(c) {
+    try { return c.name.indexOf(VH.PREFIJO_CONDICION) === 0; } catch (e) { return false; }
+}
+
+VH.quitarColor = function (para) {
+    var tr = vhTramos(para), i, j;
+    for (i = 0; i < tr.length; i++) {
+        var cs = tr[i].appliedConditions, resto = [], cambia = false;
+        for (j = 0; j < cs.length; j++) {
+            if (vhEsNuestra(cs[j])) cambia = true; else resto.push(cs[j]);
+        }
+        if (cambia) tr[i].appliedConditions = resto;
+    }
+};
+
+VH.colorear = function (para, nivel) {
+    VH.quitarColor(para);
+    var g = VH.intensidad(nivel);
+    if (g === 0) return;
+    var doc = vhDocumento(para);
+    var c = VH.condicion(doc, g);
+    try {
+        if (doc.conditionalTextPreferences.showConditionIndicators === ConditionIndicatorMode.HIDE_INDICATORS)
+            doc.conditionalTextPreferences.showConditionIndicators = ConditionIndicatorMode.SHOW_INDICATORS;
+    } catch (e) {}
+    var tr = vhTramos(para), i;
+    for (i = 0; i < tr.length; i++) {
+        var cs = tr[i].appliedConditions;
+        cs.push(c);
+        tr[i].appliedConditions = cs;
+    }
+};
+
+// Borra nuestras condiciones del documento; el texto se queda (sin esa condición)
+VH.quitarColoresDocumento = function (doc) {
+    var cs = doc.conditions.everyItem().getElements(), i, n = 0;
+    for (i = cs.length - 1; i >= 0; i--) {
+        if (vhEsNuestra(cs[i])) { cs[i].remove(); n++; }
+    }
+    return n;
+};
+
+function vhDocumento(o) {
+    while (o && !(o instanceof Document)) {
+        try { o = o.parent; } catch (e) { return app.activeDocument; }
+    }
+    return o || app.activeDocument;
+}
+
+// ---------------------------------------------------------------- selección
+
+VH.parrafosSeleccion = function () {
+    if (app.documents.length === 0 || app.selection.length !== 1) return [];
+    var s = app.selection[0], c = s.constructor.name;
+    var textos = { InsertionPoint: 1, Character: 1, Word: 1, Line: 1, Paragraph: 1, Text: 1,
+                   TextStyleRange: 1, TextColumn: 1 };
+    if (!textos[c]) return [];
+    try { return s.paragraphs.everyItem().getElements(); } catch (e) { return []; }
+};
+
+// ---------------------------------------------------------------- buscar problemas
+
+function vhLista(v) { return (v instanceof Array) ? v : [v]; }
+
+// Opciones: {desbordado, corta, viuda, huerfana: bool, cortaPorc: número}
+// Devuelve [{tipo, pagina, orden, story, indice, marco, texto}]
+VH.buscar = function (stories, op) {
+    var res = [], s;
+    for (s = 0; s < stories.length; s++) vhBuscarEnArticulo(stories[s], op, res);
+    res.sort(function (a, b) { return (a.orden - b.orden) || (a.storyId - b.storyId) || (a.indice - b.indice); });
+    return res;
+};
+
+function vhBuscarEnArticulo(st, op, res) {
+    var marcos = st.textContainers, k, info = [];
+    if (marcos.length === 0) return;
+
+    // Tramos de caracteres de cada marco (para saber en qué marco cae cada línea)
+    for (k = 0; k < marcos.length; k++) {
+        var m = marcos[k], ini, lon;
+        try { lon = m.characters.length; } catch (e) { lon = 0; }
+        if (lon === 0) continue;
+        ini = m.insertionPoints[0].index;
+        var pag = null;
+        try { pag = m.parentPage; } catch (e) { pag = null; }
+        info.push({ ini: ini, fin: ini + lon, marco: m, pagina: pag });
+    }
+
+    if (op.desbordado && st.overflows) {
+        var ult = marcos[marcos.length - 1], pu = null;
+        try { pu = ult.parentPage; } catch (e) {}
+        if (pu) res.push({ tipo: "Desbordado", pagina: pu.name, orden: pu.documentOffset, storyId: st.id,
+                           indice: 1e9, story: st, marco: ult, texto: "" });
+    }
+    if (!(op.corta || op.viuda || op.huerfana)) return;
+
+    // Líneas marco a marco (las desbordadas no tienen línea base y harían fallar la lectura en bloque)
+    var inicios = [], lineasBase = [], hIni = [], hFin = [], marcoDe = [], i;
+    for (k = 0; k < info.length; k++) {
+        var L = info[k].marco.lines;
+        if (L.length === 0) continue;
+        var todas = L.everyItem();
+        var a1 = vhLista(todas.index), a2 = vhLista(todas.baseline),
+            a3 = vhLista(todas.horizontalOffset), a4 = vhLista(todas.endHorizontalOffset);
+        for (i = 0; i < a1.length; i++) {
+            inicios.push(a1[i]); lineasBase.push(a2[i]); hIni.push(a3[i]); hFin.push(a4[i]); marcoDe.push(k);
+        }
+    }
+    if (inicios.length < 2) return;
+    // Hasta dónde llega el texto colocado en marcos
+    var finColocado = info.length ? info[info.length - 1].fin : 0;
+    var finArticulo = st.characters.length;
+    var P = st.paragraphs.everyItem();
+    var pIni = vhLista(P.index), pJust = vhLista(P.justification);
+    function salto(a, b) {
+        if (marcoDe[a] < 0 || marcoDe[b] < 0) return false;
+        return marcoDe[a] !== marcoDe[b] || lineasBase[b] <= lineasBase[a];
+    }
+    function anotar(tipo, linea, pIndice) {
+        var mi = marcoDe[linea];
+        if (mi < 0 || !info[mi].pagina) return;   // desbordado o en la mesa de trabajo
+        res.push({ tipo: tipo, pagina: info[mi].pagina.name, orden: info[mi].pagina.documentOffset,
+                   storyId: st.id, indice: pIndice, story: st, marco: info[mi].marco, texto: "" });
+    }
+
+    var p, li = 0;
+    for (p = 0; p < pIni.length; p++) {
+        var finPar = (p + 1 < pIni.length) ? pIni[p + 1] : Infinity;
+        while (li < inicios.length && inicios[li] < pIni[p]) li++;
+        var l0 = li, l1 = li;
+        while (l1 + 1 < inicios.length && inicios[l1 + 1] < finPar) l1++;
+        if (l0 >= inicios.length) break;
+        var completo = Math.min(finPar, finArticulo) <= finColocado;   // no sigue en el desbordado
+        if (l1 > l0) {
+            if (op.huerfana && salto(l0, l0 + 1)) anotar("Huérfana", l0, pIni[p]);
+            if (completo && op.viuda && salto(l1 - 1, l1)) anotar("Viuda", l1, pIni[p]);
+            if (completo && op.corta && pJust[p] !== Justification.CENTER_ALIGN && pJust[p] !== Justification.RIGHT_ALIGN
+                && marcoDe[l1] >= 0) {
+                var ancho = 0, q;
+                for (q = l0; q < l1; q++) ancho = Math.max(ancho, hFin[q] - hIni[q]);
+                var ultima = hFin[l1] - hIni[l1];
+                if (ancho > 0 && ultima < ancho * op.cortaPorc / 100) anotar("Línea corta", l1, pIni[p]);
+            }
+        }
+        li = l1 + 1;
+    }
+}
+
+// Texto corto para la lista de resultados
+VH.resumen = function (r) {
+    if (r.tipo === "Desbordado") return "";
+    try {
+        var t = r.story.insertionPoints[r.indice].paragraphs[0].contents;
+        t = String(t).replace(/[\r\n\t\u0003\u0016]+/g, " ").replace(/\s+/g, " ");
+        return t.length > 40 ? t.substr(0, 40) + "…" : t;
+    } catch (e) { return ""; }
+};
+
+// Selecciona y enseña el resultado
+VH.mostrar = function (r) {
+    if (r.tipo === "Desbordado") {
+        app.select(r.marco);
+        try { app.activeWindow.activeSpread = r.marco.parentPage.parent; } catch (e) {}
+        return;
+    }
+    var p = r.story.insertionPoints[r.indice].paragraphs[0];
+    app.select(p);
+    try { p.showText(); } catch (e) {
+        try { app.activeWindow.activeSpread = r.marco.parentPage.parent; } catch (e2) {}
+    }
+};
+
+// ---------------------------------------------------------------- preferencias
+
+VH.pref = function (clave, porDefecto) {
+    var v = app.extractLabel("VH_" + clave);
+    return v === "" ? porDefecto : v;
+};
+VH.guardarPref = function (clave, valor) { app.insertLabel("VH_" + clave, String(valor)); };
+VH.colorearActivo = function () { return VH.pref("colorear", "1") === "1"; };
+
+// ---------------------------------------------------------------- deshacer en un paso
+
+// sumarAlAnterior: el cambio se une al último paso de deshacer (para arrastrar el deslizador)
+VH.enUnPaso = function (nombre, fn, sumarAlAnterior) {
+    var error = null;
+    app.doScript(function () {
+        try { fn(); } catch (e) { error = e; }
+    }, ScriptLanguage.JAVASCRIPT, undefined,
+       sumarAlAnterior ? UndoModes.AUTO_UNDO : UndoModes.ENTIRE_SCRIPT, nombre);
+    if (error) throw error;
+};
