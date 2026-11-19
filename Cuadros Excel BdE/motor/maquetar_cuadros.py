@@ -1479,6 +1479,7 @@ RELLENO_CELDA_PT = 2.5                     # lo que Excel deja libre a cada lado
 # Excel, 2026-11-13: «Régimen de tenencia de la vivienda», 114,7 pt, cabe en una línea desde 125 pt de columna;
 # «País de nacimiento», 62,4 pt, desde 70)
 ESCALA_TEXTO_EXCEL = 1.05
+DATO_JUSTO_MINIMO = 60                     # columnas de datos «a lo justo» (Documentos Ocasionales): no menos de esto (pt)
 LARGO_TEXTO_IZQUIERDA = 80                 # columnas de texto largo (media de caracteres) a la izquierda; umbral en pruebas
 SANGRIA = 4                                # espacios por nivel: 4 (1.º), 8 (2.º), 12 (3.º)
 VINETA = re.compile(r'^[-–—•·]\s+')
@@ -2457,6 +2458,19 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None):
     natural += 2 * RELLENO_CELDA_PT + 1.5   # holgura: el redondeo a píxeles no debe partir el texto más largo
     minimo += 2 * RELLENO_CELDA_PT
     a_medida, medida, por_nombres = False, {}, False
+
+    def ancho_justo(cols):
+        """Lo que pide la cabecera más larga en una línea o la cifra más ancha (sin las cabeceras combinadas sobre
+        varias columnas)."""
+        pide = [necesita[c] for c in cols]
+        for c in cols:
+            for f in range(f1, fin_cab + 1):
+                if (c, f) in tapadas or not d(c, f)["texto"].strip():
+                    continue
+                if any(a1 == c and b1 == f and a2 > a1 for a1, b1, a2, b2 in rangos):
+                    continue
+                pide.append(max(medir_de(c, f)(l.strip(), CUERPO_CELDA) for l in d(c, f)["texto"].split("\n")) + 2 * RELLENO_CELDA_PT)
+        return max(pide or [0])
     if nombres:
         # Los nombres en una línea, si caben sin partir la primera columna; si no, se parten como cualquier texto
         con_linea = {c: max(necesita[c], en_linea.get(c, 0)) for c in otras}
@@ -2523,6 +2537,22 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None):
         necesita = {c: max(necesita[c], min(linea[c], medida[c])) for c in otras}
         detalle.append("Cuadro de textos: primera columna a su medida, las columnas cortas a la medida de su texto y las "
                        "de descripciones, el resto (como los publicados de " + pub.get("nombre", "la publicación") + ")")
+    elif otras and pub.get("datos_a_lo_justo") and ancho_justo(otras) * len(otras) + minimo <= espacio_pt:
+        # Columnas de datos a lo justo (Documentos Ocasionales, decisión del usuario, 2026-11-19, publicados DO26XX_03
+        # y 04): todas iguales, del ancho de la cabecera más larga en una línea (o de la cifra más ancha) y la primera,
+        # el resto
+        # Como mínimo DATO_JUSTO_MINIMO (DO26XX_02: con la cabecera de símbolos, solo las cifras darían 31 pt; el
+        # publicado, 75) y sin que la primera columna parta sus textos (publicado DO26XX_01: la cabecera en dos líneas)
+        hace_falta = max(ancho_justo(otras), DATO_JUSTO_MINIMO)
+        resto = hace_falta
+        motivo_justo = "la cabecera más larga en una línea"
+        if espacio_pt - len(otras) * resto < natural:
+            resto = max(max(necesita.values()), (espacio_pt - natural) / len(otras))
+            motivo_justo = "lo que deja la primera columna con sus textos en una línea"
+        primera_pt = espacio_pt - len(otras) * resto
+        necesita = {c: max(necesita[c], resto) for c in otras}   # al redondear a 3 pt, que no bajen de aquí
+        detalle.append(f"Columnas de datos a lo justo ({resto:.0f} pt: {motivo_justo}) y la primera, el resto (como los "
+                       "publicados de " + pub.get("nombre", "la publicación") + ")")
     elif otras:
         hace_falta = max(necesita.values())
         primera_pt = max(minimo, min(natural, espacio_pt - len(otras) * hace_falta))

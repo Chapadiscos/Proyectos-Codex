@@ -242,6 +242,11 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
        línea oscura (#808080); la fila vacía que el autor dejaba antes de un bloque se oculta (publicados
        DO26XX_01, 03 y 04); el TOTAL justo bajo un título de bloque es su cabeza y lo que viene detrás va sangrado
        (DO26XX_04);
+     - `datos_a_lo_justo` (decisión del usuario, 2026-11-19): en los cuadros con cifras, las columnas de datos iguales
+       y del ancho de la cabecera más larga en una línea (o de la cifra más ancha), como mínimo 60 pt
+       (`DATO_JUSTO_MINIMO`), y la primera columna el resto; si así la primera partiría sus textos, las de datos
+       ceden hasta dejarla en una línea. DO26XX_03: 216/84 pt (publicado 256/83); 04: 279/63 (298/68);
+       02: 228/60 (201/75);
      - `rotulo_y_titulo_en_color`: «Cuadro N» y el título, en el color de la publicación (DO: naranja F06800, como
        sus publicados; Informe Anual y Memoria, en negro). FUENTES y unidades siguen en negro.
    - **Columnas ocultas del autor** (Memoria 2.1: textos de traducción en A-C que la columna D enseña con una

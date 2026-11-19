@@ -22,6 +22,6 @@
     {"id": "informe-anual", "nombre": "Informe Anual", "color": "004081", "tema": null},
     {"id": "memoria-supervision", "nombre": "Memoria Supervisión", "color": "004081", "tema": null, "cabecera_letra_blanca": [2]},
     {"id": "documentos-ocasionales", "nombre": "Documentos Ocasionales", "color": "F06800", "tema": null,
-     "cuadros_de_texto": true, "texto_izquierda": 30, "centrado_en_altura": true, "rotulo_y_titulo_en_color": true, "bloques_con_apartados": true}
+     "cuadros_de_texto": true, "texto_izquierda": 30, "centrado_en_altura": true, "rotulo_y_titulo_en_color": true, "bloques_con_apartados": true, "datos_a_lo_justo": true}
   ]
 }
