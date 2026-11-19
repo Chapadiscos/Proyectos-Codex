@@ -1201,7 +1201,7 @@ def textos(z, hoja, estado, propuestas=None, pub=None):
     si ocupa más de una línea, la pastilla crece); unidades en Roboto Light 6 pt; FUENTES en Roboto Light 7 pt
     con las reglas de Gráficos, en el ancho de la plantilla. Todo en negro."""
     pl = plantilla()
-    ancho_ret = tamano(pl["grupo"], escala_grupo=True)[0]
+    ancho_ret, alto_ret = tamano(pl["grupo"], escala_grupo=True)
     alto_pastilla = tamano(pl["pastilla_modelo"])[1]
     ruta = dibujo_de_hoja(z, hoja)
     dibujo = z.read(ruta).decode("utf-8")
@@ -1220,7 +1220,8 @@ def textos(z, hoja, estado, propuestas=None, pub=None):
             continue
         x, y, w, h = caja(a)
         primera = html.unescape(texto_forma(a)).strip().split("\n")[0]
-        if x >= ancho_ret:
+        if x >= ancho_ret or y >= alto_ret:
+            # A la derecha o por debajo de la retícula (DO26XX_03: una FUENTES vieja a 256 mm)
             tipos[k] = "fuera"
         elif RE_CUADRO_LINEA.match(primera) and y < alto_pastilla:
             tipos[k] = "cuadro"
@@ -1233,6 +1234,13 @@ def textos(z, hoja, estado, propuestas=None, pub=None):
         else:
             tipos[k] = "otro"
 
+    # Varias FUENTES (copias del autor): se maqueta la de más texto; las demás, sin tocar y avisadas
+    fuentes_k = [k for k, t in tipos.items() if t == "fuentes"]
+    if len(fuentes_k) > 1:
+        buena = max(fuentes_k, key=lambda k: len(html.unescape(texto_forma(partes[k])).strip()))
+        for k in fuentes_k:
+            if k != buena:
+                tipos[k] = "copia_fuentes"
     # «Cuadro N» y unidades escritos en celdas encima del cuadro (Memoria 2.1: D1 «Cuadro 2.1», D3 «Datos a 31 de
     # diciembre»): pasan a cuadros de texto, como en el Informe Anual, y la celda se vacía
     cambios_hoja = {}
@@ -1342,6 +1350,10 @@ def textos(z, hoja, estado, propuestas=None, pub=None):
         corto = html.unescape(texto_forma(a)).replace("\n", " / ")[:70]
         if tipo == "fuera":
             detalle.append(f"Sin tocar, fuera de la retícula: «{corto}»")
+            continue
+        if tipo == "copia_fuentes":
+            detalle.append(f"Aviso: hay otro cuadro de FUENTES del autor, con menos texto: sin tocar (¿una copia vieja?): «{corto}»"
+                           + marca(forma=nombre_forma(a)))
             continue
         if tipo == "cuadro":
             a, _ = con_marco(a, pl["marco_cuadro"], filas)
@@ -2107,12 +2119,17 @@ def colocar_cuadro(dibujo, caja, filas_viejas, altos_nuevos, f1, f2):
             partes[k] = anclar_celda(a, c, co, r, ro, w, h)
     # FUENTES, 5 mm bajo el final del cuadro (con los altos nuevos)
     fin_cuadro = sum(alto_nuevo(f) for f in range(1, f2 + 1))
+    # Solo la FUENTES de más texto dentro de la retícula (DO26XX_03: una copia vieja a 256 mm se quedaba encima)
+    alto_ret = tamano(plantilla()["grupo"], escala_grupo=True)[1]
+    candidatas = [k for k, a in enumerate(partes) if ANCLA.fullmatch(a) and not sin_texto(a)
+                  and ROTULO.match(html.unescape(texto_forma(a)).strip().split("\n")[0])
+                  and inicio_viejo <= caja(a)[1] < alto_ret]
+    buena = max(candidatas, key=lambda k: len(html.unescape(texto_forma(partes[k])).strip()), default=None)
     for k, a in enumerate(partes):
         if not ANCLA.fullmatch(a) or sin_texto(a):
             continue
-        primera_linea = html.unescape(texto_forma(a)).strip().split("\n")[0]
         x, y, w, h = caja(a)
-        if ROTULO.match(primera_linea) and y >= inicio_viejo:
+        if k == buena:
             f, resto = f2 + 1, round(FUENTES_BAJO_CUADRO * EMU_PT)
             while resto >= alto_nuevo(f) and f < f2 + 500:
                 resto -= alto_nuevo(f)
@@ -3296,7 +3313,7 @@ def paso4(trabajo, pid=None):
     base = pasos / estado["pasos"][estado["actual"]]["archivo"]
     hoja = estado.get("hoja") or "Cuadro datos"
     with zipfile.ZipFile(base) as z:
-        cambios, detalle = lineas_y_fondos(z, hoja, cuadro)
+        cambios, detalle = lineas_y_fondos(z, hoja, cuadro, pub_de(pid))
     return nuevo_paso(trabajo, LINEAS_Y_FONDOS, cambios, detalle, cuadro)
 
 
@@ -3324,7 +3341,7 @@ def con_combinadas(hoja_xml, refs):
     return hoja_xml[:fin] + f'<mergeCells count="{len(refs)}">{nuevas}</mergeCells>' + hoja_xml[fin:]
 
 
-def lineas_y_fondos(z, hoja, cuadro):
+def lineas_y_fondos(z, hoja, cuadro, pub=None):
     ruta_hoja = hoja_de(z, hoja)
     hoja_xml = z.read(ruta_hoja).decode("utf-8")
     _, compartidos = leer_compartidos(z)
@@ -3366,7 +3383,16 @@ def lineas_y_fondos(z, hoja, cuadro):
     col_total = next((c for c in datos_cols if any(texto(c, f).strip().upper() == "TOTAL" for f in range(f1, fin_cab + 1))), None)
     # La fila TOTAL va en blanco matiz 2, o en matiz 5 si el 2 ya lo usan títulos de bloque o subtotales (Ejemplos,
     # 1.4 y A2.2); una columna TOTAL también va en matiz 2 y no lo cambia (Ejemplos, 4.2)
-    usa_matiz_2 = bool(bloques or subtotales)
+    # Bloques con apartados (Documentos Ocasionales, publicados DO26XX_01, 03 y 04): el título de bloque va con el
+    # fondo de la primera columna (no en matiz 2), sin línea con su primer apartado, para que los conceptos sangrados
+    # se lean como apartados suyos; entre bloques, línea oscura encima del título; la fila vacía que el autor dejaba
+    # antes de un bloque se oculta (el publicado del 03 la quita)
+    apartados = bool((pub or {}).get("bloques_con_apartados")) and bool(bloques)
+    vacias_sep = []
+    if apartados:
+        vacias_sep = [f for f in filas if f + 1 in bloques and not texto(primera, f).strip() and sin_datos(f)]
+        filas = [f for f in filas if f not in vacias_sep]
+    usa_matiz_2 = bool((bloques and not apartados) or subtotales)
     fondo_total = BLANCO_MATIZ_5 if usa_matiz_2 else BLANCO_MATIZ_2
     letra_total = BLANCO if fondo_total == BLANCO_MATIZ_5 else None
 
@@ -3407,14 +3433,21 @@ def lineas_y_fondos(z, hoja, cuadro):
                 lados["bottom"] = LINEA_OSCURA
             if f == estadisticos:
                 lados["top"] = LINEA_OSCURA
+            if apartados and f in bloques and siguiente is not None and sangrada(siguiente):
+                lados.pop("bottom", None)
+            if apartados and f in bloques and i > 0:
+                lados["top"] = LINEA_OSCURA
             if c == primera:
                 relleno = BLANCO_MATIZ_1
                 if f in bloques:
                     relleno = BLANCO_MATIZ_2
                 # Primera columna: líneas blancas entre todas las filas, también entre conceptos sangrados
                 # (TERMINADO 1.4; la guía decía que no, decisión del usuario 2026-11-17)
-                if siguiente is not None and siguiente != principal and f not in coeficientes and siguiente != estadisticos:
+                if siguiente is not None and siguiente != principal and f not in coeficientes and siguiente != estadisticos \
+                        and not (apartados and f in bloques and sangrada(siguiente)):
                     lados["bottom"] = ("thin", BLANCO)
+                if apartados and f in bloques:
+                    relleno = BLANCO_MATIZ_1
             # Columna TOTAL: sin fondo; su cabecera va en el color de la publicación, así que ni gris ni mayúsculas
             # (decisión del usuario, 2026-11-17, publicado Memoria 3.1; antes iba en blanco matiz 2)
             if f in destacadas:
@@ -3425,12 +3458,23 @@ def lineas_y_fondos(z, hoja, cuadro):
             if es_total:
                 relleno = fondo_total if f == principal else BLANCO_MATIZ_2
                 letra = letra_total if f == principal else None
+            if apartados and siguiente in bloques:
+                lados["bottom"] = LINEA_OSCURA
             nuevos[(c, f)] = estilos.variante(estilo(c, f), relleno=relleno, borde=lados,
                                               letra=letra if letra else None)
     # Detalle
     detalle.append("Líneas horizontales finas entre filas en blanco matiz 2 (#D9D9D9); la última fila, sin línea")
     detalle.append("Primera columna: fondo blanco matiz 1 (#F2F2F2) con líneas blancas entre todas las filas")
-    if bloques:
+    if apartados:
+        detalle.append("Títulos de bloque con apartados (sin datos en las demás columnas), con el fondo de la primera columna "
+                       "y sin línea con su primer apartado; línea oscura (blanco matiz 5) encima de cada bloque salvo el primero"
+                       " (como los publicados de " + (pub or {}).get("nombre", "la publicación") + "): "
+                       + ", ".join(f"«{texto(primera, f).strip()[:30]}»" for f in bloques[:6]) + ("…" if len(bloques) > 6 else "")
+                       + marca([ref(primera, f) for f in bloques]))
+        if vacias_sep:
+            detalle.append("Filas vacías entre bloques, ocultas (la línea oscura ya los separa): " + ", ".join(map(str, vacias_sep))
+                           + marca([ref(primera, f) for f in vacias_sep]))
+    elif bloques:
         detalle.append(f"Títulos de bloque (sin datos en las demás columnas), fondo blanco matiz 2: "
                        + ", ".join(f"«{texto(primera, f).strip()[:30]}»" for f in bloques[:6]) + ("…" if len(bloques) > 6 else ""))
     for f in destacadas:
@@ -3490,6 +3534,12 @@ def lineas_y_fondos(z, hoja, cuadro):
                        + ("s " if len({f for _, f in debajo}) > 1 else " ") + ", ".join(str(f) for f in sorted({f for _, f in debajo})) + ")"
                        + marca([ref(*min(debajo, key=lambda k: (k[1], k[0])))]))
     hoja_xml = con_estilo(hoja_xml, nuevos)
+    for f in vacias_sep:
+        hoja_xml = asegurar_filas(hoja_xml, [f])
+        hoja_xml = re.sub(rf'<row\b[^>]*\br="{f}"[^>]*?/?>',
+                          lambda m: m.group(0) if 'hidden="1"' in m.group(0) else
+                          m.group(0)[:-2 if m.group(0).endswith("/>") else -1].rstrip() + ' hidden="1"' + ("/>" if m.group(0).endswith("/>") else ">"),
+                          hoja_xml, count=1)
     if errores:
         hoja_xml = con_combinadas(hoja_xml, [f"{ref(primera, f - 1)}:{ref(primera, f)}" for f in errores])
     return {ruta_hoja: hoja_xml.encode("utf-8"), "xl/styles.xml": estilos.resultado().encode("utf-8")}, detalle
@@ -3858,7 +3908,7 @@ def letra_pequena(trabajo, pid=None, cuerpo=LETRA_PEQUENA):
             intermedio = io.BytesIO()
             reescribir_zip(base, intermedio, todo)
             with zipfile.ZipFile(intermedio) as z:
-                cambios, det = lineas_y_fondos(z, hoja, cuadro)
+                cambios, det = lineas_y_fondos(z, hoja, cuadro, pub_de(pid))
             todo.update(cambios)
             detalle += det
         # Las propuestas ya aplicadas (título en minúsculas…) se vuelven a aplicar; las del paso «Celdas» rehecho

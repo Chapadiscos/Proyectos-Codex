@@ -237,6 +237,10 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      - `texto_izquierda`: media de caracteres desde la que una columna de textos va a la izquierda (30; por defecto
        80): «Percepción de un solo color…» a la izquierda y «Relajación, concentración» al centro;
      - `centrado_en_altura`: también las filas de varias líneas, centradas en altura (en el Informe Anual, arriba).
+     - `bloques_con_apartados`: el título de bloque (sin sangría ni datos) lleva el fondo de la primera columna
+       (#F2F2F2, no el matiz 2), sin línea con su primer apartado sangrado; encima de cada bloque salvo el primero,
+       línea oscura (#808080); la fila vacía que el autor dejaba antes de un bloque se oculta (publicados
+       DO26XX_01, 03 y 04);
      - `rotulo_y_titulo_en_color`: «Cuadro N» y el título, en el color de la publicación (DO: naranja F06800, como
        sus publicados; Informe Anual y Memoria, en negro). FUENTES y unidades siguen en negro.
    - **Columnas ocultas del autor** (Memoria 2.1: textos de traducción en A-C que la columna D enseña con una
@@ -282,6 +286,9 @@ paso 2 esos cuadros de texto se centran en su celda con los anchos y altos nuevo
 
 **Decimales escritos como texto** (DO26XX_02, 2026-11-19, en español): «(.0002)» → «(0,0002)». Solo los que no pueden
 ser millares (punto sin cifra delante, o «0.» delante).
+
+**FUENTES del autor por duplicado** (DO26XX_03, 2026-11-19): se maqueta y se coloca la de más texto dentro de la
+retícula; las formas por debajo de la retícula quedan sin tocar, y las otras FUENTES se avisan.
 
 **El cuadro se busca desde la primera columna visible con texto** (DO26XX_01, 2026-11-19): un código suelto en una
 columna oculta (A74) se tomaba por el cuadro.
