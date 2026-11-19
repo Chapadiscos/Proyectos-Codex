@@ -266,6 +266,15 @@ siempre iguales; solo si así no caben (9 columnas que necesitan 64 pt cada una)
 o cifra más larga y la primera columna, el resto (si ni así cabe, aviso para bajar la letra). A 6,5 pt el 4.2 queda
 como el publicado (primera 99 pt frente a 106; datos 27-57 frente a 27-61).
 
+**Letra «Normal» del libro: Roboto Light 11** (petición del usuario, 2026-11-19, cuadros abiertos en Windows): los
+anchos de columna se guardan en «caracteres» de la letra «Normal» y cada Excel los convierte a su manera (Mac: dígito
+en puntos enteros; Windows: en píxeles de pantalla, según el escalado). Con Arial 12 o Calibri 11 las columnas salían
+un 4-12 % más estrechas en Windows mientras la pastilla y la retícula (formas, en mm) no cambiaban. El dígito de Roboto
+Light 11 mide 6 pt en Mac y 8/10/12/14/16 px (= 6 pt) en Windows al 100/125/150/175/200 %. El paso 1 cambia la letra
+«Normal» y recalcula los anchos que había (en Mac no cambian); `ancho_comun` elige el ancho guardado que da los mismos
+puntos en Mac y en Windows a todas esas escalas (con anchos en múltiplos de 3 pt es exacto). Los 23 cuadros miden
+468 pt en Mac y en Windows.
+
 **Columnas de nombres propios** (publicado del Memoria 6.1, 2026-11-18): una columna de datos solo de textos de una
 línea, cada uno con 2 o más palabras en mayúscula inicial (salvo conectores: «Banco Bilbao Vizcaya Argentaria, SA»),
 va a la izquierda (su cabecera, al centro) y, si cabe sin partir la primera columna y no pasa de un tercio del cuadro,

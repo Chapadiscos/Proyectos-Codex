@@ -999,14 +999,69 @@ def paso1(trabajo, pid):
     hoja = estado.get("hoja") or "Cuadro datos"
     pub = publicacion(pid)
     with zipfile.ZipFile(base) as z:
+        cambios_normal, detalle_normal = letra_normal_roboto(z)
+    previo = io.BytesIO()
+    reescribir_zip(base, previo, cambios_normal)
+    with zipfile.ZipFile(previo) as z:
         cambios, detalle = reticula_y_pastilla(z, hoja, pub)
+    cambios = {**cambios_normal, **cambios}
+    detalle = detalle_normal + detalle
     intermedio = io.BytesIO()
-    reescribir_zip(base, intermedio, cambios)
+    reescribir_zip(previo, intermedio, cambios)
     with zipfile.ZipFile(intermedio) as z:
         propuestas = []
         cambios_textos, detalle_textos = textos(z, hoja, estado, propuestas, pub)
     return nuevo_paso(trabajo, RETICULA_Y_TEXTOS, {**cambios, **cambios_textos}, detalle + detalle_textos,
                       propuestas=propuestas)
+
+
+LETRA_NORMAL = ("Roboto Light", 11)
+
+
+def letra_normal_roboto(z):
+    """Estilo «Normal» del libro en Roboto Light 11 (petición del usuario, 2026-11-19, cuadros abiertos en Windows).
+    Los anchos de columna se guardan en «caracteres» de esa letra y cada Excel los convierte a su manera: el de Mac,
+    con el dígito en puntos enteros; el de Windows, en píxeles de pantalla (según el escalado). Con Arial 12 o Calibri
+    11 las columnas salían un 4-12 % más estrechas en Windows mientras las formas (en mm) no cambiaban. El dígito de
+    Roboto Light 11 mide 6 pt en Mac y 8/10/12/14/16 px (= 6 pt) en Windows al 100/125/150/175/200 %: el mismo ancho
+    guardado da los mismos puntos. Las columnas que ya había se recalculan para que midan en Mac lo mismo que antes."""
+    estilos_xml = z.read("xl/styles.xml").decode("utf-8")
+    m = re.search(r'(<fonts\b[^>]*>)(.*?)(</fonts>)', estilos_xml, re.S)
+    f0 = re.search(r'<font\b.*?</font>|<font/>', m.group(2), re.S)
+    nombre, sz = LETRA_NORMAL
+    if re.search(r'<name val="%s"/>' % re.escape(nombre), f0.group(0)) and re.search(r'<sz val="%g"/>' % sz, f0.group(0)) \
+            and "<scheme" not in f0.group(0):
+        return {}, []
+    antes = re.search(r'<name val="([^"]*)"', f0.group(0))
+    antes_sz = re.search(r'<sz val="([\d.]+)"', f0.group(0))
+    mdw_antes = digito_maximo(estilos_xml)
+    nueva_f0 = f'<font><sz val="{sz:g}"/><color theme="1"/><name val="{nombre}"/><family val="2"/></font>'
+    cuerpo = m.group(2)[:f0.start()] + nueva_f0 + m.group(2)[f0.end():]
+    nuevo_estilos = estilos_xml[:m.start()] + m.group(1) + cuerpo + m.group(3) + estilos_xml[m.end():]
+    mdw, mdw_win = digito_maximo(nuevo_estilos), digito_windows(nuevo_estilos)
+    cambios = {"xl/styles.xml": nuevo_estilos.encode("utf-8")}
+
+    def convertir(w):
+        pt = round(float(w) * mdw_antes)
+        return f"{ancho_comun(pt, mdw, mdw_win):g}" if pt > 0 else w
+    for _, ruta, _ in hojas_libro(z):
+        x = z.read(ruta).decode("utf-8")
+        nuevo = re.sub(r'(<col\b[^>]*\bwidth=")([\d.]+)(")', lambda k: k.group(1) + convertir(k.group(2)) + k.group(3), x)
+        fmt = re.search(r'<sheetFormatPr\b[^>]*>', nuevo)
+        if fmt:
+            dcw = re.search(r'\bdefaultColWidth="([\d.]+)"', fmt.group(0))
+            if dcw:
+                etiqueta = fmt.group(0).replace(dcw.group(0), f'defaultColWidth="{convertir(dcw.group(1))}"')
+            else:
+                base_cw = re.search(r'\bbaseColWidth="(\d+)"', fmt.group(0))
+                ancho_def = (int(base_cw.group(1)) if base_cw else 8) + 5 / mdw_antes
+                etiqueta = fmt.group(0).replace("<sheetFormatPr", f'<sheetFormatPr defaultColWidth="{convertir(ancho_def)}"', 1)
+            nuevo = nuevo.replace(fmt.group(0), etiqueta, 1)
+        if nuevo != x:
+            cambios[ruta] = nuevo.encode("utf-8")
+    return cambios, [f"Letra «Normal» del libro: {antes.group(1) if antes else '—'} {antes_sz.group(1) if antes_sz else ''} → "
+                     f"{nombre} {sz:g}, para que las columnas midan lo mismo en el Excel de Mac y en el de Windows "
+                     "(los anchos que ya había, recalculados: en Mac no cambian)"]
 
 
 def reticula_y_pastilla(z, hoja, pub):
@@ -1703,15 +1758,27 @@ def digito_windows(estilos_xml):
 
 def ancho_comun(pt, mdw_mac, mdw_win):
     """Ancho guardado que mide `pt` en el Excel de Mac (puntos enteros) y lo mismo en el de Windows (píxeles a
-    96 ppp, 1 px = 0,75 pt), si lo hay; si no, el del Mac."""
+    96 ppp, 1 px = 0,75 pt), si lo hay; si no, el del Mac. Entre los que valen, el que también da `pt` con la
+    pantalla de Windows escalada (125, 150, 175 y 200 %: el dígito en píxeles crece en proporción)."""
     desde = max(1, int((pt - 0.5) / mdw_mac * 1000))
+    mejor, aciertos_mejor = None, -1
     for i in range(desde, int((pt + 0.5) / mdw_mac * 1000) + 2):
         w = i / 1000
-        mac = round(w * mdw_mac)
+        if round(w * mdw_mac) != pt:
+            continue
         win = int(((256 * w + int(128 / mdw_win)) / 256) * mdw_win) * 0.75
-        if mac == pt and abs(win - pt) < 0.01:
-            return w
-    return round(pt / mdw_mac, 8)
+        if abs(win - pt) >= 0.01:
+            continue
+        aciertos = 0
+        for escala in (1.25, 1.5, 1.75, 2):
+            md = round(mdw_win * escala)
+            px = int(((256 * w + int(128 / md)) / 256) * md)
+            aciertos += abs(px * 0.75 / escala - pt) < 0.01
+        if aciertos > aciertos_mejor:
+            mejor, aciertos_mejor = w, aciertos
+        if aciertos == 4:
+            break
+    return mejor if mejor is not None else round(pt / mdw_mac, 8)
 
 
 def digito_maximo(estilos_xml):
