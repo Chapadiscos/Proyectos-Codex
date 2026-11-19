@@ -2191,6 +2191,20 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None):
     rangos = combinadas(hoja_xml)
     ancho_col = anchos_columnas(hoja_xml)
     c1, f1, c2, f2 = buscar_tabla(todas, rangos, ancho_col, unidades_a_emu, ancho_ret, estilos)
+    # Cabecera hecha con cuadros de texto (DO26XX_02: símbolos de ecuación 𝑡, 𝛽, 𝜌, 𝜎² sobre las celdas vacías de la
+    # fila 11): la fila de justo encima del cuadro, sin textos en celdas y con cuadros de texto anclados en sus
+    # columnas, es la cabecera (el publicado la colorea como tal)
+    formas_fila, cabecera_formas, filas_formas = {}, [], set()
+    for anc in ANCLA.finditer(dibujo):
+        desde = re.search(r'<xdr:from>\s*<xdr:col>(\d+)</xdr:col>.*?<xdr:row>(\d+)</xdr:row>', anc.group(0), re.S)
+        if desde and html.unescape(texto_forma(anc.group(0))).strip():
+            formas_fila.setdefault(int(desde.group(2)) + 1, set()).add(int(desde.group(1)) + 1)
+    while f1 > 1 and not any(todas.get((c, f1 - 1), {}).get("texto", "").strip() for c in range(c1, c2 + 1)) \
+            and len({c for c in formas_fila.get(f1 - 1, set()) if c1 < c <= c2}) >= 2:
+        f1 -= 1
+        filas_formas.add(f1)
+        cabecera_formas.append(f"Cabecera con cuadros de texto (fórmulas o símbolos) en la fila {f1}, sobre celdas vacías: es parte del cuadro"
+                               + marca([ref(c, f1) for c in sorted(formas_fila[f1]) if c1 <= c <= c2]))
     detalle = []
     # La FUENTE y las notas que el autor escribió en celdas, debajo del cuadro, no son parte de él
     for f in range(f1 + 1, f2 + 1):
@@ -2206,6 +2220,7 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None):
                 f2 -= 1
             break
     detalle.insert(0, f"Cuadro en {ref(c1, f1)}:{ref(c2, f2)} ({f2 - f1 + 1} filas, {c2 - c1 + 1} columnas)")
+    detalle[1:1] = cabecera_formas
     # Textos en celdas fuera del cuadro y dentro de la retícula (3.4: A28, que el TERMINADO borró)
     x_col, pos = {}, 0
     for c in range(1, max([k[0] for k in todas] or [1]) + 1):
@@ -2729,7 +2744,7 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None):
     # Textos nuevos (sangrías, viñetas, TOTAL) y líneas de cada celda
     nuevos_textos, lineas, cambios_txt, porcentajes, correcciones, saltos, sangrados, propuestas = {}, {}, [], [], [], [], [], []
     juntadas = []
-    sangrar_ricos, ricos_sin_tocar, asteriscos = {}, [], []
+    sangrar_ricos, ricos_sin_tocar, asteriscos, decimales = {}, [], [], []
     for f in range(f1, f2 + 1):
         for c in range(c1, c2 + 1):
             if (c, f) in tapadas or ancho_col(c) == 0:
@@ -2750,6 +2765,13 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None):
                 if not x["numero"] and pegados != t and indice_rico(x, compartidos) is None:
                     nuevos_textos[(c, f)] = pegados
                     asteriscos.append(ref(c, f))
+                # Decimales escritos como texto con punto y sin el cero: «(.0002)» → «(0,0002)» (publicado DO26XX_02);
+                # solo los que no pueden ser millares (sin cifra delante, o con «0.» delante)
+                if idioma == "es" and not x["numero"] and indice_rico(x, compartidos) is None:
+                    con_coma = re.sub(r'(?<![\d.,])(0?)\.(\d+)', r'0,\2', nuevos_textos.get((c, f), t))
+                    if con_coma != nuevos_textos.get((c, f), t):
+                        nuevos_textos[(c, f)] = con_coma
+                        decimales.append(ref(c, f))
                 continue
             nuevo = t
             # «<34» → «< 34»: espacio tras los signos de comparación (TERMINADO 1.4); «7%» → «7 %» con espacio que no
@@ -2857,6 +2879,9 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None):
         detalle.append("Aviso (corrección ortotipográfica), revísalas: " + "; ".join(correcciones[:10])
                        + (f" y {len(correcciones) - 10} más" if len(correcciones) > 10 else "")
                        + marca([l.split(" ", 1)[0] for l in correcciones]))
+    if decimales:
+        detalle.append(f"Decimales escritos como texto, con coma y el cero delante: «(.0002)» → «(0,0002)» ({len(decimales)} "
+                       f"celda{'s' if len(decimales) > 1 else ''}, como el publicado del DO26XX_02)" + marca(decimales))
     if porcentajes:
         cambios_txt.append(f"espacio que no parte línea antes de «%» ({len(porcentajes)} celda{'s' if len(porcentajes) > 1 else ''})")
     if cambios_txt:
@@ -3047,7 +3072,9 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None):
         comp = re.sub(r'(<sst\b[^>]*>).*(</sst>)', lambda m: m.group(1) + cuerpo + m.group(2), comp, count=1, flags=re.S)
         comp = re.sub(r'\buniqueCount="\d+"', f'uniqueCount="{len(nuevas_si)}"', comp, count=1)
         cambios["xl/sharedStrings.xml"] = comp.encode("utf-8")
-    return cambios, detalle, {"c1": c1, "f1": f1, "c2": c2, "f2": f2, "primera": primera, "fin_cabecera": fin_cab}
+    return cambios, detalle, {"c1": c1, "f1": f1, "c2": c2, "f2": f2, "primera": primera, "fin_cabecera": fin_cab,
+                              "cabecera_formas": [[c, f] for f in sorted(filas_formas) for c in sorted(formas_fila.get(f, set()))
+                                                  if c1 <= c <= c2 and not todas.get((c, f), {}).get("texto", "").strip()]}
 
 
 # ---------------------------------------------------------------- paso 3: cabeceras
@@ -3133,8 +3160,11 @@ def cabeceras(z, hoja, cuadro, pub):
     colores = matices(pub["color"])
     detalle = []
 
+    # Celdas vacías con un cuadro de texto encima (fórmulas o símbolos de la cabecera, DO26XX_02): cuentan como texto
+    con_forma = {tuple(k) for k in cuadro.get("cabecera_formas", [])}
+
     def texto(c, f):
-        return todas.get((c, f), {}).get("texto", "").strip()
+        return todas.get((c, f), {}).get("texto", "").strip() or ("\u25a1" if (c, f) in con_forma else "")
 
     def estilo(c, f):
         return todas.get((c, f), {}).get("s", 0)

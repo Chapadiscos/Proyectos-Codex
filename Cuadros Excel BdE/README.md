@@ -275,6 +275,16 @@ Light 11 mide 6 pt en Mac y 8/10/12/14/16 px (= 6 pt) en Windows al 100/125/150/
 puntos en Mac y en Windows a todas esas escalas (con anchos en múltiplos de 3 pt es exacto). Los 23 cuadros miden
 468 pt en Mac y en Windows.
 
+**Cabecera hecha con cuadros de texto** (DO26XX_02, 2026-11-19): si la fila de justo encima del cuadro no tiene
+textos en celdas pero sí cuadros de texto anclados en dos o más de sus columnas de datos (símbolos de ecuación 𝑡, 𝛽,
+𝜌, 𝜎²), es la cabecera: entra en el cuadro y esas celdas se colorean como cabecera (paso 3, `cabecera_formas`).
+
+**Decimales escritos como texto** (DO26XX_02, 2026-11-19, en español): «(.0002)» → «(0,0002)». Solo los que no pueden
+ser millares (punto sin cifra delante, o «0.» delante).
+
+**El cuadro se busca desde la primera columna visible con texto** (DO26XX_01, 2026-11-19): un código suelto en una
+columna oculta (A74) se tomaba por el cuadro.
+
 **Columnas de nombres propios** (publicado del Memoria 6.1, 2026-11-18): una columna de datos solo de textos de una
 línea, cada uno con 2 o más palabras en mayúscula inicial (salvo conectores: «Banco Bilbao Vizcaya Argentaria, SA»),
 va a la izquierda (su cabecera, al centro) y, si cabe sin partir la primera columna y no pasa de un tercio del cuadro,
