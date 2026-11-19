@@ -1930,7 +1930,10 @@ def buscar_tabla(celdas, rangos, ancho_col, a_emu, ancho_ret, estilos):
     con_texto = [g for g in grupos if any(celdas.get(k, {}).get("texto", "").strip() for k in g)]
     if not con_texto:
         raise Fallo("No encuentro el cuadro (celdas con texto) dentro de la retícula")
-    minimo = min(k[0] for g in con_texto for k in g if celdas.get(k, {}).get("texto", "").strip())
+    # La columna de partida, la primera VISIBLE con texto (DO26XX_01: un código suelto en la columna A, oculta, en A74,
+    # se tomaba por el cuadro); si todas están ocultas, la primera
+    visibles = [k[0] for g in con_texto for k in g if celdas.get(k, {}).get("texto", "").strip() and ancho_col(k[0]) > 0]
+    minimo = min(visibles or [k[0] for g in con_texto for k in g if celdas.get(k, {}).get("texto", "").strip()])
     grupo = max((g for g in con_texto if any(k[0] == minimo for k in g)),
                 key=lambda g: sum(1 for k in g if celdas.get(k, {}).get("texto", "").strip()))
     # Sin las filas y columnas de los bordes que no tienen texto (bordes o rellenos sueltos del autor)
