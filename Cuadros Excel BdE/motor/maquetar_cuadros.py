@@ -3062,6 +3062,10 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None):
         if f not in altos:
             return fila
         fila = re.sub(r'\s(ht|customHeight)="[^"]*"', "", fila)
+        if f == f1 - 1:
+            # La fila del hueco bajo la pastilla tiene que verse (DO26XX_04: el autor la ocultó y el alto nuevo no
+            # contaba: la cabecera quedaba pegada a la pastilla)
+            fila = re.sub(r'\shidden="[^"]*"', "", fila)
         return fila[:-1].rstrip("/") + f' ht="{altos[f]}" customHeight="1"' + ("/>" if fila.endswith("/>") else ">")
     hoja_xml = re.sub(r'<row\b[^>]*?/?>', cambiar_fila, hoja_xml)
     hoja_xml = poner_anchos(hoja_xml, nuevos_anchos)
