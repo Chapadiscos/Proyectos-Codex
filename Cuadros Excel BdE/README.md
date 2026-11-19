@@ -240,7 +240,8 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      - `bloques_con_apartados`: el título de bloque (sin sangría ni datos) lleva el fondo de la primera columna
        (#F2F2F2, no el matiz 2), sin línea con su primer apartado sangrado; encima de cada bloque salvo el primero,
        línea oscura (#808080); la fila vacía que el autor dejaba antes de un bloque se oculta (publicados
-       DO26XX_01, 03 y 04);
+       DO26XX_01, 03 y 04); el TOTAL justo bajo un título de bloque es su cabeza y lo que viene detrás va sangrado
+       (DO26XX_04);
      - `rotulo_y_titulo_en_color`: «Cuadro N» y el título, en el color de la publicación (DO: naranja F06800, como
        sus publicados; Informe Anual y Memoria, en negro). FUENTES y unidades siguen en negro.
    - **Columnas ocultas del autor** (Memoria 2.1: textos de traducción en A-C que la columna D enseña con una
@@ -286,6 +287,9 @@ paso 2 esos cuadros de texto se centran en su celda con los anchos y altos nuevo
 
 **Decimales escritos como texto** (DO26XX_02, 2026-11-19, en español): «(.0002)» → «(0,0002)». Solo los que no pueden
 ser millares (punto sin cifra delante, o «0.» delante).
+
+**Un «TOTAL» por bloque** (DO26XX_04, 2026-11-19): con varias filas «TOTAL», son totales de bloque: todas en blanco
+matiz 2 y Roboto Medium, sin fila TOTAL principal en matiz 5.
 
 **FUENTES del autor por duplicado** (DO26XX_03, 2026-11-19): se maqueta y se coloca la de más texto dentro de la
 retícula; las formas por debajo de la retícula quedan sin tocar, y las otras FUENTES se avisan.

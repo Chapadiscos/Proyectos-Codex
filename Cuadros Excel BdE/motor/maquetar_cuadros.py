@@ -2319,7 +2319,10 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None):
         t = d(primera, f)["texto"].strip()
         return bool(t) and sangria_autor(f) == 0 and not RE_TOTAL.match(t) and \
             not any(d(c, f)["texto"].strip() for c in range(primera + 1, c2 + 1) if (c, f) not in tapadas)
-    hijos, bloque_abierto = set(), False
+    # En Documentos Ocasionales (publicado DO26XX_04) el TOTAL justo bajo el título de bloque es la cabeza del bloque:
+    # no lo cierra, y lo que viene detrás («Jubilación», «Supervivientes»…) va sangrado aunque el autor no lo sangrara
+    apartados_pub = bool((pub or {}).get("bloques_con_apartados"))
+    hijos, bloque_abierto, anterior = set(), False, None
     for f in range(fin_cab + 1, f2 + 1):
         t = d(primera, f)["texto"].strip()
         if es_bloque(f):
@@ -2327,8 +2330,10 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None):
         elif bloque_abierto and t and not RE_TOTAL.match(t):
             hijos.add(f)
         elif RE_TOTAL.match(t):
-            bloque_abierto = False
-    sangrar_hijos = any(sangria_autor(f) > 0 for f in hijos)
+            bloque_abierto = apartados_pub and anterior is not None and es_bloque(anterior)
+        if t:
+            anterior = f
+    sangrar_hijos = any(sangria_autor(f) > 0 for f in hijos) or (apartados_pub and bool(hijos))
     if not nivel_de and sangrar_hijos:
         nivel_de = {}
 
@@ -3372,6 +3377,13 @@ def lineas_y_fondos(z, hoja, cuadro, pub=None):
     # Filas de total: «TOTAL» (la principal, la última) y «Total …» (subtotales)
     totales = [f for f in filas if RE_TOTAL.match(texto(primera, f)) and not sangrada(f)]
     principal = next((f for f in reversed(totales) if texto(primera, f).strip().upper() == "TOTAL"), totales[-1] if totales else None)
+    # Varias filas «TOTAL» (una por bloque, DO26XX_04): son totales de bloque, todas en matiz 2 como subtotales; no
+    # hay una TOTAL principal (el publicado no pone la última en matiz 5)
+    totales_bloque = [f for f in totales if texto(primera, f).strip().upper() == "TOTAL"]
+    if len(totales_bloque) > 1:
+        principal = None
+    else:
+        totales_bloque = []
     subtotales = [f for f in totales if f != principal]
     # Títulos de bloque: concepto sin sangría y sin datos en las demás columnas
     bloques = [f for f in filas if texto(primera, f).strip() and not sangrada(f) and sin_datos(f) and f not in totales]
@@ -3480,12 +3492,18 @@ def lineas_y_fondos(z, hoja, cuadro, pub=None):
     for f in destacadas:
         detalle.append(f"Fila «{texto(primera, f).strip()}» destacada en blanco matiz 2 (agregado nacional en una lista de "
                        f"provincias o países, como los publicados)" + marca([ref(c, f) for c in (primera, c2)]))
+    if totales_bloque:
+        detalle.append(f"Un «TOTAL» en cada bloque (filas {', '.join(map(str, totales_bloque))}): totales de bloque, toda la fila en "
+                       "blanco matiz 2 y Roboto Medium; no hay fila TOTAL principal (como el publicado del DO26XX_04)"
+                       + marca([ref(primera, f) for f in totales_bloque]))
     for f in subtotales:
+        if f in totales_bloque:
+            continue
         detalle.append(f"Subtotal «{texto(primera, f).strip()[:40]}»: fondo blanco matiz 2 en toda la fila")
     if principal:
         detalle.append(f"Fila TOTAL (fila {principal}): fondo blanco matiz {'5 (#808080) con el texto en blanco, porque el matiz 2 ya está usado' if fondo_total == BLANCO_MATIZ_5 else '2 (#D9D9D9)'}"
                        "; línea blanca encima (sin línea oscura); sin hueco en las columnas de separación")
-    else:
+    elif not totales_bloque:
         detalle.append("Sin fila TOTAL")
     if separaciones:
         detalle.append("Columnas de separación sin líneas en las filas de datos (las líneas se cortan entre grupos): "
