@@ -277,7 +277,8 @@ puntos en Mac y en Windows a todas esas escalas (con anchos en múltiplos de 3 p
 
 **Cabecera hecha con cuadros de texto** (DO26XX_02, 2026-11-19): si la fila de justo encima del cuadro no tiene
 textos en celdas pero sí cuadros de texto anclados en dos o más de sus columnas de datos (símbolos de ecuación 𝑡, 𝛽,
-𝜌, 𝜎²), es la cabecera: entra en el cuadro y esas celdas se colorean como cabecera (paso 3, `cabecera_formas`).
+𝜌, 𝜎²), es la cabecera: entra en el cuadro y esas celdas se colorean como cabecera (paso 3, `cabecera_formas`). En el
+paso 2 esos cuadros de texto se centran en su celda con los anchos y altos nuevos (si no, quedaban descentrados).
 
 **Decimales escritos como texto** (DO26XX_02, 2026-11-19, en español): «(.0002)» → «(0,0002)». Solo los que no pueden
 ser millares (punto sin cifra delante, o «0.» delante).

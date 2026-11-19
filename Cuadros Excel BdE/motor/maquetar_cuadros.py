@@ -3061,6 +3061,49 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None):
         detalle += notas_sitio
     elif f1 <= 1:
         detalle.append("Aviso: el cuadro empieza en la fila 1: no hay fila encima para separarlo de la pastilla")
+    # Cuadros de texto de la cabecera (DO26XX_02: 𝑡, 𝛽, 𝜌, 𝜎²), centrados en su celda con los anchos y altos nuevos
+    # (anclados a una distancia fija del borde izquierdo de la celda, se descentraban al cambiar el ancho)
+    if ruta_dibujo and filas_formas:
+        actual = cambios_dibujo[ruta_dibujo].decode("utf-8") if ruta_dibujo in cambios_dibujo else dibujo
+        altos_emu, alto_def = altos_filas(z, hoja)
+        centradas = []
+
+        def centrar(m):
+            anc = m.group(0)
+            desde = re.search(r'<xdr:from>\s*<xdr:col>(\d+)</xdr:col>\s*<xdr:colOff>-?\d+</xdr:colOff>\s*<xdr:row>(\d+)</xdr:row>'
+                              r'\s*<xdr:rowOff>-?\d+</xdr:rowOff>\s*</xdr:from>', anc)
+            if not desde or m.group(1) == "absoluteAnchor" or not html.unescape(texto_forma(anc)).strip():
+                return anc
+            c, f = int(desde.group(1)) + 1, int(desde.group(2)) + 1
+            if f not in filas_formas or not (c1 < c <= c2):
+                return anc
+            ancho_c = unidades_a_emu(ancho_col(c))
+            alto_f = round(altos[f] * EMU_PT) if f in altos else altos_emu.get(f - 1, alto_def)
+            if m.group(1) == "oneCellAnchor":
+                ext = re.search(r'<xdr:ext cx="(\d+)" cy="(\d+)"/>', anc)
+                if not ext:
+                    return anc
+                cx, cy = int(ext.group(1)), int(ext.group(2))
+            else:
+                hasta = re.search(r'<xdr:to>\s*<xdr:col>(\d+)</xdr:col>\s*<xdr:colOff>(-?\d+)</xdr:colOff>\s*<xdr:row>(\d+)</xdr:row>'
+                                  r'\s*<xdr:rowOff>(-?\d+)</xdr:rowOff>\s*</xdr:to>', anc)
+                ext = re.search(r'<a:ext cx="(\d+)" cy="(\d+)"/>', anc)
+                if not hasta or not ext or hasta.group(1) != desde.group(1) or hasta.group(3) != desde.group(2):
+                    return anc
+                cx, cy = int(ext.group(1)), int(ext.group(2))
+            x, y = max(0, (ancho_c - cx) // 2), max(0, (alto_f - cy) // 2)
+            nuevo_desde = (f"<xdr:from><xdr:col>{c - 1}</xdr:col><xdr:colOff>{x}</xdr:colOff><xdr:row>{f - 1}</xdr:row>"
+                           f"<xdr:rowOff>{y}</xdr:rowOff></xdr:from>")
+            anc = anc.replace(desde.group(0), nuevo_desde, 1)
+            if m.group(1) == "twoCellAnchor":
+                anc = anc.replace(hasta.group(0), f"<xdr:to><xdr:col>{c - 1}</xdr:col><xdr:colOff>{x + cx}</xdr:colOff>"
+                                  f"<xdr:row>{f - 1}</xdr:row><xdr:rowOff>{y + cy}</xdr:rowOff></xdr:to>", 1)
+            centradas.append(ref(c, f))
+            return anc
+        centrado = ANCLA.sub(centrar, actual)
+        if centradas:
+            cambios_dibujo[ruta_dibujo] = centrado.encode("utf-8")
+            detalle.append(f"Cuadros de texto de la cabecera, centrados en su celda ({len(centradas)})" + marca(centradas))
     faltan = [f for f in altos if not re.search(rf'<row\b[^>]*\br="{f}"', hoja_xml)]
     if faltan:
         detalle.append(f"Aviso: filas sin definir en la hoja ({', '.join(map(str, faltan))}): su alto no se ha cambiado")
