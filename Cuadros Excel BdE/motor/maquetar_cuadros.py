@@ -1262,6 +1262,11 @@ def textos(z, hoja, estado, propuestas=None, pub=None):
                 continue
             if not t or x["numero"] or ancho_col(c) == 0 or altos.get(f - 1, defecto) == 0 or "<f>" in (x["xml"] or "") or "<f " in (x["xml"] or ""):
                 continue
+            # Combinada sobre dos o más columnas con textos debajo, en su ancho: es la cabecera de grupo del cuadro, no
+            # unas unidades (Economía Latinoamericana 01: B3:G3 «Tasas de variación interanual» sobre B4:G4)
+            span = next((r for r in combinadas(hoja_xml) if r[0] == c and r[1] == f and r[2] > c), None)
+            if span and sum(1 for k in range(c, span[2] + 1) if todas_c.get((k, span[3] + 1), {}).get("texto", "").strip()) >= 2:
+                continue
             cx = sum(round(round(ancho_col(k) * mdw) * EMU_PT) for k in range(1, c))
             cy = sum(altos.get(r, defecto) for r in range(f - 1))
             if cx >= ancho_ret or cy >= alto_pastilla + 12 * EMU_MM:
@@ -1947,8 +1952,16 @@ def buscar_tabla(celdas, rangos, ancho_col, a_emu, ancho_ret, estilos):
     # se tomaba por el cuadro); si todas están ocultas, la primera
     visibles = [k[0] for g in con_texto for k in g if celdas.get(k, {}).get("texto", "").strip() and ancho_col(k[0]) > 0]
     minimo = min(visibles or [k[0] for g in con_texto for k in g if celdas.get(k, {}).get("texto", "").strip()])
-    grupo = max((g for g in con_texto if any(k[0] == minimo for k in g)),
-                key=lambda g: sum(1 for k in g if celdas.get(k, {}).get("texto", "").strip()))
+    candidatos = [g for g in con_texto if any(k[0] == minimo for k in g)]
+    # Varias tablas de verdad (texto en 3 filas y 3 columnas al menos) en esa columna: la de arriba, la que va bajo
+    # la pastilla (Economía Latinoamericana 01: la trimestral publicada en A3 y debajo, en A43, la mensual del autor)
+    tablas = [g for g in candidatos
+              if len({k[1] for k in g if celdas.get(k, {}).get("texto", "").strip()}) >= 3
+              and len({k[0] for k in g if celdas.get(k, {}).get("texto", "").strip()}) >= 3]
+    if len(tablas) > 1:
+        grupo = min(tablas, key=lambda g: min(k[1] for k in g if celdas.get(k, {}).get("texto", "").strip()))
+    else:
+        grupo = max(candidatos, key=lambda g: sum(1 for k in g if celdas.get(k, {}).get("texto", "").strip()))
     # Sin las filas y columnas de los bordes que no tienen texto (bordes o rellenos sueltos del autor)
     texto = {k for k in grupo if celdas.get(k, {}).get("texto", "").strip()}
     c1, f1, c2, f2 = min(k[0] for k in texto), min(k[1] for k in texto), max(k[0] for k in texto), max(k[1] for k in texto)
@@ -2700,16 +2713,20 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None):
     # Columnas de textos largos: si con anchos iguales sus filas salen mucho más altas, ganan ancho a costa de las que
     # tienen holgura (sin que estas pasen a tener más líneas que la más alta), hasta que ya no mejora
     largas = []
+    # Las combinadas sobre varias columnas en una fila sin concepto en la primera columna (Economía Latinoamericana 01:
+    # B8:G8 «Percentiles de distribución…», un subtítulo a lo ancho de los datos) no son textos de su primera columna.
+    # Con concepto sí lo son (DO 06: B6:C6 «Percepción de un solo color…», a la izquierda en el publicado)
+    sobre_varias = {(a1, b1) for a1, b1, a2, b2 in rangos if a2 > a1 and a1 > primera and not d(primera, b1)["texto"].strip()}
     for c in otras:
         textos = [d(c, f)["texto"] for f in range(fin_cab + 1, f2 + 1)
-                  if (c, f) not in tapadas and d(c, f)["texto"].strip() and not es_cifra(d(c, f))]
+                  if (c, f) not in tapadas and (c, f) not in sobre_varias and d(c, f)["texto"].strip() and not es_cifra(d(c, f))]
         if textos and sum(len(t) for t in textos) / len(textos) > LARGO_TEXTO_IZQUIERDA:
             largas.append(c)
     anchos_pt = dict(medida) if a_medida else {c: resto for c in otras}
     if largas and len(otras) > 1 and not a_medida:
         def lineas_col(c, w):
             return max([len(partir(d(c, f)["texto"], w - 2 * RELLENO_CELDA_PT, medir_de(c, f))) for f in range(fin_cab + 1, f2 + 1)
-                        if (c, f) not in tapadas and d(c, f)["texto"].strip()] or [1])
+                        if (c, f) not in tapadas and (c, f) not in sobre_varias and d(c, f)["texto"].strip()] or [1])
         paso_pt = 2.0
         for _ in range(400):
             lin = {c: lineas_col(c, anchos_pt[c]) for c in otras}
@@ -2945,7 +2962,7 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None):
     izquierda = set()
     for c in range(primera + 1, c2 + 1):
         textos = [d(c, f)["texto"] for f in range(fin_cab + 1, f2 + 1)
-                  if (c, f) not in tapadas and d(c, f)["texto"].strip() and not es_cifra(d(c, f))]
+                  if (c, f) not in tapadas and (c, f) not in sobre_varias and d(c, f)["texto"].strip() and not es_cifra(d(c, f))]
         if textos and sum(len(t) for t in textos) / len(textos) > pub.get("texto_izquierda", LARGO_TEXTO_IZQUIERDA):
             izquierda.add(c)
     if izquierda:
@@ -3004,7 +3021,8 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None):
             elif es_cifra(x) or not x["texto"].strip():
                 h = "center"
             else:
-                h = "left" if c in izquierda else "center"
+                # Un subtítulo combinado a lo ancho de los datos, al centro (Economía Latinoamericana 01, B8:G8)
+                h = "left" if c in izquierda and (c, f) not in sobre_varias else "center"
             al = {"horizontal": h, "vertical": "top" if f in arriba else "center"}
             if not es_cifra(x) or f <= fin_cab:
                 al["wrapText"] = "1"
