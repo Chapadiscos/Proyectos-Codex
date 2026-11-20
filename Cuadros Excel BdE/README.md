@@ -266,6 +266,13 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      copia de la FUENTE en la fila 62 subía dentro de la retícula).
    - **Cabecera de grupo en una combinada encima de la tabla** (Economía Latinoamericana 01: B3:G3 «Tasas de variación
      interanual» sobre B4:G4): no se toma por unas unidades; es la primera fila de la cabecera.
+   - **Columnas a la derecha de la retícula del autor** (Economía Latinoamericana 04: BB «actual»; 03: EO-EU, meses de
+     2023), separadas del cuadro por columnas vacías: no son del cuadro (la retícula del autor se lee en el original).
+   - **Columnas anchas vacías dentro del cuadro** (04: AV, 69 pt, entre la escala y «Expectativas»): columnas de
+     separación de 3 pt.
+   - **Puntos y flechas dibujados sobre las celdas** (04: tono de la política monetaria): al cambiar anchos y altos,
+     cada extremo guarda su sitio relativo en su celda; los puntos pequeños (hasta 4 mm) se mueven por su centro sin
+     cambiar de tamaño y las flechas siguen tocándolos. Solo formas sin texto y con tamaño.
    - **Subtítulo combinado a lo ancho de los datos** sin concepto en la primera columna (Economía Latinoamericana 01:
      B8:G8 «Percentiles de distribución…»): no cuenta como texto largo de su columna (ni la ensancha ni la alinea a la
      izquierda) y va al centro.

@@ -2181,6 +2181,98 @@ def salto_cabecera(texto, ancho, medir):
     return min(candidatos)[2] if candidatos else None
 
 
+MARCADOR_MAX = 4 * EMU_MM   # formas pequeñas (puntos de un gráfico en celdas): se mueven sin cambiar de tamaño
+RE_EXTREMO = re.compile(r'<xdr:(from|to)>\s*<xdr:col>(\d+)</xdr:col>\s*<xdr:colOff>(-?\d+)</xdr:colOff>\s*'
+                        r'<xdr:row>(\d+)</xdr:row>\s*<xdr:rowOff>(-?\d+)</xdr:rowOff>\s*</xdr:(?:from|to)>')
+
+
+def reubicar_formas(dibujo, c1, c2, f1, f2, ancho_viejo, ancho_nuevo, alto_viejo, alto_nuevo):
+    """Formas ancladas en celdas del cuadro (puntos y flechas dibujados sobre las celdas, Economía Latinoamericana 04):
+    cada extremo guarda su sitio relativo dentro de su celda al cambiar anchos y altos (anclas en EMU desde el borde
+    de la celda). Los marcadores pequeños se mueven por su centro sin cambiar de tamaño, y los extremos de flecha que
+    tocaban un marcador siguen tocándolo. Devuelve (dibujo, nombres de las formas movidas)."""
+    def nuevo(eje, i, off):
+        v, n = (ancho_viejo(i), ancho_nuevo(i)) if eje == "col" else (alto_viejo(i), alto_nuevo(i))
+        return off if v <= 0 or abs(v - n) < 1 else round(off * n / v)
+
+    anclas = [m for m in ANCLA.finditer(dibujo) if m.group(1) == "twoCellAnchor"]
+    info = []
+    for m in anclas:
+        ext = {e[0]: (int(e[1]), int(e[2]), int(e[3]), int(e[4])) for e in RE_EXTREMO.findall(m.group(0))}
+        # Solo formas sin texto: los cuadros de texto (rótulo, unidades, FUENTES, cabeceras de símbolos) los coloca su regla
+        if set(ext) != {"from", "to"} or es_reticula(m.group(0)) or es_pastilla(m.group(0)) \
+                or html.unescape(texto_forma(m.group(0))).strip() \
+                or ("<xdr:cxnSp" not in m.group(0) and re.search(r'<a:ext cx="0"|<a:ext cx="\d+" cy="0"', m.group(0))):
+            info.append(None)
+            continue
+        (ca, oa, ra, pa), (cb, ob, rb, pb) = ext["from"], ext["to"]
+        if not (c1 <= ca + 1 <= c2 and c1 <= cb + 1 <= c2 and f1 <= ra + 1 <= f2 and f1 <= rb + 1 <= f2):
+            info.append(None)
+            continue
+        info.append(ext)
+    # Marcadores: en una sola celda y pequeños
+    marcadores = []
+    for m, ext in zip(anclas, info):
+        if ext and ext["from"][0] == ext["to"][0] and ext["from"][2] == ext["to"][2] \
+                and 0 <= ext["to"][1] - ext["from"][1] <= MARCADOR_MAX and 0 <= ext["to"][3] - ext["from"][3] <= MARCADOR_MAX \
+                and "<xdr:cxnSp" not in m.group(0):
+            (c, oa, r, pa), (_, ob, _, pb) = ext["from"], ext["to"]
+            cx_, cy_ = (nuevo("col", c, (oa + ob) / 2), nuevo("row", r, (pa + pb) / 2))
+            w, h = ob - oa, pb - pa
+            marcadores.append({"c": c, "r": r, "viejo": (oa, ob, pa, pb),
+                               "nuevo": (round(cx_ - w / 2), round(cx_ - w / 2) + w, round(cy_ - h / 2), round(cy_ - h / 2) + h)})
+    TOCA = 12700   # 1 pt
+
+    def extremo_x(c, r, off):
+        for mk in marcadores:
+            if mk["c"] == c and mk["r"] == r:
+                for k in (0, 1):
+                    if abs(off - mk["viejo"][k]) <= TOCA:
+                        return mk["nuevo"][k]
+        return nuevo("col", c, off)
+    piezas, ultimo, movidas = [], 0, []
+    for m, ext in zip(anclas, info):
+        if not ext:
+            continue
+        anc = m.group(0)
+        mk = next((x for x in marcadores if x["c"] == ext["from"][0] and x["r"] == ext["from"][2]
+                   and x["viejo"] == (ext["from"][1], ext["to"][1], ext["from"][3], ext["to"][3])), None)
+        for lado in ("from", "to"):
+            c, off, r, roff = ext[lado]
+            if mk:
+                nx = mk["nuevo"][0 if lado == "from" else 1]
+                ny = mk["nuevo"][2 if lado == "from" else 3]
+            else:
+                nx, ny = extremo_x(c, r, off), nuevo("row", r, roff)
+            anc = re.sub(rf'<xdr:{lado}>\s*<xdr:col>{c}</xdr:col>\s*<xdr:colOff>-?\d+</xdr:colOff>\s*<xdr:row>{r}</xdr:row>\s*'
+                         rf'<xdr:rowOff>-?\d+</xdr:rowOff>\s*</xdr:{lado}>',
+                         f"<xdr:{lado}><xdr:col>{c}</xdr:col><xdr:colOff>{max(0, nx)}</xdr:colOff><xdr:row>{r}</xdr:row>"
+                         f"<xdr:rowOff>{max(0, ny)}</xdr:rowOff></xdr:{lado}>", anc, count=1)
+        if anc != m.group(0):
+            movidas.append(nombre_forma(anc))
+        piezas.append(dibujo[ultimo:m.start()] + anc)
+        ultimo = m.end()
+    return "".join(piezas) + dibujo[ultimo:], movidas
+
+
+def col_reticula_autor(trabajo, estado):
+    """Última columna (1, 2…) que cubre la retícula del autor en el original («00 Copia exacta»), o None."""
+    _, pasos = nombres(trabajo)
+    try:
+        with zipfile.ZipFile(pasos / estado["pasos"][0]["archivo"]) as z:
+            hoja = estado.get("hoja") or hoja_cuadro(z)[0]
+            ruta = dibujo_de_hoja(z, hoja)
+            if not ruta or ruta not in z.namelist():
+                return None
+            for m in ANCLA.finditer(z.read(ruta).decode("utf-8")):
+                if es_reticula(m.group(0)):
+                    hasta = re.search(r'<xdr:to>\s*<xdr:col>(\d+)</xdr:col>', m.group(0))
+                    return int(hasta.group(1)) + 1 if hasta else None
+    except (OSError, KeyError, IndexError, zipfile.BadZipFile, Fallo):
+        return None
+    return None
+
+
 def paso2(trabajo, pid=None):
     """Celdas del cuadro: Roboto Light 7,5 pt sin negrita; alto de fila por líneas (14, 28, 40, 50…);
     cabecera: la primera a la izquierda y las demás al centro; primera columna a la izquierda, con las
@@ -2193,11 +2285,12 @@ def paso2(trabajo, pid=None):
     hoja = estado.get("hoja") or "Cuadro datos"
     with zipfile.ZipFile(base) as z:
         propuestas = []
-        cambios, detalle, cuadro = celdas(z, hoja, estado.get("idioma", "es"), propuestas, pub_de(pid))
+        cambios, detalle, cuadro = celdas(z, hoja, estado.get("idioma", "es"), propuestas, pub_de(pid),
+                                          col_reticula_autor(trabajo, estado))
     return nuevo_paso(trabajo, CELDAS, cambios, detalle, cuadro, propuestas=propuestas)
 
 
-def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None):
+def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=None):
     ruta_hoja = hoja_de(z, hoja)
     hoja_xml = z.read(ruta_hoja).decode("utf-8")
     comp_xml, compartidos = leer_compartidos(z)
@@ -2222,6 +2315,16 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None):
     rangos = combinadas(hoja_xml)
     ancho_col = anchos_columnas(hoja_xml)
     c1, f1, c2, f2 = buscar_tabla(todas, rangos, ancho_col, unidades_a_emu, ancho_ret, estilos)
+    # Columnas a la derecha de la retícula del autor, separadas del cuadro por columnas vacías (Economía Latinoamericana
+    # 04: BB «actual», con los tipos de interés, que el publicado deja fuera): no son del cuadro
+    fuera_autor = []
+    if fin_autor and c1 < fin_autor < c2:
+        con_txt = lambda c: ancho_col(c) > 0 and any(todas.get((c, f), {}).get("texto", "").strip() for f in range(f1, f2 + 1))
+        dentro = [c for c in range(c1, fin_autor + 1) if con_txt(c)]
+        despues = [c for c in range(fin_autor + 1, c2 + 1) if con_txt(c)]
+        if len(dentro) >= 2 and despues and any(ancho_col(c) > 0 and not con_txt(c) for c in range(max(dentro) + 1, min(despues))):
+            fuera_autor = despues
+            c2 = max(dentro)
     # Cabecera hecha con cuadros de texto (DO26XX_02: símbolos de ecuación 𝑡, 𝛽, 𝜌, 𝜎² sobre las celdas vacías de la
     # fila 11): la fila de justo encima del cuadro, sin textos en celdas y con cuadros de texto anclados en sus
     # columnas, es la cabecera (el publicado la colorea como tal)
@@ -2251,6 +2354,10 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None):
                 f2 -= 1
             break
     detalle.insert(0, f"Cuadro en {ref(c1, f1)}:{ref(c2, f2)} ({f2 - f1 + 1} filas, {c2 - c1 + 1} columnas)")
+    if fuera_autor:
+        detalle.insert(1, "Columnas a la derecha de la retícula del autor, separadas por columnas vacías: fuera del cuadro, "
+                       "sin tocar (como el publicado): " + ", ".join(ref(c, 1)[:-1] for c in fuera_autor)
+                       + marca([ref(c, f1) for c in fuera_autor]))
     detalle[1:1] = cabecera_formas
     # Textos en celdas fuera del cuadro y dentro de la retícula (3.4: A28, que el TERMINADO borró)
     x_col, pos = {}, 0
@@ -2370,6 +2477,19 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None):
     # varias líneas) hasta lo que pida su palabra más larga. Las estrechas de separación y las ocultas, igual.
     anchos_viejos = {c: ancho_col(c) for c in range(1, c2 + 1)}
     otras = [c for c in range(primera + 1, c2 + 1) if COLUMNA_ESTRECHA <= ancho_col(c)]
+    # Columnas anchas sin ningún texto (ni en la cabecera) entre otras: separaciones como las estrechas (Economía
+    # Latinoamericana 04: AV, de 69 pt, entre la escala y «Expectativas»; el publicado la deja en 1 pt)
+    celdas_forma = set()   # celdas con alguna forma encima (puntos, flechas, símbolos): no están vacías
+    for anc in ANCLA.finditer(dibujo):
+        if es_reticula(anc.group(0)) or es_pastilla(anc.group(0)):
+            continue
+        for col_, fil_ in re.findall(r'<xdr:(?:from|to)>\s*<xdr:col>(\d+)</xdr:col>.*?<xdr:row>(\d+)</xdr:row>', anc.group(0), re.S):
+            celdas_forma.add((int(col_) + 1, int(fil_) + 1))
+    vacias_anchas = [c for c in otras if primera + 1 < c < c2
+                     and not any(d(c, f)["texto"].strip() or (c, f) in celdas_forma for f in range(f1, f2 + 1))]
+    if vacias_anchas and len(otras) - len(vacias_anchas) >= 1:
+        otras = [c for c in otras if c not in vacias_anchas]
+        detalle.append("Columnas vacías dentro del cuadro, como columnas de separación: " + ", ".join(ref(c, 1)[:-1] for c in vacias_anchas))
     fijas = [c for c in range(primera + 1, c2 + 1) if c not in otras and ancho_col(c) > 0]
     # Columnas de separación (estrechas, visibles y sin texto): 3 pt, iguales en Mac y en Windows
     separaciones = [c for c in fijas if ancho_col(c) > 0 and not any(d(c, f)["texto"].strip() for f in range(f1, f2 + 1))]
@@ -3216,6 +3336,20 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None):
         if centradas:
             cambios_dibujo[ruta_dibujo] = centrado.encode("utf-8")
             detalle.append(f"Cuadros de texto de la cabecera, centrados en su celda ({len(centradas)})" + marca(centradas))
+    # Puntos y flechas dibujados sobre las celdas: en su sitio con los anchos y altos nuevos
+    if ruta_dibujo:
+        actual = cambios_dibujo[ruta_dibujo].decode("utf-8") if ruta_dibujo in cambios_dibujo else dibujo
+        altos_emu_v, alto_def_v = altos_filas(z, hoja)
+        movido, n_mov = reubicar_formas(
+            actual, c1, c2, f1, f2,
+            lambda i: unidades_a_emu(anchos_viejos.get(i + 1, ancho_col_viejo(i + 1))),
+            lambda i: unidades_a_emu(ancho_col(i + 1)),
+            lambda i: altos_emu_v.get(i, alto_def_v),
+            lambda i: round(altos[i + 1] * EMU_PT) if i + 1 in altos else altos_emu_v.get(i, alto_def_v))
+        if n_mov:
+            cambios_dibujo[ruta_dibujo] = movido.encode("utf-8")
+            detalle.append(f"Formas dibujadas sobre las celdas (puntos, flechas), en su sitio con los anchos y altos nuevos ({len(n_mov)}: "
+                           + ", ".join(f"«{n}»" for n in n_mov[:6]) + ("…" if len(n_mov) > 6 else "") + ")")
     faltan = [f for f in altos if not re.search(rf'<row\b[^>]*\br="{f}"', hoja_xml)]
     if faltan:
         detalle.append(f"Aviso: filas sin definir en la hoja ({', '.join(map(str, faltan))}): su alto no se ha cambiado")
@@ -4026,7 +4160,8 @@ def letra_pequena(trabajo, pid=None, cuerpo=LETRA_PEQUENA):
     try:
         with zipfile.ZipFile(base) as z:
             propuestas = []
-            cambios, detalle, cuadro = celdas(z, hoja, estado.get("idioma", "es"), propuestas, pub_de(pid))
+            cambios, detalle, cuadro = celdas(z, hoja, estado.get("idioma", "es"), propuestas, pub_de(pid),
+                                              col_reticula_autor(trabajo, estado))
         todo = dict(cambios)
         if CABECERAS in hechos:
             intermedio = io.BytesIO()
