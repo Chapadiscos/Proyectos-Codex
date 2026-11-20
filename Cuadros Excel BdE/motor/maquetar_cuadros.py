@@ -3554,9 +3554,14 @@ def lineas_y_fondos(z, hoja, cuadro, pub=None):
                     relleno = BLANCO_MATIZ_2
                 # Primera columna: líneas blancas entre todas las filas, también entre conceptos sangrados
                 # (TERMINADO 1.4; la guía decía que no, decisión del usuario 2026-11-17)
+                # Sin línea blanca hacia un concepto sangrado: es del mismo grupo (LATAM/Economía Latinoamericana 02,
+                # petición del usuario, 2026-11-20); la de antes de cada título de bloque se queda
+                mismo_grupo = (pub or {}).get("apartados_sin_linea_blanca") and siguiente is not None and sangrada(siguiente)
                 if siguiente is not None and siguiente != principal and f not in coeficientes and siguiente != estadisticos \
-                        and not (apartados and f in bloques and sangrada(siguiente)):
+                        and not (apartados and f in bloques and sangrada(siguiente)) and not mismo_grupo:
                     lados["bottom"] = ("thin", BLANCO)
+                elif mismo_grupo:
+                    lados.pop("bottom", None)
                 if (apartados or sin_fondo_bloque) and f in bloques:
                     relleno = BLANCO_MATIZ_1
             # Columna TOTAL: sin fondo; su cabecera va en el color de la publicación, así que ni gris ni mayúsculas
@@ -3585,6 +3590,11 @@ def lineas_y_fondos(z, hoja, cuadro, pub=None):
         if vacias_sep:
             detalle.append("Filas vacías entre bloques, ocultas (la línea oscura ya los separa): " + ", ".join(map(str, vacias_sep))
                            + marca([ref(primera, f) for f in vacias_sep]))
+    if (pub or {}).get("apartados_sin_linea_blanca") and any(sangrada(f) for f in filas):
+        detalle.append("Primera columna: sin línea blanca encima de los conceptos sangrados (son del mismo grupo que el de "
+                       "arriba); solo entre grupos")
+    if apartados:
+        pass
     elif sin_fondo_bloque:
         detalle.append("Títulos de bloque (sin datos en las demás columnas), con el fondo de la primera columna, sin destacar "
                        "(como los publicados de " + (pub or {}).get("nombre", "la publicación") + "): "

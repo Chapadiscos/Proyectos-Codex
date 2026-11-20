@@ -255,7 +255,9 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      y lo que sobra al redondear a 3 pt, a la primera (01: 72/66 pt; publicado 79/72, que se salía de la retícula).
      También `centrado_en_altura` (filas de varias líneas centradas, publicado 02), `bloques_sin_fondo` (títulos de
      bloque con el gris de la primera columna, no en matiz 2: publicados 02 y 05) y `esquina_una_fila` (con una sola
-     fila de cabecera, la esquina vacía lleva su color: publicado 02; con dos o más, sin relleno: 01, 04, 05). Los cuadros con país
+     fila de cabecera, la esquina vacía lleva su color: publicado 02; con dos o más, sin relleno: 01, 04, 05).
+     `apartados_sin_linea_blanca` (petición del usuario, 2026-11-20, cuadro 02): en la primera columna, sin línea
+     (ni blanca ni gris) encima de los conceptos sangrados, que son del mismo grupo; solo entre grupos. Los cuadros con país
      (C_EconomiaLatinoamericana_<País>_NN, «Indicadores Macrofinancieros») son otra sección, solo con líneas.
    - **Varias tablas en la hoja** (Economía Latinoamericana 01: la trimestral publicada en A3 y la mensual del autor
      en A43): si hay más de un bloque con texto en 3 filas y 3 columnas al menos, el cuadro es el de arriba; el otro
