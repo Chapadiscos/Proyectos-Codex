@@ -1747,6 +1747,14 @@ def celdas_hoja(hoja_xml, compartidos):
     return celdas
 
 
+def sin_filas_ocultas(todas, hoja_xml):
+    """Las celdas sin las de las filas que el autor ocultó (LATAM Arg_03: filas 4-7 con «#REF!» y 9-16, un bloque
+    entero): no se ven en el publicado, así que no cuentan para la cabecera, los bloques, las sangrías ni los anchos."""
+    ocultas = {int(r) for r in re.findall(r'<row\b[^>]*?\br="(\d+)"[^>]*?\bhidden="1"', hoja_xml)}
+    ocultas |= {int(r) for r in re.findall(r'<row\b[^>]*?\bhidden="1"[^>]*?\br="(\d+)"', hoja_xml)}
+    return {k: v for k, v in todas.items() if k[1] not in ocultas} if ocultas else todas
+
+
 def combinadas(hoja_xml):
     """[(c1, f1, c2, f2)] de las celdas combinadas."""
     rangos = []
@@ -2283,10 +2291,18 @@ def paso2(trabajo, pid=None):
     _, pasos = nombres(trabajo)
     base = pasos / estado["pasos"][estado["actual"]]["archivo"]
     hoja = estado.get("hoja") or "Cuadro datos"
-    with zipfile.ZipFile(base) as z:
-        propuestas = []
-        cambios, detalle, cuadro = celdas(z, hoja, estado.get("idioma", "es"), propuestas, pub_de(pid),
-                                          col_reticula_autor(trabajo, estado))
+    # Letra de las celdas de la publicación (LATAM/Indicadores Macrofinancieros: 6,5 pt, como sus publicados); si no,
+    # la de la guía (7,5)
+    global CUERPO_CELDA
+    anterior = CUERPO_CELDA
+    CUERPO_CELDA = float(pub_de(pid).get("cuerpo_celda", CUERPO_CELDA))
+    try:
+        with zipfile.ZipFile(base) as z:
+            propuestas = []
+            cambios, detalle, cuadro = celdas(z, hoja, estado.get("idioma", "es"), propuestas, pub_de(pid),
+                                              col_reticula_autor(trabajo, estado))
+    finally:
+        CUERPO_CELDA = anterior
     return nuevo_paso(trabajo, CELDAS, cambios, detalle, cuadro, propuestas=propuestas)
 
 
@@ -2315,6 +2331,11 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
     rangos = combinadas(hoja_xml)
     ancho_col = anchos_columnas(hoja_xml)
     c1, f1, c2, f2 = buscar_tabla(todas, rangos, ancho_col, unidades_a_emu, ancho_ret, estilos)
+    # El cuadro se busca con todas las celdas (las filas ocultas lo mantienen unido); para lo demás, sin las ocultas
+    filas_ocultas = {f for (_, f) in todas} - {f for (_, f) in sin_filas_ocultas(todas, hoja_xml)}
+    todas = sin_filas_ocultas(todas, hoja_xml)
+    while f1 < f2 and not any(todas.get((c, f1), {}).get("texto", "").strip() for c in range(c1, c2 + 1)):
+        f1 += 1
     # Columnas a la derecha de la retícula del autor, separadas del cuadro por columnas vacías (Economía Latinoamericana
     # 04: BB «actual», con los tipos de interés, que el publicado deja fuera): no son del cuadro
     fuera_autor = []
@@ -2409,7 +2430,7 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
                   and any(es_cifra(x) and re.search(r"\d", x["texto"]) for x in datos(f))]
     if con_cifras:
         fin_cab = con_cifras[0] - 1
-        while fin_cab > f1 and not datos(fin_cab) and d(primera, fin_cab)["texto"].strip():
+        while fin_cab > f1 and not datos(fin_cab) and (d(primera, fin_cab)["texto"].strip() or fin_cab in filas_ocultas):
             fin_cab -= 1
     else:
         fin_cab = f1
@@ -2689,6 +2710,17 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
         necesita = {c: max(necesita[c], min(linea[c], medida[c])) for c in otras}
         detalle.append("Cuadro de textos: primera columna a su medida, las columnas cortas a la medida de su texto y las "
                        "de descripciones, el resto (como los publicados de " + pub.get("nombre", "la publicación") + ")")
+    elif otras and pub.get("datos_cada_uno_a_lo_justo") and not textos_cuadro \
+            and sum(max(ancho_justo([c]), necesita[c]) for c in otras) + minimo <= espacio_pt:
+        # Cada columna de datos a lo justo (LATAM/Indicadores Macrofinancieros, Illustrator de Arg_03 y CARD_02: «Área
+        # del euro» ~41 pt y «España» ~32 en una línea) y la primera columna, el resto
+        a_medida = True
+        medida = {c: max(ancho_justo([c]), necesita[c]) for c in otras}
+        necesita = dict(medida)
+        primera_pt = espacio_pt - sum(medida.values())
+        resto = max(medida.values())
+        detalle.append("Cada columna de datos a lo justo (su cabecera en una línea o su cifra más ancha) y la primera, el "
+                       f"resto ({primera_pt:.0f} pt), como los publicados de " + pub.get("nombre", "la publicación"))
     elif otras and pub.get("datos_a_lo_justo") and ancho_justo(otras) * len(otras) + minimo <= espacio_pt:
         # Columnas de datos a lo justo (Documentos Ocasionales, decisión del usuario, 2026-11-19, publicados DO26XX_03
         # y 04): todas iguales, del ancho de la cabecera más larga en una línea (o de la cifra más ancha) y la primera,
@@ -3453,7 +3485,7 @@ def cabeceras(z, hoja, cuadro, pub):
     hoja_xml = z.read(ruta_hoja).decode("utf-8")
     _, compartidos = leer_compartidos(z)
     estilos = Estilos(z.read("xl/styles.xml").decode("utf-8"))
-    todas = celdas_hoja(hoja_xml, compartidos)
+    todas = sin_filas_ocultas(celdas_hoja(hoja_xml, compartidos), hoja_xml)
     rangos = combinadas(hoja_xml)
     ancho_col = anchos_columnas(hoja_xml)
     c1, f1, c2, f2 = cuadro["c1"], cuadro["f1"], cuadro["c2"], cuadro["f2"]
@@ -3499,6 +3531,15 @@ def cabeceras(z, hoja, cuadro, pub):
             # Latinoamericana 02; con dos o más filas, sin relleno: 01, 04 y 05)
             esquina_llena = pub.get("esquina_una_fila") and c == primera and f1 == fin_cab and not texto(*ancla) \
                 and not estrecha and ancho_col(c) > 0
+            if pub.get("solo_lineas"):
+                # Solo líneas (LATAM/Indicadores Macrofinancieros, publicados Arg_03, CARD_02…): sin fondo y en negro,
+                # línea del color de la publicación bajo cada texto de cabecera (los grupos, solo en su ancho) y bajo
+                # toda la última fila; las columnas de separación, sin línea (hueco entre grupos)
+                lados = {}
+                if not estrecha and (f == fin_cab or (texto(*ancla) and f == b2 and not unidades)):
+                    lados["bottom"] = ("thin", pub["color"].upper())
+                nuevos[(c, f)] = estilos.variante(estilo(c, f), relleno="", borde=lados, letra="000000")
+                continue
             if not esquina_llena and (estrecha or vacia or (c == primera and not texto(*ancla)) or unidades):
                 # Sin relleno ni líneas (el autor puede haber dejado alguna: 3.4, línea azul en A4 y G4)
                 nuevos[(c, f)] = estilos.variante(estilo(c, f), relleno="", borde={})
@@ -3520,13 +3561,17 @@ def cabeceras(z, hoja, cuadro, pub):
             nuevos[(c, f)] = estilos.variante(estilo(c, f), relleno=colores[clave_color], borde=lados,
                                               letra=letra or "000000")
             usados.setdefault(nivel, set()).add(ancla)
+    if pub.get("solo_lineas"):
+        detalle.append(f"Cabecera sin fondo, en negro, con línea #{pub['color'].upper()} bajo cada texto (los grupos, solo en su "
+                       "ancho) y bajo toda la última fila (como los publicados de " + pub.get("nombre", "la publicación") + ")")
     for nivel in sorted(usados):
         clave_color, letra = NIVELES_CABECERA[nivel]
         if nivel in pub.get("cabecera_letra_blanca", []):
             letra = BLANCO
         detalle.append(f"Cabecera {nivel}: {clave_color.replace('matiz', 'matiz ').replace('solido', 'sólido')} "
                        f"#{colores[clave_color]}" + (", texto en blanco" if letra else "") + f" ({len(usados[nivel])} celda{'s' if len(usados[nivel]) > 1 else ''})")
-    detalle.append("Líneas blancas finas entre las celdas de la cabecera y entre sus niveles")
+    if not pub.get("solo_lineas"):
+        detalle.append("Líneas blancas finas entre las celdas de la cabecera y entre sus niveles")
     estrechas = [ref(c, 1)[:-1] for c in range(primera + 1, c2 + 1) if 0 < ancho_col(c) < COLUMNA_ESTRECHA]
     if estrechas:
         detalle.append("Columnas de separación sin relleno (hueco blanco entre grupos): " + ", ".join(estrechas))
@@ -3595,7 +3640,7 @@ def lineas_y_fondos(z, hoja, cuadro, pub=None):
     hoja_xml = z.read(ruta_hoja).decode("utf-8")
     _, compartidos = leer_compartidos(z)
     estilos = Estilos(z.read("xl/styles.xml").decode("utf-8"))
-    todas = celdas_hoja(hoja_xml, compartidos)
+    todas = sin_filas_ocultas(celdas_hoja(hoja_xml, compartidos), hoja_xml)
     ancho_col = anchos_columnas(hoja_xml)
     c1, f1, c2, f2 = cuadro["c1"], cuadro["f1"], cuadro["c2"], cuadro["f2"]
     primera, fin_cab = cuadro["primera"], cuadro["fin_cabecera"]
@@ -3652,6 +3697,10 @@ def lineas_y_fondos(z, hoja, cuadro, pub=None):
     sin_fondo_bloque = bool((pub or {}).get("bloques_sin_fondo")) and bool(bloques) and not apartados
     usa_matiz_2 = bool((bloques and not apartados and not sin_fondo_bloque) or subtotales)
     linea_bloques = bool((pub or {}).get("linea_entre_bloques")) and not apartados
+    solo_lineas = bool((pub or {}).get("solo_lineas"))
+    if solo_lineas:
+        linea_rosa = ("thin", matiz(pub["color"], TINTES["matiz1"]))
+        linea_bloques_solida = ("thin", pub["color"].upper())
     fondo_total = BLANCO_MATIZ_5 if usa_matiz_2 else BLANCO_MATIZ_2
     letra_total = BLANCO if fondo_total == BLANCO_MATIZ_5 else None
 
@@ -3674,7 +3723,7 @@ def lineas_y_fondos(z, hoja, cuadro, pub=None):
         for c in range(primera, c2 + 1):
             if ancho_col(c) == 0:
                 continue
-            if c in separaciones and not es_total:
+            if c in separaciones and not es_total and not solo_lineas:
                 # Columnas de separación: sin líneas ni fondo (las líneas se cortan entre grupos, TERMINADO 3.4);
                 # en la fila TOTAL sí, sin hueco (guía)
                 nuevos[(c, f)] = estilos.variante(estilo(c, f), relleno="", borde={})
@@ -3727,11 +3776,23 @@ def lineas_y_fondos(z, hoja, cuadro, pub=None):
             # Línea más oscura entre grupos, de lado a lado (petición del usuario, 2026-11-20, como el publicado 05)
             if linea_bloques and siguiente in bloques:
                 lados["bottom"] = LINEA_BLOQUES
+            if solo_lineas:
+                # Solo líneas (LATAM/Indicadores Macrofinancieros): sin fondos propios (los del autor en los datos, como
+                # los colores del mapa de calor, se quedan); entre filas, matiz 1 del color; entre bloques, el sólido
+                if c == primera or relleno is not None:
+                    relleno = ""
+                lados = {k: (linea_bloques_solida if v in (LINEA_BLOQUES, LINEA_OSCURA) else linea_rosa) for k, v in lados.items()}
+                letra = None
             nuevos[(c, f)] = estilos.variante(estilo(c, f), relleno=relleno, borde=lados,
                                               letra=letra if letra else None)
     # Detalle
-    detalle.append("Líneas horizontales finas entre filas en blanco matiz 2 (#D9D9D9); la última fila, sin línea")
-    detalle.append("Primera columna: fondo blanco matiz 1 (#F2F2F2) con líneas blancas entre todas las filas")
+    if solo_lineas:
+        detalle.append(f"Solo líneas (como los publicados de {pub.get('nombre', 'la publicación')}): entre filas, matiz 1 "
+                       f"{linea_rosa[1]}, también en la primera columna, que va sin fondo; la última fila, sin línea"
+                       + (f"; entre grupos, #{linea_bloques_solida[1]}" if linea_bloques else ""))
+    else:
+        detalle.append("Líneas horizontales finas entre filas en blanco matiz 2 (#D9D9D9); la última fila, sin línea")
+        detalle.append("Primera columna: fondo blanco matiz 1 (#F2F2F2) con líneas blancas entre todas las filas")
     if apartados:
         detalle.append("Títulos de bloque con apartados (sin datos en las demás columnas), con el fondo de la primera columna "
                        "y sin línea con su primer apartado; línea oscura (blanco matiz 5) encima de cada bloque salvo el primero"
@@ -3772,7 +3833,7 @@ def lineas_y_fondos(z, hoja, cuadro, pub=None):
                        "; línea blanca encima (sin línea oscura); sin hueco en las columnas de separación")
     elif not totales_bloque:
         detalle.append("Sin fila TOTAL")
-    if separaciones:
+    if separaciones and not solo_lineas:
         detalle.append("Columnas de separación sin líneas en las filas de datos (las líneas se cortan entre grupos): "
                        + ", ".join(ref(c, 1)[:-1] for c in sorted(separaciones)))
     if col_total:

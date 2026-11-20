@@ -271,6 +271,14 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      copia de la FUENTE en la fila 62 subía dentro de la retícula).
    - **Cabecera de grupo en una combinada encima de la tabla** (Economía Latinoamericana 01: B3:G3 «Tasas de variación
      interanual» sobre B4:G4): no se toma por unas unidades; es la primera fila de la cabecera.
+   - **«LATAM/Indicadores Macrofinancieros»** (cuadros con país, C_EconomiaLatinoamericana_<País>_NN, 2026-11-20; ante
+     la duda manda el Illustrator publicado, no el Excel): `solo_lineas` (cabecera sin fondo y en negro, línea A32938
+     bajo cada texto —los grupos solo en su ancho— y bajo la última fila; entre filas, matiz 1 F3CED3 de lado a lado,
+     también por las separaciones; primera columna sin fondo; entre grupos, A32938; los colores del autor en los datos
+     se quedan), `cuerpo_celda` 6,5 pt, `datos_cada_uno_a_lo_justo` (cada columna de datos a su cabecera en una línea
+     o su cifra; la primera, el resto: Arg_03 159/45/30 pt, publicado 170/41/32-35), centrado en altura.
+   - **Filas ocultas del autor** (Arg_03: 4-7 con «#REF!» y 9-16, un bloque entero): siguen ocultas y no cuentan para
+     la cabecera, los bloques, las sangrías ni los anchos (el cuadro se localiza con ellas, para que no se parta).
    - **Textos de fórmulas con espacios** (`<v xml:space="preserve">`, Economía Latinoamericana 05 y Memoria 2.1: la
      primera columna con =IF(…;A17;B17) y conceptos sangrados): se leen. Antes salían vacíos: en el 05 la cabecera
      llegaba hasta la fila 63; en el 2.1 la primera columna medía 156 pt y cortaba «…extracomunitarias» (ahora 198).
