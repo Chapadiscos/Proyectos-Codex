@@ -3138,7 +3138,21 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None):
             return fila
         return fila[:-1].rstrip("/") + ' hidden="1"' + ("/>" if fila.endswith("/>") else ">")
     if filas_otra:
+        # Su alto pasa a la fila de debajo: lo que el autor dejó más abajo no se mueve (01: una copia de la FUENTE en
+        # la fila 62, fuera de la retícula, subía a 191 mm, dentro del cuadro)
+        alto_orig, alto_def = altos_filas(z, hoja)
+        bajo = max(filas_otra) + 1
+        suma = sum(alto_orig.get(f - 1, alto_def) for f in filas_otra | {bajo}) / EMU_PT
         hoja_xml = re.sub(r'<row\b[^>]*?/?>', ocultar_otra, hoja_xml)
+        hoja_xml = asegurar_filas(hoja_xml, [bajo])
+
+        def alto_bajo(m):
+            fila = m.group(0)
+            if int(re.search(r'\br="(\d+)"', fila).group(1)) != bajo:
+                return fila
+            fila = re.sub(r'\s(ht|customHeight|hidden)="[^"]*"', "", fila)
+            return fila[:-1].rstrip("/") + f' ht="{round(suma, 2):g}" customHeight="1"' + ("/>" if fila.endswith("/>") else ">")
+        hoja_xml = re.sub(r'<row\b[^>]*?/?>', alto_bajo, hoja_xml)
     hoja_xml = re.sub(r'<row\b[^>]*?/?>', cambiar_fila, hoja_xml)
     hoja_xml = poner_anchos(hoja_xml, nuevos_anchos)
 

@@ -257,7 +257,8 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
    - **Varias tablas en la hoja** (Economía Latinoamericana 01: la trimestral publicada en A3 y la mensual del autor
      en A43): si hay más de un bloque con texto en 3 filas y 3 columnas al menos, el cuadro es el de arriba; el otro
      se oculta (filas ocultas, sin borrar nada; el publicado la quitó) si está debajo y tiene texto en 3 filas y 3
-     columnas al menos.
+     columnas al menos; su alto pasa a la fila de debajo para que no se mueva lo que el autor dejó más abajo (01: una
+     copia de la FUENTE en la fila 62 subía dentro de la retícula).
    - **Cabecera de grupo en una combinada encima de la tabla** (Economía Latinoamericana 01: B3:G3 «Tasas de variación
      interanual» sobre B4:G4): no se toma por unas unidades; es la primera fila de la cabecera.
    - **Subtítulo combinado a lo ancho de los datos** sin concepto en la primera columna (Economía Latinoamericana 01:
