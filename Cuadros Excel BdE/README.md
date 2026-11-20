@@ -250,7 +250,9 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      - `rotulo_y_titulo_en_color`: «Cuadro N» y el título, en el color de la publicación (DO: naranja F06800, como
        sus publicados; Informe Anual y Memoria, en negro). FUENTES y unidades siguen en negro.
      «LATAM/Economía Latinoamericana» (cuadros regionales sin país, 2026-11-20): color A32938, pastilla #F3CED3,
-     estilo habitual (cabecera en matices, primera columna gris) y `rotulo_y_titulo_en_color`. Los cuadros con país
+     estilo habitual (cabecera en matices, primera columna gris) y `rotulo_y_titulo_en_color`. `primera_como_datos` (decisión
+     del usuario, 2026-11-20): si la primera columna, a su medida, sería más estrecha que las de datos, todas iguales
+     y lo que sobra al redondear a 3 pt, a la primera (01: 72/66 pt; publicado 79/72, que se salía de la retícula). Los cuadros con país
      (C_EconomiaLatinoamericana_<País>_NN, «Indicadores Macrofinancieros») son otra sección, solo con líneas.
    - **Varias tablas en la hoja** (Economía Latinoamericana 01: la trimestral publicada en A3 y la mensual del autor
      en A43): si hay más de un bloque con texto en 3 filas y 3 columnas al menos, el cuadro es el de arriba; el otro

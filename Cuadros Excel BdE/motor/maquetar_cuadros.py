@@ -2586,6 +2586,13 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None):
         if primera_pt < tercio and (de_cifras or len(otras) <= 3) and (espacio_pt - tercio) / len(otras) >= hace_falta:
             detalle.append(f"Primera columna a un tercio del cuadro ({tercio / MM:.1f} mm), como los publicados".replace(".", ","))
             primera_pt = tercio
+        # Primera columna de textos cortos, al menos como las de datos (LATAM/Economía Latinoamericana 01: fechas
+        # «mar-26» de 36 pt; decisión del usuario, 2026-11-20): todas iguales y lo que sobra al redondear, a la primera
+        igual = espacio_pt / (len(otras) + 1)
+        if pub.get("primera_como_datos") and primera_pt < igual and igual >= hace_falta:
+            detalle.append(f"Primera columna de textos cortos, como las de datos ({igual:.0f} pt; las de " + pub.get("nombre", "la publicación")
+                           + " no quedan más estrechas que los datos)")
+            primera_pt = igual
         resto = (espacio_pt - primera_pt) / len(otras)
         if resto < hace_falta - 0.1:
             # Con columnas iguales no cabe: cada columna de datos a su medida (su palabra o cifra más larga) y la
