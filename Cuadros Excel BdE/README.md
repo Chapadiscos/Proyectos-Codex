@@ -257,7 +257,10 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      bloque con el gris de la primera columna, no en matiz 2: publicados 02 y 05) y `esquina_una_fila` (con una sola
      fila de cabecera, la esquina vacía lleva su color: publicado 02; con dos o más, sin relleno: 01, 04, 05).
      `apartados_sin_linea_blanca` (petición del usuario, 2026-11-20, cuadro 02): en la primera columna, sin línea
-     (ni blanca ni gris) encima de los conceptos sangrados, que son del mismo grupo; solo entre grupos. Los cuadros con país
+     (ni blanca ni gris) encima de los conceptos sangrados, que son del mismo grupo; solo entre grupos.
+     `titulos_bloque_desbordan` (publicado 05): en los cuadros de cifras, los títulos de bloque (sin sangría ni datos)
+     no cuentan para el ancho de la primera columna: van en una línea, sin ajustar texto, y pasan por encima de las
+     celdas vacías de su fila (05: primera columna 159 pt en vez de 210). Los cuadros con país
      (C_EconomiaLatinoamericana_<País>_NN, «Indicadores Macrofinancieros») son otra sección, solo con líneas.
    - **Varias tablas en la hoja** (Economía Latinoamericana 01: la trimestral publicada en A3 y la mensual del autor
      en A43): si hay más de un bloque con texto en 3 filas y 3 columnas al menos, el cuadro es el de arriba; el otro
@@ -266,6 +269,9 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      copia de la FUENTE en la fila 62 subía dentro de la retícula).
    - **Cabecera de grupo en una combinada encima de la tabla** (Economía Latinoamericana 01: B3:G3 «Tasas de variación
      interanual» sobre B4:G4): no se toma por unas unidades; es la primera fila de la cabecera.
+   - **Textos de fórmulas con espacios** (`<v xml:space="preserve">`, Economía Latinoamericana 05 y Memoria 2.1: la
+     primera columna con =IF(…;A17;B17) y conceptos sangrados): se leen. Antes salían vacíos: en el 05 la cabecera
+     llegaba hasta la fila 63; en el 2.1 la primera columna medía 156 pt y cortaba «…extracomunitarias» (ahora 198).
    - **Columnas a la derecha de la retícula del autor** (Economía Latinoamericana 04: BB «actual»; 03: EO-EU, meses de
      2023), separadas del cuadro por columnas vacías: no son del cuadro (la retícula del autor se lee en el original).
    - **Columnas anchas vacías dentro del cuadro** (04: AV, 69 pt, entre la escala y «Expectativas»): columnas de

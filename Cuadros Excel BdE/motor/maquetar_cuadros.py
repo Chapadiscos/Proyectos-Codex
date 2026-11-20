@@ -1733,7 +1733,7 @@ def celdas_hoja(hoja_xml, compartidos):
         tipo = re.search(r'\bt="(\w+)"', c[:c.find(">") + 1])
         tipo = tipo.group(1) if tipo else "n"
         s = re.search(r'\bs="(\d+)"', c[:c.find(">") + 1])
-        v = re.search(r'<v>(.*?)</v>', c, re.S)
+        v = re.search(r'<v\b[^>]*>(.*?)</v>', c, re.S)
         texto, numero = "", False
         if tipo == "s" and v:
             texto = texto_si(compartidos[int(v.group(1))])
@@ -2578,9 +2578,19 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
     nombres = {c for c in nombres if en_linea[c] <= espacio_pt / 3}
     natural = minimo = 0.0
     textos_primera = []
+    # Títulos de bloque que desbordan (LATAM/Economía Latinoamericana, publicado 05: «PIB (variación respecto al
+    # período anterior) (a) (b)», «PRO MEMORIA…» pasan por encima de las celdas vacías de su fila): sin sangría y sin
+    # datos en la fila; no cuentan para el ancho de la primera columna y van en una línea, sin ajustar texto
+    desbordan = set()
+    if pub.get("titulos_bloque_desbordan") and any(es_cifra(d(c, f)) for f in range(fin_cab + 1, f2 + 1)
+                                                    for c in range(primera + 1, c2 + 1) if d(c, f)["texto"].strip()):
+        # Solo en cuadros de cifras: en los de textos (02, El Niño) el título de bloque va dentro de su columna
+        desbordan = {f for f in range(fin_cab + 1, f2 + 1) if d(primera, f)["texto"].strip() and nivel_fila(f) == 0
+                     and (primera, f) not in tapadas and not any((primera, f) == (a1, b1) and a2 > a1 for a1, b1, a2, b2 in rangos)
+                     and not any(d(c, f)["texto"].strip() for c in range(primera + 1, c2 + 1) if ancho_col(c) > 0)}
     for f in range(f1, f2 + 1):
         t = d(primera, f)["texto"]
-        if not t.strip() or (primera, f) in tapadas:
+        if not t.strip() or (primera, f) in tapadas or f in desbordan:
             continue
         espacios = " " * (SANGRIA * nivel_fila(f)) if f > fin_cab else ""
         cuerpo = VINETA.sub("", t.strip(" \u00a0"))
@@ -3043,6 +3053,8 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
                         nuevo = t = dos
                         saltos.append(f"«{dos.replace(chr(10), ' / ')[:60]}»")
                 lineas[(c, f)] = len(partes)
+            if c == primera and f in desbordan:
+                lineas[(c, f)] = 1   # desborda por encima de las celdas vacías de su fila: una línea
             if nuevo != x["texto"]:
                 rico = indice_rico(x, compartidos)
                 if rico is None:
@@ -3160,7 +3172,7 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
                 # Un subtítulo combinado a lo ancho de los datos, al centro (Economía Latinoamericana 01, B8:G8)
                 h = "left" if c in izquierda and (c, f) not in sobre_varias else "center"
             al = {"horizontal": h, "vertical": "top" if f in arriba else "center"}
-            if not es_cifra(x) or f <= fin_cab:
+            if (not es_cifra(x) or f <= fin_cab) and not (c == primera and f in desbordan):
                 al["wrapText"] = "1"
             if (c, f) in esquina_unidades:
                 nuevos_s[(c, f)] = estilos.nuevo(x["s"], {"horizontal": "left", "vertical": "top", "wrapText": "1"},
