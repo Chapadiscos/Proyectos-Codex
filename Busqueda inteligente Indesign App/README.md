@@ -8,6 +8,8 @@ y no instala nada en InDesign, así que sigue funcionando aunque se reinstale.
 - **Buscar en**: selección, artículo, documento, todos los documentos o un libro: abre los capítulos sin ventana,
   en segundo plano, y los cierra al terminar la revisión (salvo los que tengan cambios, que quedan con ventana).
   Lo que tengas seleccionado en InDesign propone el ámbito al volver a la app.
+- **Documento**: busca en el documento activo o en otro abierto elegido en la app (desplegable junto a «Buscar en» o
+  pulsando el documento en la barra lateral), sin tener que activarlo en InDesign.
 - **Documento del disco**: en «Buscar en», elige uno o varios .indd sin abrirlos antes: la app los abre en InDesign sin
   ventana, en segundo plano. Si cambias algo, el documento pasa a tener ventana para que lo guardes; si no, se cierra
   al terminar la revisión.

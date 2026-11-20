@@ -533,6 +533,9 @@ final class Buscador: ObservableObject {
     @Published var libro: LibroAbierto?
     /// Documentos elegidos en el disco para «Documento del disco» (se abren sin ventana al buscar)
     @Published var archivos: [URL] = []
+    /// Documento abierto elegido en la app para «Documento» (nil = el activo de InDesign)
+    @Published var documentoElegido: String?
+    private var activoAnterior: String?
     @Published var buscando = false
     @Published var inicio: Date?
     @Published var duracion: TimeInterval?
@@ -580,7 +583,22 @@ final class Buscador: ObservableObject {
     // MARK: Contexto de InDesign
 
     var ambitosDisponibles: [Ambito] {
-        contexto.abierto ? contexto.opciones + [.disco, .libro] : [.documento]
+        guard contexto.abierto else { return [.documento] }
+        // «Documento» también con todos sin ventana: se elige en la app
+        let conDocumento = contexto.opciones.contains(.documento) || contexto.documentos.isEmpty ? contexto.opciones : contexto.opciones + [.documento]
+        return conDocumento + [.disco, .libro]
+    }
+
+    /// El documento donde busca «Documento»: el elegido en la app si sigue abierto; si no, el activo
+    var documentoDeBusqueda: String? {
+        if let d = documentoElegido, contexto.documentos.contains(where: { $0.nombre == d }) { return d }
+        return contexto.activo ?? contexto.documentos.first?.nombre
+    }
+
+    /// Elegir en la app el documento donde buscar, sin activarlo en InDesign
+    func elegirDocumento(_ nombre: String) {
+        documentoElegido = nombre == contexto.activo ? nil : nombre
+        ambito = .documento
     }
 
     var hechos: Int { casos.filter { $0.estado == .hecho }.count }
@@ -630,6 +648,8 @@ final class Buscador: ObservableObject {
         defer { leyendoContexto = false }
         guard let c = await leerContexto() else { return }
         contexto = c
+        // Si se cambia de documento en InDesign, «Documento» vuelve a seguir al activo
+        if c.activo != activoAnterior { activoAnterior = c.activo; documentoElegido = nil }
         if c.firma != firma {
             firma = c.firma
             // Lo seleccionado es un resultado que puso la app: no es una selección del usuario
@@ -648,7 +668,8 @@ final class Buscador: ObservableObject {
         switch ambito {
         case .seleccion: return "\(contexto.seleccion ?? "El texto seleccionado") en \(doc)"
         case .articulo: return "El artículo donde está el cursor, en \(doc)"
-        case .documento: return contexto.activo == nil ? "No hay ningún documento abierto" : "Todo \(doc)"
+        case .documento: return documentoDeBusqueda.map { "Todo «\(corto($0))»" + ($0 == contexto.activo ? " (el activo en InDesign)" : ", sin activarlo en InDesign") }
+                                    ?? "No hay ningún documento abierto"
         case .documentos: return "Los \(contexto.documentos.filter(\.ventana).count) documentos abiertos"
         case .libro: return libro.map { "Todos los capítulos de «\(corto($0.nombre))», aunque estén cerrados" } ?? "Elige un libro"
         case .disco: return archivos.isEmpty ? "Elige el documento: se abre en segundo plano, sin ventana"
@@ -754,7 +775,7 @@ final class Buscador: ObservableObject {
             }
             return Alcance(tipo: ambito, documentos: [doc], ref: ref)
         case .documento:
-            guard let doc = c.activo else { fallo("No hay ningún documento abierto en InDesign"); return nil }
+            guard let doc = documentoDeBusqueda else { fallo("No hay ningún documento abierto en InDesign"); return nil }
             return Alcance(tipo: .documento, documentos: [doc])
         case .documentos:
             let docs = c.documentos.filter(\.ventana).map(\.nombre)
@@ -1542,6 +1563,8 @@ struct BarraLateral: View {
                         Text("Ningún documento abierto").foregroundStyle(.secondary)
                     }
                     ForEach(b.contexto.documentos) { d in
+                        let elegido = b.ambito == .documento && d.nombre == b.documentoDeBusqueda
+                        Button { b.elegirDocumento(d.nombre) } label: {
                         HStack(spacing: 6) {
                             Image(systemName: d.nombre == b.contexto.activo ? "doc.text.fill" : "doc.text")
                                 .foregroundStyle(d.nombre == b.contexto.activo ? Color.accentColor : .secondary)
@@ -1552,7 +1575,13 @@ struct BarraLateral: View {
                             if d.modificado {
                                 Circle().fill(.orange).frame(width: 6, height: 6).help("Cambios sin guardar")
                             }
+                            if elegido { Image(systemName: "magnifyingglass").font(.caption).foregroundStyle(Color.accentColor) }
                         }
+                        .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(b.buscando)
+                        .help("Buscar en este documento (sin activarlo en InDesign)")
                     }
                     if let s = b.contexto.seleccion {
                         Label(s, systemImage: "cursorarrow.rays")
@@ -1671,6 +1700,23 @@ struct Cabecera: View {
                 .labelsHidden()
                 .fixedSize()
                 .disabled(b.buscando || !b.contexto.abierto)
+                if b.ambito == .documento && !b.contexto.documentos.isEmpty {
+                    Menu {
+                        ForEach(b.contexto.documentos) { d in
+                            Button {
+                                b.elegirDocumento(d.nombre)
+                            } label: {
+                                if d.nombre == b.documentoDeBusqueda { Label(corto(d.nombre), systemImage: "checkmark") }
+                                else { Text(corto(d.nombre) + (d.nombre == b.contexto.activo ? " (activo)" : "") + (d.ventana ? "" : " (sin ventana)")) }
+                            }
+                        }
+                    } label: {
+                        Label(b.documentoDeBusqueda.map(corto) ?? "Elige documento", systemImage: "doc.text")
+                    }
+                    .fixedSize()
+                    .disabled(b.buscando)
+                    .help("Documento abierto donde buscar; no hace falta activarlo en InDesign")
+                }
                 if b.ambito == .disco {
                     Button { b.elegirArchivos() } label: {
                         Label(b.archivos.isEmpty ? "Elegir documento…"
