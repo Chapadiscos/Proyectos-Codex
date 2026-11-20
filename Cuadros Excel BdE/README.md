@@ -260,7 +260,9 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      (ni blanca ni gris) encima de los conceptos sangrados, que son del mismo grupo; solo entre grupos.
      `titulos_bloque_desbordan` (publicado 05): en los cuadros de cifras, los títulos de bloque (sin sangría ni datos)
      no cuentan para el ancho de la primera columna: van en una línea, sin ajustar texto, y pasan por encima de las
-     celdas vacías de su fila (05: primera columna 159 pt en vez de 210). Los cuadros con país
+     celdas vacías de su fila (05: primera columna 159 pt en vez de 210).
+     `linea_entre_bloques` (petición del usuario, 2026-11-20, como el publicado 05): línea gris oscura #A6A6A6 (blanco
+     −35 %) bajo la última fila de cada bloque, de lado a lado (también en la primera columna). Los cuadros con país
      (C_EconomiaLatinoamericana_<País>_NN, «Indicadores Macrofinancieros») son otra sección, solo con líneas.
    - **Varias tablas en la hoja** (Economía Latinoamericana 01: la trimestral publicada en A3 y la mensual del autor
      en A43): si hay más de un bloque con texto en 3 filas y 3 columnas al menos, el cuadro es el de arriba; el otro

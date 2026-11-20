@@ -3546,6 +3546,7 @@ def cabeceras(z, hoja, cuadro, pub):
 LINEAS_Y_FONDOS = "Líneas y fondos"
 # Matices del blanco (Resumen cuadros, pág. 21): 1 = −5 %, 2 = −15 %, 5 = −50 %
 BLANCO_MATIZ_1, BLANCO_MATIZ_2, BLANCO_MATIZ_5 = "F2F2F2", "D9D9D9", "808080"
+LINEA_BLOQUES = ("thin", "A6A6A6")   # entre bloques (LATAM/Economía Latinoamericana, publicado 05: blanco −35 %)
 LINEA_FILAS = ("thin", BLANCO_MATIZ_2)      # separa filas
 LINEA_OSCURA = ("thin", BLANCO_MATIZ_5)     # separa la fila TOTAL (y lo que se añada a mano)
 
@@ -3650,6 +3651,7 @@ def lineas_y_fondos(z, hoja, cuadro, pub=None):
     # Títulos de bloque sin fondo propio, con el de la primera columna (LATAM/Economía Latinoamericana, publicados 02 y 05)
     sin_fondo_bloque = bool((pub or {}).get("bloques_sin_fondo")) and bool(bloques) and not apartados
     usa_matiz_2 = bool((bloques and not apartados and not sin_fondo_bloque) or subtotales)
+    linea_bloques = bool((pub or {}).get("linea_entre_bloques")) and not apartados
     fondo_total = BLANCO_MATIZ_5 if usa_matiz_2 else BLANCO_MATIZ_2
     letra_total = BLANCO if fondo_total == BLANCO_MATIZ_5 else None
 
@@ -3722,6 +3724,9 @@ def lineas_y_fondos(z, hoja, cuadro, pub=None):
                 letra = letra_total if f == principal else None
             if apartados and siguiente in bloques:
                 lados["bottom"] = LINEA_OSCURA
+            # Línea más oscura entre grupos, de lado a lado (petición del usuario, 2026-11-20, como el publicado 05)
+            if linea_bloques and siguiente in bloques:
+                lados["bottom"] = LINEA_BLOQUES
             nuevos[(c, f)] = estilos.variante(estilo(c, f), relleno=relleno, borde=lados,
                                               letra=letra if letra else None)
     # Detalle
@@ -3748,6 +3753,9 @@ def lineas_y_fondos(z, hoja, cuadro, pub=None):
     elif bloques:
         detalle.append(f"Títulos de bloque (sin datos en las demás columnas), fondo blanco matiz 2: "
                        + ", ".join(f"«{texto(primera, f).strip()[:30]}»" for f in bloques[:6]) + ("…" if len(bloques) > 6 else ""))
+    if linea_bloques and any(f in bloques for f in filas[1:]):
+        detalle.append("Línea gris oscura (#A6A6A6) entre grupos, de lado a lado, encima de cada título de bloque salvo el "
+                       "primero (como el publicado 05)" + marca([ref(primera, f) for f in filas[1:] if f in bloques]))
     for f in destacadas:
         detalle.append(f"Fila «{texto(primera, f).strip()}» destacada en blanco matiz 2 (agregado nacional en una lista de "
                        f"provincias o países, como los publicados)" + marca([ref(c, f) for c in (primera, c2)]))
