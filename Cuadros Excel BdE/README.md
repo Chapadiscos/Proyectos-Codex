@@ -249,12 +249,13 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
        02: 228/60 (201/75);
      - `rotulo_y_titulo_en_color`: «Cuadro N» y el título, en el color de la publicación (DO: naranja F06800, como
        sus publicados; Informe Anual y Memoria, en negro). FUENTES y unidades siguen en negro.
-     Economía Latinoamericana (LATAM, cuadros regionales sin país, 2026-11-20): color A32938, pastilla #F3CED3,
+     «LATAM/Economía Latinoamericana» (cuadros regionales sin país, 2026-11-20): color A32938, pastilla #F3CED3,
      estilo habitual (cabecera en matices, primera columna gris) y `rotulo_y_titulo_en_color`. Los cuadros con país
      (C_EconomiaLatinoamericana_<País>_NN, «Indicadores Macrofinancieros») son otra sección, solo con líneas.
    - **Varias tablas en la hoja** (Economía Latinoamericana 01: la trimestral publicada en A3 y la mensual del autor
      en A43): si hay más de un bloque con texto en 3 filas y 3 columnas al menos, el cuadro es el de arriba; el otro
-     sale en el aviso de textos fuera del cuadro.
+     se oculta (filas ocultas, sin borrar nada; el publicado la quitó) si está debajo y tiene texto en 3 filas y 3
+     columnas al menos.
    - **Cabecera de grupo en una combinada encima de la tabla** (Economía Latinoamericana 01: B3:G3 «Tasas de variación
      interanual» sobre B4:G4): no se toma por unas unidades; es la primera fila de la cabecera.
    - **Subtítulo combinado a lo ancho de los datos** sin concepto en la primera columna (Economía Latinoamericana 01:

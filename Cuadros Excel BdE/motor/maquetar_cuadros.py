@@ -2262,6 +2262,15 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None):
              and (x_col.get(c, ancho_ret) < ancho_ret or (f1 <= f <= f2 and c2 < c <= c2 + 3
                   and sum(1 for (cc, ff), y in todas.items() if cc == c and f1 <= ff <= f2 and y["texto"].strip()) == 1))
              and not (f > f2 and ROTULO.match(x["texto"]))]
+    # Otra tabla del autor debajo del cuadro (Economía Latinoamericana 01: la mensual en A43:G59, que el publicado
+    # borró): sus filas se ocultan, sin borrar nada, para que no se vean dentro de la retícula
+    abajo = [(c, f) for c, f in fuera if f > f2 + 1]
+    filas_otra = set()
+    if len({f for _, f in abajo}) >= 3 and len({c for c, _ in abajo}) >= 3:
+        filas_otra = set(range(min(f for _, f in abajo), max(f for _, f in abajo) + 1))
+        detalle.append(f"Otra tabla del autor debajo del cuadro (filas {min(filas_otra)}-{max(filas_otra)}): filas ocultas, "
+                       "sin borrar nada (el publicado la quitó)" + marca([ref(c, f) for c, f in abajo]))
+        fuera = [k for k in fuera if k not in abajo]
     if fuera:
         detalle.append("Aviso: hay textos en celdas fuera del cuadro, dentro de la retícula o pegados a él (¿notas o restos del autor?): "
                        + ", ".join(f"{ref(c, f)} «{todas[(c, f)]['texto'].strip()[:30]}»" for c, f in fuera[:5])
@@ -3115,6 +3124,14 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None):
             # contaba: la cabecera quedaba pegada a la pastilla)
             fila = re.sub(r'\shidden="[^"]*"', "", fila)
         return fila[:-1].rstrip("/") + f' ht="{altos[f]}" customHeight="1"' + ("/>" if fila.endswith("/>") else ">")
+
+    def ocultar_otra(m):
+        fila = m.group(0)
+        if int(re.search(r'\br="(\d+)"', fila).group(1)) not in filas_otra or 'hidden="1"' in fila:
+            return fila
+        return fila[:-1].rstrip("/") + ' hidden="1"' + ("/>" if fila.endswith("/>") else ">")
+    if filas_otra:
+        hoja_xml = re.sub(r'<row\b[^>]*?/?>', ocultar_otra, hoja_xml)
     hoja_xml = re.sub(r'<row\b[^>]*?/?>', cambiar_fila, hoja_xml)
     hoja_xml = poner_anchos(hoja_xml, nuevos_anchos)
 
