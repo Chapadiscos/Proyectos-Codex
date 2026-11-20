@@ -11,9 +11,17 @@ import UniformTypeIdentifiers
 
 // MARK: - Rutas
 
-/// Carpeta del proyecto: la que contiene la .app
-let proyecto = Bundle.main.bundleURL.deletingLastPathComponent()
 let ajustes = UserDefaults.standard
+
+/// Carpeta del proyecto (jsx/, claude/, servidor/): la de la .app si los tiene al lado (recién compilada); si no
+/// (la copia de Aplicaciones), la de DATOS, o la que se indique con
+/// `defaults write es.estudioencuadre.busqueda-inteligente proyecto "<ruta>"`
+let proyecto: URL = {
+    if let ruta = ajustes.string(forKey: "proyecto") { return URL(fileURLWithPath: ruta) }
+    let junto = Bundle.main.bundleURL.deletingLastPathComponent()
+    if FileManager.default.fileExists(atPath: junto.appendingPathComponent("jsx/revision.jsx").path) { return junto }
+    return URL(fileURLWithPath: "/Volumes/DATOS/Proyectos Codex/Busqueda inteligente Indesign App")
+}()
 
 /// Carpeta con el .venv de Python (tiene el paquete mcp) que ejecuta servidor/servidor.py; se cambia con
 /// `defaults write es.estudioencuadre.busqueda-inteligente motor "<ruta>"`
@@ -23,7 +31,17 @@ let motor: URL = {
 }()
 let revisionJSX = proyecto.appendingPathComponent("jsx/revision.jsx")
 let carpetaClaude = proyecto.appendingPathComponent("claude")
-let idInDesign = "com.adobe.InDesign"
+/// El InDesign con el que se trabaja: el de versión más alta en Aplicaciones (hoy 2027), o el que se indique con
+/// `defaults write es.estudioencuadre.busqueda-inteligente indesign "<ruta de la .app>"`. Con varias versiones
+/// instaladas, `application id "com.adobe.InDesign"` puede ir a la que no toca: se le habla por su ruta.
+let appInDesign: URL = {
+    if let ruta = ajustes.string(forKey: "indesign") { return URL(fileURLWithPath: ruta) }
+    let versiones = ((try? FileManager.default.contentsOfDirectory(atPath: "/Applications")) ?? [])
+        .filter { $0.hasPrefix("Adobe InDesign 20") }
+        .sorted { $0.compare($1, options: .numeric) == .orderedAscending }
+    let v = versiones.last ?? "Adobe InDesign 2027"
+    return URL(fileURLWithPath: "/Applications/\(v)/\(v).app")
+}()
 let herramientas = "mcp__indesign__estado,mcp__indesign__consultar,mcp__indesign__ver_pagina,mcp__indesign__probar_cambio"
 
 let temporal: URL = {
@@ -51,12 +69,16 @@ func claudeEjecutable() -> URL? {
     return nil
 }
 
-/// Nombre de la app de InDesign instalada («Adobe InDesign 2026»), para el servidor MCP.
+/// Nombre de la app de InDesign («Adobe InDesign 2027»), para el servidor MCP.
 /// Si InDesign está abierto lo dice el propio AppleScript de enInDesign: NSRunningApplication,
 /// dentro de la app, a veces dice que no aunque lo esté.
 func nombreInDesign() -> String {
-    NSWorkspace.shared.urlForApplication(withBundleIdentifier: idInDesign)?.deletingPathExtension().lastPathComponent
-        ?? "Adobe InDesign 2026"
+    appInDesign.deletingPathExtension().lastPathComponent
+}
+
+/// Texto en JSON (cadena o lista), para escribirlo tal cual dentro de un ExtendScript
+func jsonJS(_ v: Any) -> String {
+    String(decoding: (try? JSONSerialization.data(withJSONObject: v, options: [.fragmentsAllowed])) ?? Data("\"\"".utf8), as: UTF8.self)
 }
 
 // MARK: - Modelo
@@ -317,13 +339,14 @@ func enInDesign(_ accion: String, _ datos: [String: Any]? = nil, espera: TimeInt
         ruta = url.path
     }
     defer { if !ruta.isEmpty { try? FileManager.default.removeItem(atPath: ruta) } }
-    // POSIX file dentro del tell de InDesign falla (-1708): se convierte fuera
+    // Hablando a InDesign por su ruta, `do script … with arguments` da error de sintaxis: revision.jsx se lanza
+    // con app.doScript desde un ExtendScript, que sí respeta su #targetengine y le pasa los argumentos.
+    let llamada = "app.doScript(File(\(jsonJS(revisionJSX.path))), ScriptLanguage.JAVASCRIPT, \(jsonJS([accion, ruta])))"
     let guion = """
-    if application id "\(idInDesign)" is not running then return "{\\"error\\":\\"InDesign no está abierto\\",\\"cerrado\\":true}"
-    set archivo to POSIX file \(cadenaAS(revisionJSX.path))
+    if application \(cadenaAS(appInDesign.path)) is not running then return "{\\"error\\":\\"InDesign no está abierto\\",\\"cerrado\\":true}"
     with timeout of \(Int(espera)) seconds
-    tell application id "\(idInDesign)"
-    return do script archivo language javascript with arguments {\(cadenaAS(accion)), \(cadenaAS(ruta))}
+    tell application \(cadenaAS(appInDesign.path))
+    return do script \(cadenaAS(llamada)) language javascript
     end tell
     end timeout
     """
@@ -1070,7 +1093,7 @@ final class Buscador: ObservableObject {
 
     /// InDesign delante y, encima, la ventanita «Recorrer» para ir de un resultado a otro sin taparlo
     func verEnInDesign() {
-        Task { _ = await osascript("tell application id \"\(idInDesign)\" to activate", espera: 10) }
+        Task { _ = await osascript("tell application \(cadenaAS(appInDesign.path)) to activate", espera: 10) }
         Recorrido.shared.abrir(self)
     }
 

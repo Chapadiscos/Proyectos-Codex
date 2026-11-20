@@ -1,7 +1,8 @@
 #!/bin/zsh
-# Compila la app «Búsqueda inteligente» (SwiftUI) y la deja en la carpeta del proyecto.
+# Compila la app «Búsqueda inteligente» (SwiftUI) y la deja en Aplicaciones. La app usa jsx/, claude/ y servidor/
+# de esta carpeta del proyecto (ver `proyecto` en BusquedaInteligente.swift).
 dir="${0:A:h}"
-app="${dir:h}/Búsqueda inteligente.app"
+app="/Applications/Búsqueda inteligente.app"
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 swiftc -swift-version 5 -O -parse-as-library "$dir/BusquedaInteligente.swift" -o "$app/Contents/MacOS/BusquedaInteligente" || exit 1

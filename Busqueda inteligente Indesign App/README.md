@@ -26,7 +26,10 @@ y no instala nada en InDesign, así que sigue funcionando aunque se reinstale.
 - **Búsquedas recientes** en la barra lateral, para repetirlas.
 
 Cómo está hecha:
-- `app/BusquedaInteligente.swift`: la app. Compilar con `app/compilar_app.sh` → `Búsqueda inteligente.app` (no va a git).
+- `app/BusquedaInteligente.swift`: la app. Compilar con `app/compilar_app.sh` → `/Applications/Búsqueda inteligente.app`
+  (no va a git). Desde Aplicaciones usa `jsx/`, `claude/` y `servidor/` de esta carpeta en DATOS.
+- Trabaja con el InDesign de versión más alta instalado (hoy 2027), al que habla por su ruta. Otra versión:
+  `defaults write es.estudioencuadre.busqueda-inteligente indesign "<ruta de la .app>"`.
 - `jsx/revision.jsx`: la revisión dentro de InDesign (motor persistente `busqueda_inteligente`); la app lo ejecuta
   con `do script` en cada acción.
 - `claude/instrucciones.md` y `claude/esquema.json`: lo que se le pide a Claude (copiado de `buscar.py`); se

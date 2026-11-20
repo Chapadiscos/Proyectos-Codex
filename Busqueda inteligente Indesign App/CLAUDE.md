@@ -32,3 +32,9 @@ estado, consultar, ver_pagina y probar_cambio) y solo se usa su `.venv`.
 - Mesa de trabajo: las búsquedas solo cuentan lo que está en las páginas (lo pide `claude/instrucciones.md`) y
   `revision.jsx` descarta en `cargar` lo que aún llegue de la mesa (`enMesaDeTrabajo`, devuelve `omitidosMesa`).
   Para probar `revision.jsx` sin pisar la revisión del usuario: copia con otro `#targetengine`.
+- La app está en `/Applications` (`compilar_app.sh` la deja allí). `proyecto` es la carpeta junto a la .app si tiene
+  `jsx/revision.jsx`; si no, esta de DATOS (o `defaults … proyecto`).
+- InDesign 2027 (y hay 2025/2026 instalados): se le habla por la ruta de la .app (`appInDesign`, la versión más alta de
+  /Applications). Por ruta, `do script … with arguments` da error de sintaxis: se usa
+  `do script "app.doScript(File(…revision.jsx), ScriptLanguage.JAVASCRIPT, [acción, datos])"`, que respeta el
+  `#targetengine` y devuelve el resultado.
