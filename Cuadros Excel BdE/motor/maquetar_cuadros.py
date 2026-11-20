@@ -3349,7 +3349,11 @@ def cabeceras(z, hoja, cuadro, pub):
             estrecha = ancho_col(c) < COLUMNA_ESTRECHA and a1 == a2
             vacia = not texto(*ancla) and ancla not in [(k[0], k[1]) for k in combinada.values()]
             unidades = c == primera and RE_UNIDADES.match(texto(*ancla)) is not None
-            if estrecha or vacia or (c == primera and not texto(*ancla)) or unidades:
+            # Esquina vacía de una cabecera de una sola fila, con el color de la cabecera (publicado de LATAM/Economía
+            # Latinoamericana 02; con dos o más filas, sin relleno: 01, 04 y 05)
+            esquina_llena = pub.get("esquina_una_fila") and c == primera and f1 == fin_cab and not texto(*ancla) \
+                and not estrecha and ancho_col(c) > 0
+            if not esquina_llena and (estrecha or vacia or (c == primera and not texto(*ancla)) or unidades):
                 # Sin relleno ni líneas (el autor puede haber dejado alguna: 3.4, línea azul en A4 y G4)
                 nuevos[(c, f)] = estilos.variante(estilo(c, f), relleno="", borde={})
                 continue
@@ -3380,7 +3384,10 @@ def cabeceras(z, hoja, cuadro, pub):
     estrechas = [ref(c, 1)[:-1] for c in range(primera + 1, c2 + 1) if 0 < ancho_col(c) < COLUMNA_ESTRECHA]
     if estrechas:
         detalle.append("Columnas de separación sin relleno (hueco blanco entre grupos): " + ", ".join(estrechas))
-    if not texto(primera, fin_cab) and not any(texto(primera, f) for f in range(f1, fin_cab + 1)):
+    if pub.get("esquina_una_fila") and f1 == fin_cab and not texto(primera, f1):
+        detalle.append("Cabecera de una fila: la esquina de la primera columna, con su color aunque no lleve texto (como los "
+                       "publicados de " + pub.get("nombre", "la publicación") + ")")
+    elif not texto(primera, fin_cab) and not any(texto(primera, f) for f in range(f1, fin_cab + 1)):
         detalle.append("Esquina de la primera columna sin relleno (no lleva texto)")
     elif any(RE_UNIDADES.match(texto(primera, f)) for f in range(f1, fin_cab + 1)):
         detalle.append("Esquina de la primera columna sin relleno (lleva las unidades)")
@@ -3494,7 +3501,9 @@ def lineas_y_fondos(z, hoja, cuadro, pub=None):
     if apartados:
         vacias_sep = [f for f in filas if f + 1 in bloques and not texto(primera, f).strip() and sin_datos(f)]
         filas = [f for f in filas if f not in vacias_sep]
-    usa_matiz_2 = bool((bloques and not apartados) or subtotales)
+    # Títulos de bloque sin fondo propio, con el de la primera columna (LATAM/Economía Latinoamericana, publicados 02 y 05)
+    sin_fondo_bloque = bool((pub or {}).get("bloques_sin_fondo")) and bool(bloques) and not apartados
+    usa_matiz_2 = bool((bloques and not apartados and not sin_fondo_bloque) or subtotales)
     fondo_total = BLANCO_MATIZ_5 if usa_matiz_2 else BLANCO_MATIZ_2
     letra_total = BLANCO if fondo_total == BLANCO_MATIZ_5 else None
 
@@ -3548,7 +3557,7 @@ def lineas_y_fondos(z, hoja, cuadro, pub=None):
                 if siguiente is not None and siguiente != principal and f not in coeficientes and siguiente != estadisticos \
                         and not (apartados and f in bloques and sangrada(siguiente)):
                     lados["bottom"] = ("thin", BLANCO)
-                if apartados and f in bloques:
+                if (apartados or sin_fondo_bloque) and f in bloques:
                     relleno = BLANCO_MATIZ_1
             # Columna TOTAL: sin fondo; su cabecera va en el color de la publicación, así que ni gris ni mayúsculas
             # (decisión del usuario, 2026-11-17, publicado Memoria 3.1; antes iba en blanco matiz 2)
@@ -3576,6 +3585,10 @@ def lineas_y_fondos(z, hoja, cuadro, pub=None):
         if vacias_sep:
             detalle.append("Filas vacías entre bloques, ocultas (la línea oscura ya los separa): " + ", ".join(map(str, vacias_sep))
                            + marca([ref(primera, f) for f in vacias_sep]))
+    elif sin_fondo_bloque:
+        detalle.append("Títulos de bloque (sin datos en las demás columnas), con el fondo de la primera columna, sin destacar "
+                       "(como los publicados de " + (pub or {}).get("nombre", "la publicación") + "): "
+                       + ", ".join(f"«{texto(primera, f).strip()[:30]}»" for f in bloques[:6]) + ("…" if len(bloques) > 6 else ""))
     elif bloques:
         detalle.append(f"Títulos de bloque (sin datos en las demás columnas), fondo blanco matiz 2: "
                        + ", ".join(f"«{texto(primera, f).strip()[:30]}»" for f in bloques[:6]) + ("…" if len(bloques) > 6 else ""))
