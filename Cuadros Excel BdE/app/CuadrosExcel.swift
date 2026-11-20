@@ -750,10 +750,46 @@ final class Taller: ObservableObject {
         Task {
             let estado = await osascript(Taller.guionGuardado, [trabajo.path, Taller.copiaB(trabajo).path], espera: 10)
             if estado.texto.contains("sin guardar") {
-                self.aviso = Aviso(titulo: "Hay cambios sin guardar en Excel",
-                                   texto: "Guarda el libro en Excel (⌘S) si quieres conservarlos, o deshazlos, y vuelve a pulsar «Guardar como EXCEL».")
+                // Excel marca el libro como cambiado también al recalcular las fórmulas al abrirlo (LATAM: cientos de
+                // vínculos a otros libros), sin que el usuario toque nada: se ofrece guardarlo desde aquí y seguir
+                // (petición del usuario, 2026-11-20; antes había que ir a Excel y pulsar ⌘S)
+                self.pregunta = Pregunta(titulo: "El libro tiene cambios sin guardar en Excel",
+                                         texto: "Pueden ser tuyos o solo el recálculo de las fórmulas que Excel hace al abrir el libro (los cuadros con vínculos a otros libros quedan siempre así). Se guarda el libro en Excel tal como está y se sigue con «Guardar como EXCEL».",
+                                         boton: "Guardar en Excel y seguir") {
+                    Task {
+                        let guardado = await osascript(Taller.guionGuardar, [trabajo.path, Taller.copiaB(trabajo).path], espera: 30)
+                        guard guardado.texto.contains("ok") else {
+                            self.aviso = Aviso(titulo: "No he podido guardar el libro en Excel",
+                                               texto: "Guárdalo en Excel (⌘S) y vuelve a pulsar «Guardar como EXCEL». (\(guardado.texto))")
+                            return
+                        }
+                        try? await Task.sleep(nanoseconds: 400_000_000)
+                        self.confirmarTerminar(trabajo)
+                    }
+                }
                 return
             }
+            self.confirmarTerminar(trabajo)
+        }
+    }
+
+    private static let guionGuardar = """
+    on run argv
+        tell application "Microsoft Excel"
+            repeat with i from 1 to (count workbooks)
+                set n to full name of workbook i
+                if n is item 1 of argv or n is item 2 of argv then
+                    save workbook i
+                    return "ok"
+                end if
+            end repeat
+        end tell
+        return "sin libro"
+    end run
+    """
+
+    private func confirmarTerminar(_ trabajo: URL) {
+        do {
             self.pregunta = Pregunta(titulo: "¿Guardar como EXCEL?",
                                      texto: "Se guarda «\(self.nombreTerminado)» junto al original (si ya existe, no se pisa: se añade « (2)») y se deja abierto en Excel en lugar de la copia de trabajo. Se borran la copia de trabajo, su copia « (2)» y la carpeta «(pasos)» con todas las versiones. El original del autor no se toca. No se puede deshacer.",
                                      boton: "Guardar y borrar") {
