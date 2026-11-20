@@ -11,6 +11,6 @@ Tipografía y Cierre trabajan con el **documento activo** de InDesign, con **uno
 La app no tiene motor propio: usa los programas de `../Ventana Formatear Word Indesign/` (los .py en segundo plano y las ventanas .jsx dentro de InDesign) sin modificarlos. Para otra ruta:
 `defaults write es.estudioencuadre.crear-publicacion motor "<ruta>"`.
 
-- Compilar: `app/compilar_app.sh` → `Crear Publicación.app` en esta carpeta (no va a git).
+- Compilar: `app/compilar_app.sh` → instala `Crear Publicación.app` en /Applications (no va a git). La app encuentra esta carpeta (jsx/ y el motor) por la clave «Proyecto» que el script añade a su Info.plist.
 - `jsx/abrir_en_indesign.jsx`: abre en InDesign las ventanas de revisión con el documento elegido delante, en el mismo motor (`formatear_word`) que la ventana de InDesign.
 - La primera vez macOS pide permiso para que la app controle InDesign (Ajustes › Privacidad › Automatización).

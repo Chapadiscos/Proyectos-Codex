@@ -10,8 +10,14 @@ import UniformTypeIdentifiers
 
 // MARK: - Rutas
 
-/// Carpeta del proyecto: la que contiene la .app
-let proyecto = Bundle.main.bundleURL.deletingLastPathComponent()
+/// Carpeta del proyecto: la que contiene la .app o, si la app está en otro sitio
+/// (p. ej. /Applications), la que compilar_app.sh apunta en el Info.plist («Proyecto»)
+let proyecto: URL = {
+    let junto = Bundle.main.bundleURL.deletingLastPathComponent()
+    if FileManager.default.fileExists(atPath: junto.appendingPathComponent("jsx/abrir_en_indesign.jsx").path) { return junto }
+    if let ruta = Bundle.main.object(forInfoDictionaryKey: "Proyecto") as? String { return URL(fileURLWithPath: ruta) }
+    return junto
+}()
 
 /// Carpeta del motor; se cambia con
 /// `defaults write es.estudioencuadre.crear-publicacion motor "<ruta>"`
