@@ -38,3 +38,6 @@ estado, consultar, ver_pagina y probar_cambio) y solo se usa su `.venv`.
   /Applications). Por ruta, `do script … with arguments` da error de sintaxis: se usa
   `do script "app.doScript(File(…revision.jsx), ScriptLanguage.JAVASCRIPT, [acción, datos])"`, que respeta el
   `#targetengine` y devuelve el resultado.
+- Búsquedas guardadas por publicación: `Guardada.publicaciones` (vacía = General). La lista de publicaciones se lee en
+  cada uso de los .toml de `../Ventana Formatear Word Indesign/publicaciones/` (sin maqueta-base ni ortotipografia;
+  nombre de «Configuración de «X»» en su primera línea). No se escriben a mano (decisión del usuario: evitar duplicados).

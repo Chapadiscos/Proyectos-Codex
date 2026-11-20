@@ -233,6 +233,41 @@ struct Guardada: Codable, Identifiable, Hashable {
     var id = UUID()
     var nombre: String
     var texto: String
+    /// Publicaciones en las que se usa; vacía = general (sirve para todas)
+    var publicaciones: [String] = []
+
+    var general: Bool { publicaciones.isEmpty }
+
+    init(nombre: String, texto: String, publicaciones: [String] = []) {
+        self.nombre = nombre
+        self.texto = texto
+        self.publicaciones = publicaciones
+    }
+
+    // Las guardadas antes de agruparlas por publicación no tienen `publicaciones`: quedan como generales
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        nombre = try c.decode(String.self, forKey: .nombre)
+        texto = try c.decode(String.self, forKey: .texto)
+        publicaciones = try c.decodeIfPresent([String].self, forKey: .publicaciones) ?? []
+    }
+}
+
+/// Publicaciones dadas de alta en «Crear Publicación» (los .toml de Formatear Word), para proponerlas al agrupar
+/// las búsquedas guardadas. El nombre sale de su primera línea («Configuración de «Revista GHHO»…»).
+func publicacionesDeCrearPublicacion() -> [String] {
+    let carpeta = proyecto.deletingLastPathComponent().appendingPathComponent("Ventana Formatear Word Indesign/publicaciones")
+    let archivos = (try? FileManager.default.contentsOfDirectory(at: carpeta, includingPropertiesForKeys: nil)) ?? []
+    return archivos
+        .filter { $0.pathExtension == "toml" && !["maqueta-base.toml", "ortotipografia.toml"].contains($0.lastPathComponent) }
+        .map { url in
+            let primera = leer(url).components(separatedBy: .newlines).first ?? ""
+            if let a = primera.range(of: "«"), let b = primera.range(of: "»", range: a.upperBound..<primera.endIndex) {
+                return String(primera[a.upperBound..<b.lowerBound])
+            }
+            return url.deletingPathExtension().lastPathComponent
+        }
 }
 
 /// La que se está guardando o editando en la hoja «Guardar búsqueda»
@@ -519,6 +554,10 @@ final class Buscador: ObservableObject {
     @Published var recientes: [Reciente] = []
     @Published var guardadas: [Guardada] = []
     @Published var editando: EdicionGuardada?
+    /// Publicación elegida en el desplegable de guardadas ("" = todas)
+    @Published var publicacionGuardadas = ajustes.string(forKey: "publicacionGuardadas") ?? "" {
+        didSet { ajustes.set(publicacionGuardadas, forKey: "publicacionGuardadas") }
+    }
     @Published var aviso: Aviso?
 
     private var proceso: Process?
@@ -938,13 +977,21 @@ final class Buscador: ObservableObject {
         return palabras.count < t.trimmingCharacters(in: .whitespacesAndNewlines).count ? palabras + "…" : palabras
     }
 
+    /// Todas las publicaciones que se conocen: las de las guardadas y las de «Crear Publicación»
+    var publicacionesConocidas: [String] {
+        Array(Set(guardadas.flatMap(\.publicaciones) + publicacionesDeCrearPublicacion()))
+            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
+
     func guardarBusqueda(_ t: String) {
         let t = t.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty else { mensaje = "Escribe primero la búsqueda que quieres guardar"; return }
         if let g = guardadas.first(where: { $0.texto == t }) {
             editando = EdicionGuardada(guardada: g, nueva: false)
         } else {
-            editando = EdicionGuardada(guardada: Guardada(nombre: nombrePropuesto(t), texto: t), nueva: true)
+            editando = EdicionGuardada(guardada: Guardada(nombre: nombrePropuesto(t), texto: t,
+                                                          publicaciones: publicacionGuardadas.isEmpty ? [] : [publicacionGuardadas]),
+                                       nueva: true)
         }
     }
 
@@ -1304,6 +1351,15 @@ struct ListaGuardadas: View {
     @ObservedObject var b: Buscador
     let cerrar: () -> Void
 
+    /// Con una publicación elegida: las suyas y debajo las generales. Con «Todas»: las generales y cada publicación.
+    var grupos: [(titulo: String, guardadas: [Guardada])] {
+        let generales = (titulo: "Generales", guardadas: b.guardadas.filter(\.general))
+        let p = b.publicacionGuardadas
+        if !p.isEmpty { return [(titulo: p, guardadas: b.guardadas.filter { $0.publicaciones.contains(p) }), generales] }
+        let conGuardadas = b.publicacionesConocidas.filter { p in b.guardadas.contains { $0.publicaciones.contains(p) } }
+        return [generales] + conGuardadas.map { p in (titulo: p, guardadas: b.guardadas.filter { $0.publicaciones.contains(p) }) }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Button {
@@ -1315,22 +1371,39 @@ struct ListaGuardadas: View {
             .buttonStyle(.borderless)
             .disabled(b.texto.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             .padding(10)
+            Picker("Publicación", selection: $b.publicacionGuardadas) {
+                Text("Todas las publicaciones").tag("")
+                Divider()
+                ForEach(b.publicacionesConocidas, id: \.self) { Text($0).tag($0) }
+            }
+            .padding(.horizontal, 10)
+            .padding(.bottom, 10)
             Divider()
             if b.guardadas.isEmpty {
                 Text("Aún no hay búsquedas guardadas").foregroundStyle(.secondary).padding(12)
             } else {
                 ScrollView {
-                    VStack(spacing: 2) {
-                        ForEach(b.guardadas) { g in
-                            FilaGuardada(g: g,
-                                         usar: { cerrar(); b.usar(g) },
-                                         editar: { cerrar(); b.editando = EdicionGuardada(guardada: g, nueva: false) },
-                                         quitar: { b.quitar(g) })
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(grupos, id: \.titulo) { grupo in
+                            Text(grupo.titulo.uppercased())
+                                .font(.caption2.bold())
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 8)
+                                .padding(.top, 8)
+                            if grupo.guardadas.isEmpty {
+                                Text("Ninguna todavía").font(.caption).foregroundStyle(.tertiary).padding(.horizontal, 8)
+                            }
+                            ForEach(grupo.guardadas) { g in
+                                FilaGuardada(g: g,
+                                             usar: { cerrar(); b.usar(g) },
+                                             editar: { cerrar(); b.editando = EdicionGuardada(guardada: g, nueva: false) },
+                                             quitar: { b.quitar(g) })
+                            }
                         }
                     }
                     .padding(6)
                 }
-                .frame(maxHeight: 380)
+                .frame(maxHeight: 420)
             }
         }
         .frame(width: 400)
@@ -1383,6 +1456,7 @@ struct HojaGuardada: View {
     @State var edicion: EdicionGuardada
     @Environment(\.dismiss) private var cerrar
 
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Label(edicion.nueva ? "Guardar búsqueda" : "Editar búsqueda guardada", systemImage: "star.fill")
@@ -1399,6 +1473,35 @@ struct HojaGuardada: View {
                     .font(.system(size: 13))
                     .frame(height: 110)
                     .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.3)))
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Publicaciones").font(.caption.bold()).foregroundStyle(.secondary)
+                Toggle("General: sirve para todas las publicaciones", isOn: Binding(
+                    get: { edicion.guardada.general },
+                    set: { general in
+                        if general { edicion.guardada.publicaciones = [] }
+                        else if let p = (b.publicacionGuardadas.isEmpty ? b.publicacionesConocidas.first : b.publicacionGuardadas) {
+                            edicion.guardada.publicaciones = [p]
+                        }
+                    }))
+                if !edicion.guardada.general {
+                    ForEach(Array(Set(b.publicacionesConocidas + edicion.guardada.publicaciones))
+                        .sorted { $0.localizedStandardCompare($1) == .orderedAscending }, id: \.self) { p in
+                        Toggle(p, isOn: Binding(
+                            get: { edicion.guardada.publicaciones.contains(p) },
+                            set: { si in
+                                if si { edicion.guardada.publicaciones.append(p) }
+                                else { edicion.guardada.publicaciones.removeAll { $0 == p } }
+                            }))
+                        .padding(.leading, 18)
+                    }
+                }
+                // Solo las de la lista, para no crear duplicados («Monografías SEG» / «Monografias SEG»)
+                Text(b.publicacionesConocidas.isEmpty
+                     ? "No hay publicaciones: dalas de alta en «Crear Publicación»."
+                     : "Para otra publicación, dala de alta antes en «Crear Publicación».")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .padding(.leading, edicion.guardada.general ? 0 : 18)
             }
             Text("Se guarda solo la descripción: el ámbito (documento, libro…) lo eliges cada vez que la uses.")
                 .font(.caption).foregroundStyle(.secondary)
@@ -1521,7 +1624,7 @@ struct Cabecera: View {
                             .allowsHitTesting(false)
                     }
                 }
-                .frame(height: 104)
+                .frame(height: 136)
                 .background(RoundedRectangle(cornerRadius: 8).fill(Color(nsColor: .textBackgroundColor)))
                 .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.3)))
                 .disabled(b.buscando)
@@ -1548,6 +1651,11 @@ struct Cabecera: View {
                         Label("Nueva búsqueda", systemImage: "square.and.pencil").frame(minWidth: 120)
                     }
                     .help("Borra la descripción y los resultados para empezar otra búsqueda. Los cambios ya hechos se conservan.")
+                    Button { b.guardarBusqueda(b.texto) } label: {
+                        Label("Guardar búsqueda", systemImage: "star.badge.plus").frame(minWidth: 120)
+                    }
+                    .disabled(b.buscando || b.texto.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .help("Guarda esta descripción para usarla en otros documentos y libros")
                     // Desplegable: por muchas que haya, no ocupan sitio en la ventana
                     BotonGuardadas(b: b)
                 }

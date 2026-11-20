@@ -20,9 +20,11 @@ y no instala nada en InDesign, así que sigue funcionando aunque se reinstale.
 - **Recorrer en InDesign**: doble clic en un resultado (o «Ver en InDesign») pone InDesign delante con una ventanita
   flotante encima: al pulsar en ella InDesign sigue activo y va saltando a cada resultado; también Cambiar, Omitir y
   Cambiar todo. «Volver a la app» recupera la ventana grande.
-- **Búsquedas guardadas**: desplegable «★ Guardadas» (arriba a la derecha): «Guardar esta búsqueda…» (o botón derecho en
-  una reciente) le pone un nombre; al elegir una se rellena la descripción y el ámbito (documento, libro…) se elige cada
-  vez. Cada una lleva a su derecha los botones Editar (✎) y Quitar (🗑).
+- **Búsquedas guardadas**: botón «Guardar búsqueda» (o botón derecho en una reciente) y desplegable «★ Guardadas».
+  Cada una es General (sirve para todas las publicaciones) o de una o varias publicaciones; el desplegable filtra por
+  publicación (las suyas y debajo las generales). Las publicaciones salen de «Crear Publicación» (los .toml de
+  `../Ventana Formatear Word Indesign/publicaciones/`, leídos cada vez); no se escriben a mano, para no duplicarlas.
+  Al elegir una se rellena la descripción; el ámbito (documento, libro…) se elige cada vez. ✎ y 🗑 en cada fila.
 - **Búsquedas recientes** en la barra lateral, para repetirlas.
 
 Cómo está hecha:
