@@ -3609,6 +3609,8 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
         cambios["xl/sharedStrings.xml"] = comp.encode("utf-8")
     return cambios, detalle, {"c1": c1, "f1": f1, "c2": c2, "f2": f2, "primera": primera, "fin_cabecera": fin_cab,
                               "bloque_arriba": bloque["filas"] if bloque else [],
+                              "bloque_cabecera": bloque["cabecera"] if bloque else None,
+                              "bloque_grupos": [list(g) for g in bloque["grupos"]] if bloque else [],
                               "cabecera_formas": [[c, f] for f in sorted(filas_formas) for c in sorted(formas_fila.get(f, set()))
                                                   if c1 <= c <= c2 and not todas.get((c, f), {}).get("texto", "").strip()]}
 
@@ -5041,9 +5043,284 @@ def info(archivo):
             "formas": formas}
 
 
+# ---------------------------------------------------------------- herramienta: igualar al modelo
+
+IGUAL_AL_MODELO = "Igual que el modelo"
+RE_PAISES = re.compile(r"argentin\w*|brasil\w*|brazil\w*|chile\w*|chilen\w*|colombi\w*|m[eé]xic\w*|per[uú]\w*|peruan\w*|"
+                       r"costa\s+rica|costarric\w*|guatemal\w*|hondur\w*|nicarag\w*|rep[uú]blica\s+dominicana|dominican\w*|"
+                       r"el\s+salvador|salvadore\w*|\bcard\b", re.I)
+
+
+def norm_texto(t):
+    """Texto comparable entre países y semestres: sin países, cifras, años ni espacios de más, en minúsculas."""
+    t = RE_PAISES.sub("X", html.unescape(t or "").lower())
+    t = re.sub(r"\d[\d.,\-–]*", "N", t)
+    return re.sub(r"\s+", " ", t).strip()
+
+
+def palabras_libro(z, hoja):
+    x = z.read(hoja_de(z, hoja)).decode("utf-8")
+    textos = [v["texto"] for v in celdas_hoja(x, leer_compartidos(z)[1]).values() if v["texto"].strip() and not es_cifra(v)]
+    return {w for t in textos for w in re.findall(r"[a-záéíóúñü]{3,}", norm_texto(t))}
+
+
+def buscar_modelo(trabajo, estado):
+    """El EXCEL terminado más parecido (mismo cuadro de otro país u otro semestre): en la carpeta del original y en
+    «Modelos» (junto a ella o en el proyecto). (ruta, parecido) o (None, 0)."""
+    origen = Path(estado["origen"])
+    base = re.sub(r"\s+(ORIGINALES|ORIGINAL)\b.*$", "", origen.stem)
+    carpetas = [origen.parent, origen.parent / "Modelos", PROYECTO / "Modelos"]
+    candidatos = []
+    for carpeta in carpetas:
+        if not carpeta.is_dir():
+            continue
+        for f in carpeta.glob("*.xlsx"):
+            if f.name.startswith("~$") or f.stem.startswith(base) or (carpeta == origen.parent and " EXCEL" not in f.stem):
+                continue
+            candidatos.append(f)
+    if not candidatos:
+        return None, 0
+    with zipfile.ZipFile(origen) as z:
+        mias = palabras_libro(z, estado.get("hoja") or hoja_cuadro(z)[0])
+    mejor = (0, 0, None)
+    for f in candidatos:
+        try:
+            with zipfile.ZipFile(f) as z:
+                suyas = palabras_libro(z, hoja_cuadro(z)[0])
+        except (zipfile.BadZipFile, KeyError, Fallo, OSError):
+            continue
+        parecido = len(mias & suyas) / max(1, len(mias | suyas))
+        mejor = max(mejor, (round(parecido, 2), f.stat().st_mtime, f))
+    return (mejor[2], mejor[0]) if mejor[2] and mejor[0] >= 0.5 else (None, mejor[0])
+
+
+def colores_tema(z):
+    """Colores del tema del libro en el orden de los índices de Excel (0 lt1, 1 dk1, 2 lt2, 3 dk2, 4-9 acentos…)."""
+    ruta = next((n for n in z.namelist() if re.match(r"xl/theme/theme\d*\.xml$", n)), None)
+    if not ruta:
+        return []
+    xml = z.read(ruta).decode("utf-8")
+    col = {}
+    for clave in ("dk1", "lt1", "dk2", "lt2", "accent1", "accent2", "accent3", "accent4", "accent5", "accent6", "hlink", "folHlink"):
+        m = re.search(rf'<a:{clave}>\s*<a:(?:srgbClr val|sysClr\b[^>]*\blastClr)="([0-9A-Fa-f]{{6}})"', xml)
+        col[clave] = m.group(1).upper() if m else "000000"
+    return [col[k] for k in ("lt1", "dk1", "lt2", "dk2", "accent1", "accent2", "accent3", "accent4", "accent5", "accent6", "hlink", "folHlink")]
+
+
+def colores_a_rgb(xml, tema):
+    """Colores del tema (theme="n" tint="t") pasados a RGB: el modelo y el cuadro pueden llevar temas distintos."""
+    def cambiar(m):
+        etiqueta = m.group(0)
+        t = re.search(r'\btheme="(\d+)"', etiqueta)
+        if not t or int(t.group(1)) >= len(tema):
+            return etiqueta
+        tinte = re.search(r'\btint="([-\d.Ee]+)"', etiqueta)
+        rgb = matiz(tema[int(t.group(1))], float(tinte.group(1))) if tinte else tema[int(t.group(1))]
+        nombre = re.match(r"<(\w+)", etiqueta).group(1)
+        return f'<{nombre} rgb="FF{rgb}"/>'
+    return re.sub(r'<(?:color|fgColor|bgColor)\b[^>]*/>', cambiar, xml)
+
+
+def formato_de(est, tema, i):
+    """(fuente, relleno, borde, alineación) del formato `i`, con los colores en RGB."""
+    xf = est.xf(i)
+    fid = re.search(r'\bfillId="(\d+)"', xf)
+    bid = re.search(r'\bborderId="(\d+)"', xf)
+    rell = est.rellenos[int(fid.group(1))] if fid and int(fid.group(1)) < len(est.rellenos) else est.rellenos[0]
+    bord = est.bordes[int(bid.group(1))] if bid and int(bid.group(1)) < len(est.bordes) else est.bordes[0]
+    return (colores_a_rgb(est.fuente_de(i), tema), colores_a_rgb(rell, tema), colores_a_rgb(bord, tema), est.alineacion(i))
+
+
+def con_formato_de(est, i, formato):
+    """Índice de un formato como el `i` (su formato de número) con la fuente, el relleno, el borde y la alineación
+    de otro libro."""
+    fuente, rell, bord, al = formato
+    ids = []
+    for lista, nuevos, xml in ((est.fuentes, est.nuevas_fuentes, fuente), (est.rellenos, est.nuevos_rellenos, rell),
+                               (est.bordes, est.nuevos_bordes, bord)):
+        todos = lista + nuevos
+        if xml in todos:
+            ids.append(todos.index(xml))
+        else:
+            nuevos.append(xml)
+            ids.append(len(todos))
+    xf = est.xf(i)
+    apertura = re.match(r'<xf\b[^>]*?(/?)>', xf)
+    atributos = apertura.group(0)[3:-(2 if apertura.group(1) else 1)]
+    dentro = "" if apertura.group(1) else xf[apertura.end():xf.rindex("</xf>")]
+    for nombre, valor in (("fontId", ids[0]), ("fillId", ids[1]), ("borderId", ids[2]), ("applyFont", 1), ("applyFill", 1),
+                          ("applyBorder", 1), ("applyAlignment", 1)):
+        atributos = re.sub(rf'\s{nombre}="[^"]*"', "", atributos) + f' {nombre}="{valor}"'
+    dentro = re.sub(r'<alignment\b[^>]*/>', "", dentro)
+    dentro = "<alignment" + "".join(f' {k}="{v}"' for k, v in al.items()) + "/>" + dentro if al else dentro
+    nuevo = f"<xf{atributos}>{dentro}</xf>" if dentro else f"<xf{atributos}/>"
+    todos = est.xfs + est.nuevos_xfs
+    if nuevo in todos:
+        return todos.index(nuevo)
+    est.nuevos_xfs.append(nuevo)
+    return len(todos)
+
+
+def estructura(z, hoja, cuadro):
+    """Las piezas del cuadro para emparejarlo con otro: filas (cabecera, cuerpo con su concepto, bloque de arriba) y
+    columnas por su papel (primera, de datos, solo del bloque, separaciones)."""
+    x = z.read(hoja_de(z, hoja)).decode("utf-8")
+    todas = sin_filas_ocultas(celdas_hoja(x, leer_compartidos(z)[1]), x)
+    ancho = anchos_columnas(x)
+    c1, f1, c2, f2 = cuadro["c1"], cuadro["f1"], cuadro["c2"], cuadro["f2"]
+    primera, fin_cab = cuadro["primera"], cuadro["fin_cabecera"]
+    bloque = cuadro.get("bloque_arriba", [])
+    txt = lambda c, f: todas.get((c, f), {}).get("texto", "").strip()
+    vis = [c for c in range(c1, c2 + 1) if ancho(c) > 0]
+    datos = [c for c in vis if c != primera and any(txt(c, f) for f in range(f1, f2 + 1))]
+    solo_bloque = [c for c in vis if c != primera and c not in datos and any(txt(c, f) for f in bloque)]
+    cuerpo = [(f, norm_texto(txt(primera, f))) for f in range(fin_cab + 1, f2 + 1)
+              if any(txt(c, f) for c in range(c1, c2 + 1))]
+    return {"todas": todas, "vis": vis, "primera": primera, "datos": datos, "solo_bloque": solo_bloque,
+            "separaciones": [c for c in vis if c != primera and c not in datos and c not in solo_bloque],
+            "cabecera": [f for f in range(f1, fin_cab + 1) if any(txt(c, f) for c in range(c1, c2 + 1))],
+            "cuerpo": cuerpo, "bloque": bloque, "bloque_grupos": cuadro.get("bloque_grupos", [])}
+
+
+def igualar_modelo(trabajo, pid=None):
+    """Copia del EXCEL terminado del mismo cuadro (otro país u otro semestre, con sus retoques a mano) los anchos, los
+    altos y el formato de cada celda, emparejando filas por concepto y columnas por su papel; los textos y los
+    datos son los del cuadro (petición del usuario, 2026-11-21)."""
+    estado = leer_estado(trabajo)
+    hechos = [p["titulo"] for p in estado["pasos"][:estado["actual"] + 1]]
+    if LINEAS_Y_FONDOS not in hechos:
+        raise Fallo("Antes hay que hacer los cuatro pasos: el modelo se copia sobre el cuadro ya maquetado")
+    modelo, parecido = buscar_modelo(trabajo, estado)
+    if not modelo:
+        raise Fallo("No encuentro un EXCEL terminado del mismo cuadro (en la carpeta del original o en «Modelos»)"
+                    + (f": el más parecido lo es solo en un {parecido:.0%}" if parecido else ""))
+    _, pasos = nombres(trabajo)
+    base = pasos / estado["pasos"][estado["actual"]]["archivo"]
+    hoja = estado.get("hoja") or "Cuadro datos"
+    cuadro_t = next((p.get("cuadro") for p in reversed(estado["pasos"][:estado["actual"] + 1]) if p.get("cuadro")), None)
+    pub = pub_de(pid)
+    with zipfile.ZipFile(modelo) as zm:
+        hoja_m = hoja_cuadro(zm)[0]
+        _, _, cuadro_m = celdas(zm, hoja_m, idioma(modelo.name), [], pub)
+        em = estructura(zm, hoja_m, cuadro_m)
+        est_m = Estilos(zm.read("xl/styles.xml").decode("utf-8"))
+        tema_m = colores_tema(zm)
+        xm = zm.read(hoja_de(zm, hoja_m)).decode("utf-8")
+        ancho_m, mdw_m = anchos_columnas(xm), digito_maximo(est_m.xml)
+        altos_m, defecto_m = altos_filas(zm, hoja_m)
+        celdas_m = celdas_hoja(xm, leer_compartidos(zm)[1])
+    detalle, avisos = [f"Modelo: «{modelo.name}» ({parecido:.0%} de palabras en común)"], []
+    with zipfile.ZipFile(base) as z:
+        ruta_hoja = hoja_de(z, hoja)
+        hoja_xml = z.read(ruta_hoja).decode("utf-8")
+        est = Estilos(z.read("xl/styles.xml").decode("utf-8"))
+        et = estructura(z, hoja, cuadro_t)
+        mdw = digito_maximo(est.xml)
+        todas_t = celdas_hoja(hoja_xml, leer_compartidos(z)[1])
+        ancho_t = anchos_columnas(hoja_xml)
+        dibujo = z.read(dibujo_de_hoja(z, hoja)).decode("utf-8") if dibujo_de_hoja(z, hoja) else ""
+        altos_v = altos_filas(z, hoja)
+        caja = medidas_hoja(z, hoja, dibujo) if dibujo else None
+    # Columnas por su papel
+    cols = {et["primera"]: em["primera"]}
+    for papel in ("datos", "solo_bloque"):
+        if len(et[papel]) == len(em[papel]):
+            cols.update(zip(et[papel], em[papel]))
+        elif et[papel] or em[papel]:
+            avisos.append(f"columnas {'de datos' if papel == 'datos' else 'del bloque de arriba'}: {len(et[papel])} aquí y "
+                          f"{len(em[papel])} en el modelo, sin copiar")
+    # Filas: cabecera de abajo arriba, cuerpo por concepto, bloque por orden
+    filas = dict(zip(reversed(et["cabecera"]), reversed(em["cabecera"])))
+    filas.update(zip(et["bloque"], em["bloque"]))
+    a, b = [t for _, t in em["cuerpo"]], [t for _, t in et["cuerpo"]]
+    sin_pareja = []
+    for op, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
+        if op == "equal" or (op == "replace" and i2 - i1 == j2 - j1):
+            filas.update({et["cuerpo"][j][0]: em["cuerpo"][i][0] for i, j in zip(range(i1, i2), range(j1, j2))})
+        elif j2 > j1:
+            sin_pareja += [et["cuerpo"][j][0] for j in range(j1, j2)]
+    # Anchos
+    nuevos_anchos = {}
+    for ct, cm in cols.items():
+        pt = round(ancho_m(cm) * mdw_m)
+        nuevos_anchos[ct] = ancho_comun(pt, mdw, digito_windows(est.xml))
+    # Lo que falte o sobre para medir lo mismo que el modelo (Cos_01 no tiene columna aparte para el valor del bloque
+    # de arriba y Arg_01 sí), a la primera columna
+    pt_de = lambda w, d_: round(w * d_)
+    total_m = sum(pt_de(ancho_m(c), mdw_m) for c in em["vis"])
+    total_t = sum(pt_de(nuevos_anchos[c], mdw) if c in nuevos_anchos else pt_de(ancho_t(c), mdw) for c in et["vis"])
+    if abs(total_m - total_t) >= 1 and et["primera"] in nuevos_anchos:
+        pt_primera = pt_de(nuevos_anchos[et["primera"]], mdw) + total_m - total_t
+        nuevos_anchos[et["primera"]] = ancho_comun(pt_primera, mdw, digito_windows(est.xml))
+        detalle.append(f"La primera columna, {total_m - total_t:+.0f} pt para medir lo mismo que el modelo ({total_m:.0f} pt)")
+    hoja_xml = poner_anchos(hoja_xml, nuevos_anchos)
+    # Altos
+    altos = {ft: round(altos_m.get(fm - 1, defecto_m) / EMU_PT, 2) for ft, fm in filas.items()}
+    entre_t = [f for f in range(et["bloque"][-1] + 1, cuadro_t["f1"])] if et["bloque"] else []
+    entre_m = [f for f in range(em["bloque"][-1] + 1, cuadro_m["f1"])] if em["bloque"] else []
+    hueco_m = sum(altos_m.get(f - 1, defecto_m) for f in entre_m) / EMU_PT
+    for f in entre_t:
+        if altos_v[0].get(f - 1, altos_v[1]) > 0:
+            altos[f] = round(hueco_m / max(1, sum(1 for g in entre_t if altos_v[0].get(g - 1, altos_v[1]) > 0)), 2)
+
+    def poner_alto(m):
+        fila = m.group(0)
+        f = int(re.search(r'\br="(\d+)"', fila).group(1))
+        if f not in altos:
+            return fila
+        fila = re.sub(r'\s(ht|customHeight)="[^"]*"', "", fila)
+        return fila[:-1].rstrip("/") + f' ht="{altos[f]:g}" customHeight="1"' + ("/>" if fila.endswith("/>") else ">")
+    hoja_xml = re.sub(r'<row\b[^>]*?/?>', poner_alto, hoja_xml)
+    # Formato de cada celda emparejada
+    formatos = {}
+    pares_col = dict(cols)
+    for st, sm in zip(et["separaciones"], em["separaciones"]):
+        pares_col.setdefault(st, sm)
+    for ft, fm in filas.items():
+        if ft in et["bloque"]:
+            continue
+        for ct, cm in pares_col.items():
+            formatos[(ct, ft)] = con_formato_de(est, todas_t.get((ct, ft), {}).get("s", 0),
+                                                formato_de(est_m, tema_m, celdas_m.get((cm, fm), {}).get("s", 0)))
+    # Bloque de arriba: por tablitas (concepto ↔ concepto, valor ↔ valor, lo de en medio como lo de en medio)
+    for (et_e, et_v), (em_e, em_v) in zip(et["bloque_grupos"], em["bloque_grupos"]):
+        medio_m = [c for c in range(em_e + 1, em_v) if ancho_m(c) > 0]
+        for ft in et["bloque"]:
+            fm = filas.get(ft)
+            if fm is None:
+                continue
+            for ct in range(et_e, et_v + 1):
+                cm = em_e if ct == et_e else em_v if ct == et_v else (medio_m[0] if medio_m else em_e)
+                formatos[(ct, ft)] = con_formato_de(est, todas_t.get((ct, ft), {}).get("s", 0),
+                                                    formato_de(est_m, tema_m, celdas_m.get((cm, fm), {}).get("s", 0)))
+    hoja_xml = con_estilo(hoja_xml, formatos)
+    cambios = {ruta_hoja: hoja_xml.encode("utf-8"), "xl/styles.xml": est.resultado().encode("utf-8")}
+    # Sitio del cuadro y de FUENTES con los altos nuevos
+    if dibujo and caja:
+        f_ini = et["bloque"][0] if et["bloque"] else cuadro_t["f1"]
+        todos_altos = {f: v for f, v in altos.items()}
+        dibujo_nuevo, notas, (alto_hueco, altos_encima) = colocar_cuadro(dibujo, caja, altos_v, todos_altos, f_ini, cuadro_t["f2"])
+        if dibujo_nuevo != dibujo:
+            cambios[dibujo_de_hoja_ruta(z_ruta=base, hoja=hoja)] = dibujo_nuevo.encode("utf-8")
+    detalle.append(f"Copiados del modelo: anchos de {len(nuevos_anchos)} columnas, altos de {len(altos)} filas y formato de "
+                   f"{len(formatos)} celdas (letra, alineación, fondos y líneas); los textos y las cifras son los de este cuadro")
+    if sin_pareja:
+        detalle.append("Aviso: filas sin pareja en el modelo (conceptos nuevos o cambiados), como las deja la app: "
+                       + ", ".join(f"«{todas_t.get((et['primera'], f), {}).get('texto', '').strip()[:30]}»" for f in sin_pareja[:6])
+                       + ("…" if len(sin_pareja) > 6 else "") + marca([ref(et["primera"], f) for f in sin_pareja]))
+    for a_ in avisos:
+        detalle.append("Aviso: " + a_)
+    return nuevo_paso(trabajo, IGUAL_AL_MODELO, cambios, detalle, cuadro_t)
+
+
+def dibujo_de_hoja_ruta(z_ruta, hoja):
+    with zipfile.ZipFile(z_ruta) as z:
+        return dibujo_de_hoja(z, hoja)
+
+
 ORDENES = {"empezar": empezar, "estado": lambda t: {"trabajo": t, **leer_estado(t)}, "ir": ir, "reiniciar": reiniciar,
            "paso1": paso1, "paso2": paso2,
-           "paso3": paso3, "paso4": paso4, "letra7": letra7, "letra65": letra65, "letra6": letra6, "linea_oscura": linea_oscura, "aplicar": aplicar,
+           "paso3": paso3, "paso4": paso4, "letra7": letra7, "letra65": letra65, "letra6": letra6, "modelo": igualar_modelo, "linea_oscura": linea_oscura, "aplicar": aplicar,
            "comparar": comparar, "terminar": terminar, "info": info, "publicaciones": lambda: {},
            "guardar_publicacion": guardar_publicacion, "borrar_publicacion": borrar_publicacion, "paletas": paletas}
 

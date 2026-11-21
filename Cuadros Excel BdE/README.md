@@ -297,6 +297,14 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      bloque y tabla quedan 4 mm. Anchos (`datos_cada_uno_a_lo_justo`): si la primera columna cabe en una línea, a su
      medida y las de datos el resto a partes iguales (redondeo hacia abajo); las que solo llevan valores del bloque, a
      lo justo (Arg_01: 180 / 51 pt, PDF 177 / 56). Si no cabe (03), datos a lo justo y la primera el resto.
+   - **Herramienta «Igualar al modelo»** (orden `modelo`, petición del usuario, 2026-11-21): busca en la carpeta del
+     original y en «Modelos» (junto a ella o en el proyecto) el EXCEL terminado más parecido (palabras en común sin
+     países ni cifras, al menos un 50 %; si empatan, el último guardado) y copia de él, tal como esté guardado (con
+     los retoques a mano): anchos por papel de columna (primera, de datos por orden, solo del bloque), altos y el
+     formato de cada celda (fuente, relleno, borde y alineación, con los colores del tema pasados a RGB), emparejando
+     las filas por concepto (difflib) y el bloque de arriba por tablitas. Lo que falte o sobre de ancho va a la
+     primera columna. Avisa de las filas sin pareja. Textos y cifras, siempre los del cuadro. Probado: Arg_01 como
+     modelo de Br_01 y Cos_01, también con un retoque a mano (primera columna y un fondo).
    - **Filas ocultas del autor** (Arg_03: 4-7 con «#REF!» y 9-16, un bloque entero): siguen ocultas y no cuentan para
      la cabecera, los bloques, las sangrías ni los anchos (el cuadro se localiza con ellas, para que no se parta).
    - **Textos de fórmulas con espacios** (`<v xml:space="preserve">`, Economía Latinoamericana 05 y Memoria 2.1: la

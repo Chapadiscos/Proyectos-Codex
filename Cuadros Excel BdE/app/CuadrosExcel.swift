@@ -115,6 +115,12 @@ let herramientaLetra6 = PasoMaquetacion(id: 0, titulo: "Probar letra a 6 pt",
     detalle: "El mínimo de la guía, para cuadros que no caben ni a 6,5 pt (Economía Latinoamericana 05): lo mismo a 6 pt, en otra versión nueva. Si no te convence, vuelve atrás con ⌘←",
     icono: "textformat.size.smaller", orden: "letra6")
 
+/// Herramienta: copia del EXCEL terminado del mismo cuadro (otro país u otro semestre, con sus retoques a mano) los
+/// anchos, los altos y el formato de cada celda (petición del usuario, 2026-11-21)
+let herramientaModelo = PasoMaquetacion(id: 0, titulo: "Igualar al modelo",
+    detalle: "Busca en la carpeta del original (y en «Modelos») el EXCEL terminado del mismo cuadro —de otro país o del semestre anterior, con tus retoques a mano— y copia sus anchos, altos y el formato de cada celda (letra, alineación, fondos y líneas). Los textos y las cifras son los de este cuadro; avisa de lo que no casa. Deja una versión nueva (⌘← para quitarla)",
+    icono: "square.on.square", orden: "modelo")
+
 /// Herramienta: línea oscura encima de las filas seleccionadas en Excel, para separar conceptos
 let herramientaLineaOscura = PasoMaquetacion(id: 0, titulo: "Línea oscura sobre la selección",
     detalle: "Para separar conceptos: selecciona en Excel una celda de cada fila que empieza un concepto nuevo (varias con ⌘) y pulsa aquí; la línea oscura (blanco matiz 5) va encima de esas filas, en todo el ancho del cuadro. Deja una versión nueva (⌘← para quitarla)",
@@ -1606,6 +1612,11 @@ struct TarjetaMaquetar: View {
             Accion(icono: herramientaLetra65.icono, titulo: herramientaLetra65.titulo, detalle: herramientaLetra65.detalle,
                    color: colorApp, principal: false, marca: probada65 ? "checkmark.circle.fill" : nil) { taller.hacer(herramientaLetra65) }
                 .disabled(taller.trabajo == nil || taller.publicacionActual == nil || taller.enCurso != nil || !celdasHechas)
+            let fondosListos = taller.pasos.contains { $0.titulo == "Líneas y fondos" && $0.n <= taller.actual }
+            let igualado = taller.pasos.contains { $0.titulo == "Igual que el modelo" && $0.n <= taller.actual }
+            Accion(icono: herramientaModelo.icono, titulo: herramientaModelo.titulo, detalle: herramientaModelo.detalle,
+                   color: colorApp, principal: false, marca: igualado ? "checkmark.circle.fill" : nil) { taller.hacer(herramientaModelo) }
+                .disabled(taller.trabajo == nil || taller.publicacionActual == nil || taller.enCurso != nil || !fondosListos)
             let probada6 = taller.pasos.contains { $0.titulo == "Letra 6 pt" && $0.n <= taller.actual }
             Accion(icono: herramientaLetra6.icono, titulo: herramientaLetra6.titulo, detalle: herramientaLetra6.detalle,
                    color: colorApp, principal: false, marca: probada6 ? "checkmark.circle.fill" : nil) { taller.hacer(herramientaLetra6) }
