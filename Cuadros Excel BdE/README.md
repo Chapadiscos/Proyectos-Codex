@@ -292,8 +292,8 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      o su cifra; la primera, el resto: Arg_03 159/45/30 pt, publicado 170/41/32-35), centrado en altura.
    - **Bloque de arriba** (`bloque_arriba`, Indicadores 01: «PIB per cápita… 2026» y «Esperanza de vida… 2024», dos
      tablitas lado a lado encima de la tabla, separadas por filas vacías; en Br_01 con una sola fila vacía, dentro
-     del bloque de celdas del autor): parte del cuadro; año arriba con línea A32938, conceptos a la izquierda, valores a
-     la derecha, líneas F3CED3 entre filas, cada tablita en su ancho; el cuadro se coloca desde el bloque y entre
+     del bloque de celdas del autor): parte del cuadro; año arriba con línea A32938, conceptos a la izquierda, años y valores
+     centrados, líneas F3CED3 entre filas, cada tablita en su ancho; el cuadro se coloca desde el bloque y entre
      bloque y tabla quedan 4 mm. Anchos (`datos_cada_uno_a_lo_justo`): si la primera columna cabe en una línea, a su
      medida y las de datos el resto a partes iguales (redondeo hacia abajo); las que solo llevan valores del bloque, a
      lo justo (Arg_01: 180 / 51 pt, PDF 177 / 56). Si no cabe (03), datos a lo justo y la primera el resto.

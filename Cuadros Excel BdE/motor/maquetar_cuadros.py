@@ -3336,7 +3336,7 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
         detalle.append("Bloque de arriba (filas " + f"{bloque['filas'][0]}-{bloque['filas'][-1]}" + "): parte del cuadro, "
                        + str(len(bloque["grupos"])) + " tablita" + ("s" if len(bloque["grupos"]) > 1 else "") + " ("
                        + ", ".join(f"{ref(e, 1)[:-1]}-{ref(v, 1)[:-1]}" for e, v in bloque["grupos"])
-                       + f"), conceptos a la izquierda y valores a la derecha, letra de {CUERPO_CELDA:g} pt".replace(".", ",")
+                       + f"), conceptos a la izquierda y años y valores centrados, letra de {CUERPO_CELDA:g} pt".replace(".", ",")
                        + "; línea bajo el año y entre filas, cada tablita en su ancho; a 4 mm de la tabla")
     # Filas con puntos o flechas dibujados (Economía Latinoamericana 04): 21 pt, como el publicado, con aire para ellos
     con_puntos = [f for f in altos if f > fin_cab and any((c, f) in celdas_forma for c in columnas_forma)]
