@@ -2668,6 +2668,9 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
     separaciones = [c for c in fijas if ancho_col(c) > 0 and not any(d(c, f)["texto"].strip() for f in range(f1, f2 + 1))]
     # La de justo detrás de la primera columna no separa grupos: sobra (TERMINADO 1.5 publicado la quitó); se oculta
     pegada = [c for c in separaciones if c == primera + 1]
+    # En un mapa de calor (celdas de solo color, Arg_02) sí separa los conceptos de los colores: se queda
+    if no_se_ven:
+        pegada = []
     separaciones = [c for c in separaciones if c not in pegada]
     if pegada:
         detalle.append(f"Columna de separación entre la primera columna y los datos ({ref(pegada[0], 1)[:-1]}): oculta, "
@@ -4024,9 +4027,30 @@ def lineas_y_fondos(z, hoja, cuadro, pub=None):
     usa_matiz_2 = bool((bloques and not apartados and not sin_fondo_bloque) or subtotales)
     linea_bloques = bool((pub or {}).get("linea_entre_bloques")) and not apartados
     solo_lineas = bool((pub or {}).get("solo_lineas"))
+    grupos_autor = set()
     if solo_lineas:
         linea_rosa = ("thin", matiz(pub["color"], TINTES["matiz1"]))
         linea_bloques_solida = ("thin", pub["color"].upper())
+        # Grupos que el autor marcó con una línea más oscura que las demás bajo la primera columna (Arg_02: «Diferencial
+        # soberano (cambio trimestral)», «Sobrevaloración cambiaria»… en granate y las demás en rosa): se respetan
+        tema = colores_tema(z)
+        mapa_calor = bool(cifras_ocultas(hoja_xml, estilos.xml))
+
+        def luz_inferior(f):
+            xf = estilos.xf(estilo(primera, f))
+            b = re.search(r'\bborderId="(\d+)"', xf)
+            borde = (estilos.bordes + estilos.nuevos_bordes)[int(b.group(1))] if b and int(b.group(1)) < len(estilos.bordes) + len(estilos.nuevos_bordes) else ""
+            m_ = re.search(r'<bottom style="\w+">(.*?)</bottom>', colores_a_rgb(borde, tema), re.S)
+            rgb = re.search(r'rgb="\w{2}(\w{6})"', m_.group(1)) if m_ else None
+            if not rgb:
+                return None
+            r_, g_, b_ = (int(rgb.group(1)[i:i + 2], 16) / 255 for i in (0, 2, 4))
+            return 0.299 * r_ + 0.587 * g_ + 0.114 * b_
+        luces = {f: luz_inferior(f) for f in filas[:-1]}
+        comunes = Counter(round(v, 2) for v in luces.values() if v is not None)
+        if comunes:
+            habitual = comunes.most_common(1)[0][0]
+            grupos_autor = {f for f, v in luces.items() if v is not None and v < habitual - 0.2}
     fondo_total = BLANCO_MATIZ_5 if usa_matiz_2 else BLANCO_MATIZ_2
     letra_total = BLANCO if fondo_total == BLANCO_MATIZ_5 else None
 
@@ -4102,16 +4126,25 @@ def lineas_y_fondos(z, hoja, cuadro, pub=None):
             # Línea más oscura entre grupos, de lado a lado (petición del usuario, 2026-11-20, como el publicado 05)
             if linea_bloques and siguiente in bloques:
                 lados["bottom"] = LINEA_BLOQUES
+            if f in grupos_autor:
+                lados["bottom"] = LINEA_BLOQUES
             if solo_lineas:
                 # Solo líneas (LATAM/Indicadores Macrofinancieros): sin fondos propios (los del autor en los datos, como
                 # los colores del mapa de calor, se quedan); entre filas, matiz 1 del color; entre bloques, el sólido
                 if c == primera or relleno is not None:
                     relleno = ""
                 lados = {k: (linea_bloques_solida if v in (LINEA_BLOQUES, LINEA_OSCURA) else linea_rosa) for k, v in lados.items()}
+                # Mapa de calor (Arg_02): bajo los colores, solo las líneas de grupo; las rosas, solo bajo los conceptos
+                if mapa_calor and c != primera:
+                    lados = {k: v for k, v in lados.items() if v == linea_bloques_solida}
                 letra = None
             nuevos[(c, f)] = estilos.variante(estilo(c, f), relleno=relleno, borde=lados,
                                               letra=letra if letra else None)
     # Detalle
+    if grupos_autor:
+        detalle.append(f"Grupos que el autor separó con una línea más oscura, en #{linea_bloques_solida[1]} de lado a lado: "
+                       "bajo " + ", ".join(f"«{texto(primera, f).strip()[:25]}»" for f in sorted(grupos_autor))
+                       + marca([ref(primera, f) for f in sorted(grupos_autor)]))
     if solo_lineas:
         detalle.append(f"Solo líneas (como los publicados de {pub.get('nombre', 'la publicación')}): entre filas, matiz 1 "
                        f"{linea_rosa[1]}, también en la primera columna, que va sin fondo; la última fila, sin línea"

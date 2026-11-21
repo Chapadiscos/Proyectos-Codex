@@ -305,6 +305,10 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      esas columnas van a lo justo de su cabecera; las separaciones entre años se quedan (3 pt). Arg_02: 171 / 14-15 /
      21 / 51 pt (PDF ≈179 / 14 / 45). Además: si un paso quita fórmulas se quita calcChain.xml (libro dañado), la
      unidad de ancho de las formas solo con medidas positivas (columna 16384) y sumas acumuladas (no responde).
+     Grupos del autor (Indicadores): las filas que el autor separó con una línea más oscura que las demás bajo la
+     primera columna (Arg_02: «Diferencial soberano (cambio trimestral)», «Sobrevaloración cambiaria»…; Arg_03: «Activos
+     de los bancos…») llevan línea A32938 de lado a lado. En el mapa de calor, las rosas solo bajo los conceptos (no
+     sobre los colores) y la separación de 3 pt entre los conceptos y los colores (D) se queda.
    - **Herramienta «Igualar al modelo»** (orden `modelo`, petición del usuario, 2026-11-21): busca en la carpeta del
      original y en «Modelos» (junto a ella o en el proyecto) el EXCEL terminado más parecido (palabras en común sin
      países ni cifras, al menos un 50 %; si empatan, el último guardado) y copia de él, tal como esté guardado (con
