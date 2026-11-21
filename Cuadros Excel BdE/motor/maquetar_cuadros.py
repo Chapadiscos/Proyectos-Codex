@@ -1780,6 +1780,30 @@ def celdas_hoja(hoja_xml, compartidos):
     return celdas
 
 
+def cifras_ocultas(hoja_xml, estilos_xml):
+    """Celdas {(col, fila)} de un formato condicional que pone la letra del color del fondo (Arg_02, mapa de calor: las
+    cifras no se ven, solo el color): no cuentan para los anchos."""
+    dxfs = re.findall(r'<dxf>.*?</dxf>|<dxf/>', estilos_xml, re.S)
+
+    def esconde(i):
+        if i >= len(dxfs):
+            return False
+        letra = re.search(r'<font>.*?<color rgb="(\w+)"', dxfs[i], re.S)
+        fondo = re.search(r'<bgColor rgb="(\w+)"', dxfs[i])
+        return bool(letra and fondo and letra.group(1)[-6:].upper() == fondo.group(1)[-6:].upper())
+    ocultas = set()
+    for m in re.finditer(r'<conditionalFormatting\b[^>]*\bsqref="([^"]+)"[^>]*>(.*?)</conditionalFormatting>', hoja_xml, re.S):
+        if not any(esconde(int(i)) for i in re.findall(r'\bdxfId="(\d+)"', m.group(2))):
+            continue
+        for rango in m.group(1).split():
+            a, _, b = rango.partition(":")
+            ma, mb = RE_REF.match(a), RE_REF.match(b or a)
+            for c in range(col_num(ma.group(1)), col_num(mb.group(1)) + 1):
+                for f in range(int(ma.group(2)), int(mb.group(2)) + 1):
+                    ocultas.add((c, f))
+    return ocultas
+
+
 def sin_filas_ocultas(todas, hoja_xml):
     """Las celdas sin las de las filas que el autor ocultó (LATAM Arg_03: filas 4-7 con «#REF!» y 9-16, un bloque
     entero): no se ven en el publicado, así que no cuentan para la cabecera, los bloques, las sangrías ni los anchos."""
@@ -2397,6 +2421,7 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
             rangos = combinadas(hoja_xml)
     # El cuadro se busca con todas las celdas (las filas ocultas lo mantienen unido); para lo demás, sin las ocultas
     filas_ocultas = {f for (_, f) in todas} - {f for (_, f) in sin_filas_ocultas(todas, hoja_xml)}
+    no_se_ven = cifras_ocultas(hoja_xml, estilos.xml)
     todas = sin_filas_ocultas(todas, hoja_xml)
     while f1 < f2 and not any(todas.get((c, f1), {}).get("texto", "").strip() for c in range(c1, c2 + 1)):
         f1 += 1
@@ -2413,6 +2438,22 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
     # Cabecera hecha con cuadros de texto (DO26XX_02: símbolos de ecuación 𝑡, 𝛽, 𝜌, 𝜎² sobre las celdas vacías de la
     # fila 11): la fila de justo encima del cuadro, sin textos en celdas y con cuadros de texto anclados en sus
     # columnas, es la cabecera (el publicado la colorea como tal)
+    # Texto encima de la cabecera, separado de ella por filas ocultas o vacías, en una columna que tiene cabecera
+    # debajo (Arg_02: AB3 «Respecto al resto de los emergentes» sobre AB8 «Último dato (b)»): es la primera fila de
+    # la cabecera (el publicado le da sus tres líneas)
+    encima_cab = []
+    if f1 > 2:
+        visibles_c = [c for c in range(c1, c2 + 1) if ancho_col(c) > 0]
+        r = f1 - 1
+        while r > max(1, f1 - 8) and (r in filas_ocultas or not any(todas.get((c, r), {}).get("texto", "").strip() for c in visibles_c)):
+            r -= 1
+        if r < f1 - 1 and r not in filas_ocultas:
+            con_t = [c for c in visibles_c if todas.get((c, r), {}).get("texto", "").strip()]
+            primera_vis = next((c for c in visibles_c if any(todas.get((c, f), {}).get("texto", "").strip() for f in range(f1, f2 + 1))), c1)
+            if 1 <= len(con_t) <= 2 and all(c != primera_vis and todas.get((c, f1), {}).get("texto", "").strip() for c in con_t) \
+                    and not any(RE_UNIDADES.match(todas[(c, r)]["texto"]) or ROTULO.match(todas[(c, r)]["texto"]) for c in con_t):
+                encima_cab = [(c, r) for c in con_t]
+                f1 = r
     # Bloque de arriba (LATAM/Indicadores Macrofinancieros 01: «PIB per cápita… 2026» y «Esperanza de vida… 2024», dos
     # tablitas lado a lado encima de la tabla, separadas de ella por filas vacías): es parte del cuadro, con su año
     # arriba, los conceptos a la izquierda y los valores a la derecha; cada tablita lleva sus líneas en su ancho
@@ -2478,6 +2519,9 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
                 f2 -= 1
             break
     detalle.insert(0, f"Cuadro en {ref(c1, f1)}:{ref(c2, f2)} ({f2 - f1 + 1} filas, {c2 - c1 + 1} columnas)")
+    if encima_cab:
+        detalle.insert(1, "Texto encima de la cabecera, separado por filas ocultas, unido a ella: " + ", ".join(
+            f"{ref(*k)} «{todas[k]['texto'].strip()[:35]}»" for k in encima_cab) + marca([ref(*k) for k in encima_cab]))
     if bajadas:
         detalle.insert(1, "Cabecera: textos combinados por el autor desde la fila de los grupos, bajados a la última fila de "
                        "la cabecera, como el publicado: " + "; ".join(bajadas))
@@ -2631,9 +2675,12 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
     # Las demás solo se quedan si separan grupos: una cabecera combinada sobre varias columnas que acaba justo antes
     # o empieza justo después. Entre columnas sueltas sobran (publicado 3.1: las quitó) y se ocultan
     grupos = [(a1, a2) for a1, b1, a2, b2 in rangos if a2 > a1 and f1 <= b1 <= fin_cab]
+    # (con las columnas estrechas que llevan texto: Arg_02, los semestres «I S»/«II S» bajo cada año)
+    con_datos = [k for k in range(primera + 1, c2 + 1) if k not in separaciones and ancho_col(k) > 0]
+
     def separa_grupos(c):
-        antes = max([k for k in otras if k < c] or [0])
-        despues = min([k for k in otras if k > c] or [0])
+        antes = max([k for k in con_datos if k < c] or [0])
+        despues = min([k for k in con_datos if k > c] or [0])
         return any(a2 == antes or a1 == despues for a1, a2 in grupos if not (a1 < c < a2))
     sueltas_sep = [c for c in separaciones if not separa_grupos(c)]
     if sueltas_sep:
@@ -2645,6 +2692,22 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
         w_sep = ancho_comun(SEPARACION_PT, mdw, digito_windows(estilos.xml))
         ancho_previo = ancho_col
         ancho_col = lambda c, _v=ancho_previo, _s=set(separaciones), _w=w_sep, _p=set(pegada): 0.0 if c in _p else (_w if c in _s else _v(c))
+    # Columnas estrechas con texto que no les cabe en una línea (Arg_02: semestres de 14 pt y «II S» pide 14,3): se
+    # ensanchan lo justo, en múltiplos de 3 pt, a costa de la primera; así no se parten («II⏎S»)
+    ensanchadas = {}
+    for c in fijas:
+        if c in separaciones or c in pegada or ancho_col(c) == 0:
+            continue
+        pide = max([medir(l.strip(), CUERPO_CELDA) + 2 * RELLENO_CELDA_PT for f in range(f1, fin_cab + 1)
+                    if (c, f) not in tapadas and d(c, f)["texto"].strip() and not any(a1 == c and b1 == f and a2 > a1 for a1, b1, a2, b2 in rangos)
+                    for l in d(c, f)["texto"].split("\n")] or [0])
+        if pide > round(ancho_col(c) * mdw) + 0.01:
+            ensanchadas[c] = ancho_comun(MULTIPLO_PT * math.ceil(pide / MULTIPLO_PT - 1e-6), mdw, digito_windows(estilos.xml))
+    if ensanchadas:
+        detalle.append("Columnas estrechas con texto que no cabía en una línea, ensanchadas lo justo: " + ", ".join(
+            f"{ref(c, 1)[:-1]} {round(ancho_col(c) * mdw)}→{round(w * mdw)} pt" for c, w in sorted(ensanchadas.items())))
+        ancho_previo2 = ancho_col
+        ancho_col = lambda c, _v=ancho_previo2, _e=dict(ensanchadas): _e.get(c, _v(c))
     espacio_pt = (ancho_ret - sum(unidades_a_emu(ancho_col(c)) for c in list(range(1, primera)) + fijas)) / EMU_PT
     # Filas de suma (Memoria 2.1 publicado): sus cifras son la SUMA de las filas de justo debajo; van en Roboto
     # Medium como un subtotal (decisión del usuario, 2026-11-17), sin fondo
@@ -2687,6 +2750,8 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
                 continue
             t = vista(c, f).strip()
             mc = medir_de(c, f)
+            if (c, f) in no_se_ven:
+                continue
             w = mc(t, CUERPO_CELDA) if es_cifra(d(c, f)) and f > fin_cab else palabra(t, mc)
             tramo_cols = [k for k in otras if k == c or ((k, f) in tapadas and k > c and all((j, f) in tapadas for j in range(c + 1, k + 1)))]
             necesita[c] = max(necesita[c], w / max(1, len(tramo_cols)) + 2 * RELLENO_CELDA_PT)
@@ -2751,7 +2816,7 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
         pide = [necesita[c] for c in cols]
         for c in cols:
             for f in range(f1, fin_cab + 1):
-                if (c, f) in tapadas or not d(c, f)["texto"].strip():
+                if (c, f) in tapadas or not d(c, f)["texto"].strip() or (c, f) in encima_cab:
                     continue
                 if any(a1 == c and b1 == f and a2 > a1 for a1, b1, a2, b2 in rangos):
                     continue
@@ -2860,6 +2925,11 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
         medida = {c: max(ancho_justo([c]), necesita[c]) for c in otras}
         # Columnas que solo llevan valores del bloque de arriba (Arg_01: D, «14.643,7»): a lo justo, aparte
         solo_bloque = [c for c in otras if not any(d(c, f)["texto"].strip() for f in range(f1, f2 + 1))]
+        # …y las de solo color (mapa de calor, Arg_02: «2026» y «Último dato (b)», con las cifras escondidas): a lo
+        # justo de su cabecera; lo que sobra, a la primera columna
+        solo_bloque += [c for c in otras if c not in solo_bloque and all(
+            (c, f) in no_se_ven for f in range(fin_cab + 1, f2 + 1) if d(c, f)["texto"].strip())
+            and any(d(c, f)["texto"].strip() for f in range(fin_cab + 1, f2 + 1))]
         reparten = [c for c in otras if c not in solo_bloque]
         if natural + sum(medida.values()) <= espacio_pt and reparten:
             # La primera columna cabe en una línea (01: «Deuda local en manos de no residentes (% del total)»): a su
@@ -3145,6 +3215,7 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
         nuevos_anchos[c] = 0
     for c in otras:
         nuevos_anchos[c] = ancho_comun(otros_pt[c], mdw, mdw_win)
+    nuevos_anchos.update(ensanchadas)
     ancho_col_viejo = ancho_col
     ancho_col = lambda c, _v=ancho_col_viejo: nuevos_anchos.get(c, _v(c))
     total_pt = sum(round(ancho_col(c) * mdw) for c in range(1, c2 + 1))
@@ -3775,7 +3846,12 @@ def cabeceras(z, hoja, cuadro, pub):
                 # línea del color de la publicación bajo cada texto de cabecera (los grupos, solo en su ancho) y bajo
                 # toda la última fila; las columnas de separación, sin línea (hueco entre grupos)
                 lados = {}
-                if not estrecha and (f == fin_cab or (texto(*ancla) and f == b2 and not unidades)):
+                # Sin línea bajo un texto suelto que va encima de otra cabecera de su columna (Arg_02: «Respecto al resto
+                # de los emergentes» sobre «Último dato (b)»; el publicado no la lleva)
+                debajo_c = next((g for g in range(b2 + 1, fin_cab + 1) if texto(c, g)), None)
+                nota = (a1 == a2 and texto(*ancla) and debajo_c is not None
+                        and sum(1 for k in range(c1, c2 + 1) if texto(k, b1)) <= 2)
+                if not estrecha and not nota and (f == fin_cab or (texto(*ancla) and f == b2 and not unidades)):
                     lados["bottom"] = ("thin", pub["color"].upper())
                 nuevos[(c, f)] = estilos.variante(estilo(c, f), relleno="", borde=lados, letra="000000")
                 continue
