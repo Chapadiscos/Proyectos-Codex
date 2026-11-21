@@ -89,6 +89,7 @@ struct Respuesta: Decodable {
     let original: String?
     let terminado: String?
     let ancla_original: [Int]?
+    let encuadre_pt: [Double]?
     let borrados: [String]?
 }
 
@@ -832,7 +833,10 @@ final class Taller: ObservableObject {
                         // retícula entera desde A1 (petición del usuario, 2026-11-21)
                         let sitio = await self.colocarVentanas()
                         if sitio.count == 4 { await Taller.fijarVentana(url, sitio) }
-                        let medidas = [Int(self.reticula.ancho * 1.04), Int(self.reticula.alto * 1.04)]
+                        // Encuadrado en lo que ocupa el cuadro (de la pastilla al final de FUENTES), no en la retícula
+                        // entera, que es tan alta como la página (petición del usuario, 2026-11-21)
+                        let caja = (r.encuadre_pt?.count == 2) ? (r.encuadre_pt![0], r.encuadre_pt![1]) : (self.reticula.ancho, self.reticula.alto)
+                        let medidas = [Int(caja.0 * 1.04), Int(caja.1 * 1.04)]
                         // (el original del autor no se toca: se coloca ya abierto, no escribiendo en el archivo)
                         let guion = """
                         -- Abre (como desde el Finder) y coloca un libro; con zFijo > 0, ese zoom; si no, el que encuadra la

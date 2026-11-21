@@ -5129,7 +5129,34 @@ def terminar(trabajo):
     shutil.copyfile(copia_actual(trabajo), destino)
     os.chmod(destino, 0o644)
     return {"terminado": str(destino), "original": str(origen) if origen.name else None,
-            "ancla_original": ancla_reticula_original(origen, estado.get("hoja")), "borrados": borrar_generados(trabajo)}
+            "ancla_original": ancla_reticula_original(origen, estado.get("hoja")),
+            "encuadre_pt": encuadre_cuadro(destino, estado.get("hoja")), "borrados": borrar_generados(trabajo)}
+
+
+def encuadre_cuadro(archivo, hoja=None):
+    """[ancho, alto] en pt de lo que ocupa el cuadro desde A1: el ancho de la retícula y, de alto, hasta el final del
+    cuadro de FUENTES (o de la forma más baja dentro de la retícula). La app encuadra Excel en eso, no en la retícula
+    entera, que es tan alta como la página (petición del usuario, 2026-11-21). None si no se puede medir."""
+    try:
+        with zipfile.ZipFile(archivo) as z:
+            hoja = hoja or hoja_cuadro(z)[0]
+            ruta = dibujo_de_hoja(z, hoja)
+            if not ruta or ruta not in z.namelist():
+                return None
+            dibujo = z.read(ruta).decode("utf-8")
+            medir = medidas_hoja(z, hoja, dibujo)
+            ancho_ret, alto_ret = (v / EMU_PT for v in tamano(plantilla()["grupo"], escala_grupo=True))
+            abajo = 0.0
+            for m in ANCLA.finditer(dibujo):
+                a = m.group(0)
+                if es_reticula(a):
+                    continue
+                x, y, w, h = medir(a)
+                if y / EMU_PT < alto_ret and x / EMU_PT < ancho_ret:
+                    abajo = max(abajo, (y + h) / EMU_PT)
+            return [round(ancho_ret, 1), round(min(max(abajo, 100), alto_ret), 1)] if abajo else None
+    except (OSError, zipfile.BadZipFile, KeyError, Fallo, AttributeError):
+        return None
 
 
 def ancla_reticula_original(origen, hoja=None):
