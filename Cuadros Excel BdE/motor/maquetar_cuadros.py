@@ -877,8 +877,9 @@ def medidas_hoja(z, hoja_nombre, dibujo):
     filas = altos_filas(z, hoja_nombre)
     altos, defecto = filas
     hoja = z.read(hoja_de(z, hoja_nombre)).decode("utf-8")
-    cols = [(int(a), int(b), float(w)) for a, b, w in
-            re.findall(r'<col\b[^>]*?\bmin="(\d+)"[^>]*?\bmax="(\d+)"[^>]*?\bwidth="([\d.]+)"', hoja)]
+    # Las ocultas miden 0 (Arg_02: A y B ocultas con su ancho guardado)
+    cols = [(int(a), int(b), 0.0 if re.search(r'\bhidden="(1|true)"', c) else float(w)) for c, a, b, w in
+            re.findall(r'(<col\b[^>]*?\bmin="(\d+)"[^>]*?\bmax="(\d+)"[^>]*?\bwidth="([\d.]+)"[^>]*>)', hoja)]
     dc = re.search(r'\bdefaultColWidth="([\d.]+)"', hoja)
     dc = float(dc.group(1)) if dc else 8.43
 
@@ -900,6 +901,9 @@ def medidas_hoja(z, hoja_nombre, dibujo):
             c1, o1, c2, o2 = map(int, c.groups())
             if suma_cols(c2) > suma_cols(c1):
                 medidas.append((int(ext.group(1)) - o2 + o1) / (suma_cols(c2) - suma_cols(c1)))
+    # Solo las medidas que tienen sentido (Arg_02: con formas del autor de ancho cero o descolocadas salía 0 y todo
+    # caía en la última columna de Excel, que no existe: el libro salía dañado)
+    medidas = [x for x in medidas if x > 0]
     unidad = sorted(medidas)[len(medidas) // 2] if medidas else 7 * 9525
 
     acum_filas = [0]
@@ -928,7 +932,7 @@ def medidas_hoja(z, hoja_nombre, dibujo):
     def a_celda(x, y):
         """(col, colOff, fila, rowOff) del punto (x, y) en EMU desde A1."""
         c = 0
-        while c < 16384 and round(unidad * suma_cols(c + 1)) <= x:
+        while c < 16383 and round(unidad * suma_cols(c + 1)) <= x:
             c += 1
         r = 0
         while r < 1048576 and fila_y(r + 1, 0) <= y:
