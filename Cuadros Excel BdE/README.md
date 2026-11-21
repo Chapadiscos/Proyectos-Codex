@@ -271,6 +271,15 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      copia de la FUENTE en la fila 62 subía dentro de la retícula).
    - **Cabecera de grupo en una combinada encima de la tabla** (Economía Latinoamericana 01: B3:G3 «Tasas de variación
      interanual» sobre B4:G4): no se toma por unas unidades; es la primera fila de la cabecera.
+   - **Economía Latinoamericana 05** (2026-11-21, «me refiero a esas»): `respetar_saltos_cabecera` (el salto del autor
+     se queda, sin espacios alrededor: «Promedio⏎2007-2024»), `cabecera_abajo` (texto combinado en vertical desde la
+     fila de los grupos, pasando por filas ocultas, se descombina y baja a la última fila de la cabecera: «Promedio»
+     y «2025»; en el 04 «Expectativas…» ocupa dos filas visibles y se queda) y herramienta «Probar letra a 6 pt» (el
+     mínimo de la guía; el 05 publicado va a 6 pt): 05 a 6 pt, primera 105 pt y datos iguales de 36 (publicado 132/36,
+     se salía de la retícula), filas de 9 pt.
+   - **Cuadros que no caben en altura** (todas las publicaciones): si las filas suman más de lo que deja la retícula
+     (pastilla, 4 mm, 5 mm y FUENTES estimada por su texto), bajan en proporción sin bajar de 1,5 veces la letra (05 a
+     6 pt: 9 pt, como el publicado; Memoria 4.2 a 7,5: 11,5 pt por línea; a 6,5 cabe y no cambia).
    - **«LATAM/Indicadores Macrofinancieros»** (cuadros con país, C_EconomiaLatinoamericana_<País>_NN, 2026-11-20; ante
      la duda manda el Illustrator publicado, no el Excel): `solo_lineas` (cabecera sin fondo y en negro, línea A32938
      bajo cada texto —los grupos solo en su ancho— y bajo la última fila; entre filas, matiz 1 F3CED3 de lado a lado,

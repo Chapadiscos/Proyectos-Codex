@@ -2331,6 +2331,36 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
     rangos = combinadas(hoja_xml)
     ancho_col = anchos_columnas(hoja_xml)
     c1, f1, c2, f2 = buscar_tabla(todas, rangos, ancho_col, unidades_a_emu, ancho_ret, estilos)
+    # Cabecera abajo (LATAM/Economía Latinoamericana, publicado 05: «Promedio⏎2007-2024» y «2025», combinadas por el
+    # autor de la fila de los grupos a la de abajo pasando por filas ocultas, van solo en la fila de abajo, con «2026»,
+    # «2027» y los trimestres): se descombinan y el texto baja. Solo si la combinada pasa por filas ocultas (en el 04,
+    # «Expectativas de mercado a 1 año» ocupa sus dos filas visibles, como en su publicado)
+    bajadas = []
+    if pub.get("cabecera_abajo"):
+        ocultas_h = {int(r) for r in re.findall(r'<row\b(?=[^>]*\bhidden="1")[^>]*?\br="(\d+)"', hoja_xml)}
+        for a1, b1, a2, b2 in list(rangos):
+            if not (a1 == a2 and c1 < a1 <= c2 and f1 <= b1 < b2 <= f2) or not any(b1 < f < b2 for f in ocultas_h):
+                continue
+            otras_abajo = any(todas.get((c, b2), {}).get("texto", "").strip() for c in range(c1, c2 + 1) if c != a1)
+            otras_arriba = any(todas.get((c, b1), {}).get("texto", "").strip() for c in range(c1, c2 + 1) if c != a1)
+            arriba = todas.get((a1, b1))
+            if not (otras_abajo and otras_arriba and arriba and arriba["texto"].strip()):
+                continue
+            ra, rb = ref(a1, b1), ref(a1, b2)
+            nueva = re.sub(r'\br="[A-Z]+\d+"', f'r="{rb}"', arriba["xml"], count=1)
+            vacia = re.sub(r'\st="\w+"', "", re.match(r'<c\b[^>]*?(?=/?>)', arriba["xml"]).group(0)) + "/>"
+            if not re.search(rf'<c r="{rb}"[^>]*?(?:/>|>.*?</c>)', hoja_xml, re.S):
+                continue
+            hoja_xml = re.sub(rf'<c r="{ra}"[^>]*?(?:/>|>.*?</c>)', lambda m: vacia, hoja_xml, count=1, flags=re.S)
+            hoja_xml = re.sub(rf'<c r="{rb}"[^>]*?(?:/>|>.*?</c>)', lambda m: nueva, hoja_xml, count=1, flags=re.S)
+            hoja_xml = re.sub(rf'<mergeCell ref="{ra}:{rb}"\s*/>', "", hoja_xml)
+            bajadas.append(f"{ra} «{arriba['texto'].strip().replace(chr(10), ' ')[:30]}» → {rb}")
+        if bajadas:
+            n_comb = len(re.findall(r'<mergeCell\b', hoja_xml))
+            hoja_xml = re.sub(r'<mergeCells count="\d+"', f'<mergeCells count="{n_comb}"', hoja_xml)
+            hoja_xml = re.sub(r'<mergeCells count="0"\s*>\s*</mergeCells>|<mergeCells count="0"\s*/>', "", hoja_xml)
+            todas = celdas_hoja(hoja_xml, compartidos)
+            rangos = combinadas(hoja_xml)
     # El cuadro se busca con todas las celdas (las filas ocultas lo mantienen unido); para lo demás, sin las ocultas
     filas_ocultas = {f for (_, f) in todas} - {f for (_, f) in sin_filas_ocultas(todas, hoja_xml)}
     todas = sin_filas_ocultas(todas, hoja_xml)
@@ -2375,6 +2405,9 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
                 f2 -= 1
             break
     detalle.insert(0, f"Cuadro en {ref(c1, f1)}:{ref(c2, f2)} ({f2 - f1 + 1} filas, {c2 - c1 + 1} columnas)")
+    if bajadas:
+        detalle.insert(1, "Cabecera: textos combinados por el autor desde la fila de los grupos, bajados a la última fila de "
+                       "la cabecera, como el publicado: " + "; ".join(bajadas))
     if fuera_autor:
         detalle.insert(1, "Columnas a la derecha de la retícula del autor, separadas por columnas vacías: fuera del cuadro, "
                        "sin tocar (como el publicado): " + ", ".join(ref(c, 1)[:-1] for c in fuera_autor)
@@ -3069,7 +3102,14 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
                 lineas[(c, f)] = len(partes)
             else:
                 mc = medir_de(c, f)
-                if f <= fin_cab and "\n" in t.strip() and not re.search(r"\n\s*\(", t):
+                # (salvo en las publicaciones que los respetan: LATAM/Economía Latinoamericana 05, «Promedio⏎2007-2024»)
+                if f <= fin_cab and pub.get("respetar_saltos_cabecera") and re.search(r"[ \t]*\r?\n[ \t]*", t.strip()) \
+                        and indice_rico(x, compartidos) is None:
+                    # Salto del autor respetado, sin los espacios de alrededor («Promedio⏎ 2007-2024»)
+                    limpio = re.sub(r"[ \t]*\r?\n[ \t]*", "\n", t.strip())
+                    if limpio != t:
+                        nuevo = t = limpio
+                if f <= fin_cab and "\n" in t.strip() and not re.search(r"\n\s*\(", t) and not pub.get("respetar_saltos_cabecera"):
                     # Salto de línea del autor en una cabecera que cabe en una línea: sobra (publicado 3.1,
                     # «Peso VAB⏎2023» → «Peso VAB 2023»); el de antes de un paréntesis se queda (publicado 1.5,
                     # «Deflactor del VAB⏎(crecimiento interanual promedio)»)
@@ -3161,6 +3201,25 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
         altos[f] = alto_fila(max(n, 1))
         if f > fin_cab and not pub.get("centrado_en_altura") and any(lineas.get((c, f), 0) > 1 for c in range(primera + 1, c2 + 1)):
             arriba.add(f)
+    # Cuadros que no caben en la altura de la retícula (Economía Latinoamericana 05: 57 filas de 14 pt son unos 800 pt
+    # y la retícula mide 702; el publicado va a 9 pt): las filas bajan en proporción, sin bajar de 1,5 veces la letra
+    pl_ = plantilla()
+    alto_util = tamano(pl_["grupo"], escala_grupo=True)[1] / EMU_PT - tamano(pl_["pastilla_modelo"])[1] / EMU_PT \
+        - CABECERA_BAJO_PASTILLA - FUENTES_BAJO_CUADRO
+    for anc in ANCLA.finditer(dibujo):
+        lineas_f = html.unescape(texto_forma(anc.group(0))).strip().split("\n")
+        if ROTULO.match(lineas_f[0]):
+            # Por su texto, no por su marco (el de la plantilla mide 30 mm aunque lleve una línea): líneas de 7 pt con
+            # interlineado de 8,5, unas 150 letras por línea en el ancho de la retícula
+            alto_util -= sum(max(1, math.ceil(len(l) / 150)) for l in lineas_f) * 8.5 + 4
+            break
+    total_altos = sum(altos.values())
+    if total_altos > alto_util > 0:
+        unidad = max(1.5 * CUERPO_CELDA, math.floor(ALTOS_FILA[1] * alto_util / total_altos * 4) / 4)
+        altos = {f: round(h * unidad / ALTOS_FILA[1] * 4) / 4 for f, h in altos.items()}
+        detalle.append(f"El cuadro no cabe en la altura de la retícula ({total_altos:g} pt de filas y caben {alto_util:.0f}): "
+                       f"filas de {unidad:g} pt por línea en vez de {ALTOS_FILA[1]}".replace(".", ",")
+                       + ("" if unidad > 1.5 * CUERPO_CELDA else " (el mínimo, 1,5 veces la letra" + (": valora bajar la letra)" if CUERPO_CELDA > 6 else ")")))
     cuenta = Counter(altos.values())
     detalle.append("Alto de fila: " + ", ".join(f"{h:g} pt ({n} fila{'s' if n > 1 else ''})" for h, n in sorted(cuenta.items())))
     if arriba:
@@ -4223,6 +4282,11 @@ def letra65(trabajo, pid=None):
     return letra_pequena(trabajo, pid, 6.5)
 
 
+def letra6(trabajo, pid=None):
+    """Lo mismo a 6 pt, el mínimo de la guía (petición del usuario, 2026-11-21: Economía Latinoamericana 05 publicado)."""
+    return letra_pequena(trabajo, pid, 6)
+
+
 def letra_pequena(trabajo, pid=None, cuerpo=LETRA_PEQUENA):
     """Rehace los pasos 2, 3 y 4 (los que haya hasta la versión elegida) con la letra de las celdas a 7 pt, desde
     la versión del paso 1, y lo guarda como una versión nueva: las de 7,5 pt se quedan para volver a ellas
@@ -4834,7 +4898,7 @@ def info(archivo):
 
 ORDENES = {"empezar": empezar, "estado": lambda t: {"trabajo": t, **leer_estado(t)}, "ir": ir, "reiniciar": reiniciar,
            "paso1": paso1, "paso2": paso2,
-           "paso3": paso3, "paso4": paso4, "letra7": letra7, "letra65": letra65, "linea_oscura": linea_oscura, "aplicar": aplicar,
+           "paso3": paso3, "paso4": paso4, "letra7": letra7, "letra65": letra65, "letra6": letra6, "linea_oscura": linea_oscura, "aplicar": aplicar,
            "comparar": comparar, "terminar": terminar, "info": info, "publicaciones": lambda: {},
            "guardar_publicacion": guardar_publicacion, "borrar_publicacion": borrar_publicacion, "paletas": paletas}
 
