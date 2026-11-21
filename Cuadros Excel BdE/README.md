@@ -311,6 +311,10 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      sobre los colores) y la separación de 3 pt entre los conceptos y los colores (D) se queda.
      Letra: `cuerpo_mapa_calor` 7 pt (todos los 02 publicados de los grandes van a 7; los demás cuadros de Indicadores,
      6,5). Columnas estrechas: medio punto de tolerancia antes de ensancharlas (a 7 pt «II S» pide 15,1 → 15 pt).
+   - **Aviso de cuadro que se sale de la retícula** (petición del usuario, 2026-11-21): en cada paso desde «Celdas», si
+     las columnas del cuadro miden más que la retícula o si la tabla o FUENTES (medida por su texto, no por su marco)
+     acaban más abajo, «Aviso: …» con los puntos que sobran y qué probar (letra más pequeña, acortar notas, quitar filas
+     vacías). Hoy: Economía Latinoamericana 05 a 7,5 pt (sobran 32) y Memoria 4.2 a 7,5 (sobran 12).
    - **Herramienta «Igualar al modelo»** (orden `modelo`, petición del usuario, 2026-11-21): busca en la carpeta del
      original y en «Modelos» (junto a ella o en el proyecto) el EXCEL terminado más parecido (palabras en común sin
      países ni cifras, al menos un 50 %; si empatan, el último guardado) y copia de él, tal como esté guardado (con

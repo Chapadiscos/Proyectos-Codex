@@ -183,6 +183,9 @@ def nuevo_paso(trabajo, titulo, cambios, detalle, extra=None, propuestas=None, a
     n = actual + 1
     archivo = f"{n:02d} {titulo}.xlsx"
     reescribir_zip(pasos / estado["pasos"][actual]["archivo"], pasos / archivo, cambios)
+    # ¿Se sale el cuadro de la retícula? (petición del usuario, 2026-11-21: avisar para ver cómo reducirlo)
+    if extra and isinstance(extra, dict) and "c1" in extra:
+        detalle = list(detalle) + desborde(pasos / archivo, estado.get("hoja"), extra)
     solo_lectura(pasos / archivo)
     shutil.copyfile(pasos / archivo, trabajo)
     estado["pasos"].append({"n": n, "titulo": titulo, "archivo": archivo, "detalle": detalle, **({"cuadro": extra} if extra else {}),
@@ -5131,6 +5134,50 @@ def terminar(trabajo):
     return {"terminado": str(destino), "original": str(origen) if origen.name else None,
             "ancla_original": ancla_reticula_original(origen, estado.get("hoja")),
             "encuadre_pt": encuadre_cuadro(destino, estado.get("hoja")), "borrados": borrar_generados(trabajo)}
+
+
+def desborde(archivo, hoja, cuadro):
+    """Avisos si el cuadro se sale de la retícula: de ancho (las columnas del cuadro) o de alto (hasta el final de la
+    tabla o del cuadro de FUENTES, lo que acabe más abajo)."""
+    avisos = []
+    try:
+        with zipfile.ZipFile(archivo) as z:
+            hoja = hoja or hoja_cuadro(z)[0]
+            x = z.read(hoja_de(z, hoja)).decode("utf-8")
+            mdw = digito_maximo(z.read("xl/styles.xml").decode("utf-8"))
+            ancho_col = anchos_columnas(x)
+            altos, defecto = altos_filas(z, hoja)
+            ancho_ret, alto_ret = (v / EMU_PT for v in tamano(plantilla()["grupo"], escala_grupo=True))
+            ancho = sum(round(ancho_col(c) * mdw) for c in range(1, cuadro["c2"] + 1))
+            fin_tabla = sum(altos.get(f, defecto) for f in range(cuadro["f2"])) / EMU_PT
+            fin_fuentes = 0.0
+            ruta = dibujo_de_hoja(z, hoja)
+            if ruta and ruta in z.namelist():
+                dibujo = z.read(ruta).decode("utf-8")
+                medir = medidas_hoja(z, hoja, dibujo)
+                for m in ANCLA.finditer(dibujo):
+                    a = m.group(0)
+                    lineas_f = html.unescape(texto_forma(a)).strip().split("\n")
+                    if es_reticula(a) or not ROTULO.match(lineas_f[0]):
+                        continue
+                    xx, y, w, h = medir(a)
+                    # por su texto, no por su marco (el de la plantilla mide 30 mm aunque lleve una línea), como al
+                    # comprimir las filas
+                    alto_texto = sum(max(1, math.ceil(len(l) / 150)) for l in lineas_f) * 8.5 + 4
+                    if y / EMU_PT < alto_ret:
+                        fin_fuentes = max(fin_fuentes, y / EMU_PT + min(h / EMU_PT, alto_texto))
+    except (OSError, zipfile.BadZipFile, KeyError, Fallo, AttributeError):
+        return avisos
+    if ancho > ancho_ret + 1:
+        avisos.append(f"Aviso: el cuadro mide {ancho:.0f} pt de ancho y la retícula {ancho_ret:.0f}: se sale {ancho - ancho_ret:.0f} pt "
+                      "(prueba una letra más pequeña o revisa las columnas a su medida)")
+    abajo = max(fin_tabla, fin_fuentes)
+    if abajo > alto_ret + 1:
+        que = "FUENTES acaba" if fin_fuentes >= fin_tabla else "la tabla acaba"
+        avisos.append(f"Aviso: el cuadro no cabe en la retícula: {que} a {abajo:.0f} pt y la retícula mide {alto_ret:.0f}; "
+                      f"sobran {abajo - alto_ret:.0f} pt (prueba una letra más pequeña, acorta las notas de FUENTES o "
+                      "quita filas vacías)")
+    return avisos
 
 
 def encuadre_cuadro(archivo, hoja=None):
