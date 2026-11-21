@@ -882,8 +882,15 @@ def medidas_hoja(z, hoja_nombre, dibujo):
     dc = re.search(r'\bdefaultColWidth="([\d.]+)"', hoja)
     dc = float(dc.group(1)) if dc else 8.43
 
+    # Sumas acumuladas (Arg_02: una forma del autor más allá de la columna 11.000 hacía que sumar columna a columna
+    # tardara minutos)
+    acumulado = [0.0]
+
     def suma_cols(c):
-        return sum(next((w for a, b, w in cols if a <= i + 1 <= b), dc) for i in range(c))
+        while len(acumulado) <= c:
+            i = len(acumulado) - 1
+            acumulado.append(acumulado[-1] + next((w for a, b, w in cols if a <= i + 1 <= b), dc))
+        return acumulado[c]
     medidas = []
     for m in ANCLA.finditer(dibujo):
         c = re.search(r'<xdr:from><xdr:col>(\d+)</xdr:col><xdr:colOff>(-?\d+)</xdr:colOff>.*?'
@@ -895,8 +902,12 @@ def medidas_hoja(z, hoja_nombre, dibujo):
                 medidas.append((int(ext.group(1)) - o2 + o1) / (suma_cols(c2) - suma_cols(c1)))
     unidad = sorted(medidas)[len(medidas) // 2] if medidas else 7 * 9525
 
+    acum_filas = [0]
+
     def fila_y(r, off):
-        return sum(altos.get(i, defecto) for i in range(r)) + off
+        while len(acum_filas) <= r:
+            acum_filas.append(acum_filas[-1] + altos.get(len(acum_filas) - 1, defecto))
+        return acum_filas[r] + off
 
     def medir(ancla):
         pos = re.search(r'<xdr:pos x="(-?\d+)" y="(-?\d+)"/>\s*<xdr:ext cx="(\d+)" cy="(\d+)"/>', ancla)
@@ -917,10 +928,10 @@ def medidas_hoja(z, hoja_nombre, dibujo):
     def a_celda(x, y):
         """(col, colOff, fila, rowOff) del punto (x, y) en EMU desde A1."""
         c = 0
-        while round(unidad * suma_cols(c + 1)) <= x and c < 16000:
+        while c < 16384 and round(unidad * suma_cols(c + 1)) <= x:
             c += 1
         r = 0
-        while fila_y(r + 1, 0) <= y and r < 100000:
+        while r < 1048576 and fila_y(r + 1, 0) <= y:
             r += 1
         return c, round(x - round(unidad * suma_cols(c))), r, round(y - fila_y(r, 0))
     medir.a_celda = a_celda
@@ -2855,10 +2866,10 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
                            f"({parte:.0f} pt)" + (", salvo las del bloque de arriba, a lo justo" if solo_bloque else ""))
         else:
             primera_pt = espacio_pt - sum(medida.values())
+            detalle.append("Cada columna de datos a lo justo (su cabecera en una línea o su cifra más ancha) y la primera, el "
+                       f"resto ({primera_pt:.0f} pt), como los publicados de " + pub.get("nombre", "la publicación"))
         necesita = dict(medida)
         resto = max(medida.values())
-        detalle.append("Cada columna de datos a lo justo (su cabecera en una línea o su cifra más ancha) y la primera, el "
-                       f"resto ({primera_pt:.0f} pt), como los publicados de " + pub.get("nombre", "la publicación"))
     elif otras and pub.get("datos_a_lo_justo") and ancho_justo(otras) * len(otras) + minimo <= espacio_pt:
         # Columnas de datos a lo justo (Documentos Ocasionales, decisión del usuario, 2026-11-19, publicados DO26XX_03
         # y 04): todas iguales, del ancho de la cabecera más larga en una línea (o de la cifra más ancha) y la primera,
