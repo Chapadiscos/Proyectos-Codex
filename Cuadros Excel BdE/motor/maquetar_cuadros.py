@@ -3324,7 +3324,8 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
                     if ancho_col(c) == 0:
                         continue
                     x = d(c, f)
-                    al = {"horizontal": "left" if c == e else "right", "vertical": "center"}
+                    # años y valores centrados, como en el original y en la tabla (petición del usuario, 2026-11-21)
+                    al = {"horizontal": "left" if c == e else "center", "vertical": "center"}
                     s_ = estilos.nuevo(x["s"], al, cuerpo=CUERPO_CELDA)
                     lados = {}
                     if f == bloque["cabecera"]:
