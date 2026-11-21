@@ -197,9 +197,24 @@ def reescribir_zip(origen, destino, cambios):
     en_memoria = isinstance(destino, io.BytesIO)
     tmp = destino if en_memoria else Path(str(destino) + ".tmp")
     with zipfile.ZipFile(origen) as zin, zipfile.ZipFile(tmp, "w") as zout:
+        # Si una hoja pierde fórmulas (Arg_02: las cabeceras «II S» eran =D2!$D$3 y pasan a texto), la cadena de
+        # cálculo del libro (calcChain.xml) apunta a fórmulas que ya no están y Excel da el libro por dañado: se
+        # quita y Excel la rehace al abrir
+        nombres_zip = zin.namelist()
+        quitar_calc = "xl/calcChain.xml" in nombres_zip and any(
+            n.startswith("xl/worksheets/") and n in nombres_zip and datos is not None
+            and len(re.findall(rb"<f[ >]", datos)) < len(re.findall(rb"<f[ >]", zin.read(n)))
+            for n, datos in cambios.items())
         for info in zin.infolist():
+            if quitar_calc and info.filename == "xl/calcChain.xml":
+                continue
             datos = cambios.get(info.filename)
-            zout.writestr(info, datos if datos is not None else zin.read(info.filename))
+            datos = datos if datos is not None else zin.read(info.filename)
+            if quitar_calc and info.filename == "[Content_Types].xml":
+                datos = re.sub(rb'<Override\b[^>]*PartName="/xl/calcChain\.xml"[^>]*/>', b"", datos)
+            if quitar_calc and info.filename == "xl/_rels/workbook.xml.rels":
+                datos = re.sub(rb'<Relationship\b[^>]*Target="(?:/xl/)?calcChain\.xml"[^>]*/>', b"", datos)
+            zout.writestr(info, datos)
     if not en_memoria:
         os.replace(tmp, destino)
 
