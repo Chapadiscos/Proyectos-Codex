@@ -3409,12 +3409,16 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
         izquierda |= nombres
 
     # Altos de fila y alineación en altura
-    altos, arriba = {}, set()
+    altos, arriba, filas_dos = {}, set(), []
     for f in range(f1, f2 + 1):
         n = max([lineas.get((c, f), 0) for c in range(c1, c2 + 1) if filas_comb.get((c, f), 1) == 1] or [0])
         if n == 0 and not any(d(c, f)["texto"].strip() for c in range(c1, c2 + 1)):
             continue   # fila vacía (separación del autor): se queda como está
         altos[f] = alto_fila(max(n, 1))
+        # Filas de dos líneas a 6,5 pt (LATAM/Indicadores Macrofinancieros, Arg_03: 24 pt, como el original y el
+        # publicado; petición del usuario, 2026-11-21, en principio solo para esta publicación)
+        if pub.get("alto_dos_lineas_65") and max(n, 1) == 2 and abs(CUERPO_CELDA - 6.5) < 0.01:
+            filas_dos.append(f)
         if f > fin_cab and not pub.get("centrado_en_altura") and any(lineas.get((c, f), 0) > 1 for c in range(primera + 1, c2 + 1)):
             arriba.add(f)
     estilos_bloque = {}
@@ -3469,6 +3473,11 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
             alto_util -= sum(max(1, math.ceil(len(l) / 150)) for l in lineas_f) * 8.5 + 4
             break
     total_altos = sum(altos.values())
+    if filas_dos and not total_altos > alto_util > 0:
+        # (solo si el cuadro cabe en altura: si no, se comprimen todas por igual, como hasta ahora)
+        for f in filas_dos:
+            altos[f] = float(pub["alto_dos_lineas_65"])
+        total_altos = sum(altos.values())
     if total_altos > alto_util > 0:
         unidad = max(1.5 * CUERPO_CELDA, math.floor(ALTOS_FILA[1] * alto_util / total_altos * 4) / 4)
         altos = {f: round(h * unidad / ALTOS_FILA[1] * 4) / 4 for f, h in altos.items()}

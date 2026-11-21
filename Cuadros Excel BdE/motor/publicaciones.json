@@ -26,6 +26,6 @@
     {"id": "economia-latinoamericana", "nombre": "LATAM/Economía Latinoamericana", "color": "A32938", "tema": null, "rotulo_y_titulo_en_color": true, "primera_como_datos": true,
      "centrado_en_altura": true, "bloques_sin_fondo": true, "esquina_una_fila": true, "apartados_sin_linea_blanca": true, "titulos_bloque_desbordan": true, "linea_entre_bloques": true, "respetar_saltos_cabecera": true, "cabecera_abajo": true},
     {"id": "indicadores-macrofinancieros", "nombre": "LATAM/Indicadores Macrofinancieros", "color": "A32938", "tema": null,
-     "rotulo_y_titulo_en_color": true, "solo_lineas": true, "cuerpo_celda": 6.5, "cuerpo_mapa_calor": 7, "cuerpo_grupos_cabecera": 7, "datos_cada_uno_a_lo_justo": true, "bloque_arriba": true, "centrado_en_altura": true, "linea_entre_bloques": true}
+     "rotulo_y_titulo_en_color": true, "solo_lineas": true, "cuerpo_celda": 6.5, "cuerpo_mapa_calor": 7, "cuerpo_grupos_cabecera": 7, "alto_dos_lineas_65": 24, "datos_cada_uno_a_lo_justo": true, "bloque_arriba": true, "centrado_en_altura": true, "linea_entre_bloques": true}
   ]
 }
