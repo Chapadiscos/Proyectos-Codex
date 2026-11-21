@@ -2189,6 +2189,7 @@ def salto_cabecera(texto, ancho, medir):
     return min(candidatos)[2] if candidatos else None
 
 
+ALTO_FILA_PUNTOS = 21       # filas con puntos dibujados (publicado de Economía Latinoamericana 04)
 MARCADOR_MAX = 4 * EMU_MM   # formas pequeñas (puntos de un gráfico en celdas): se mueven sin cambiar de tamaño
 RE_EXTREMO = re.compile(r'<xdr:(from|to)>\s*<xdr:col>(\d+)</xdr:col>\s*<xdr:colOff>(-?\d+)</xdr:colOff>\s*'
                         r'<xdr:row>(\d+)</xdr:row>\s*<xdr:rowOff>(-?\d+)</xdr:rowOff>\s*</xdr:(?:from|to)>')
@@ -2690,7 +2691,36 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
     pub = pub or {}
     textos_cuadro = bool(otras) and pub.get("cuadros_de_texto") and not por_nombres and not any(
         es_cifra(d(c, f)) for f in range(fin_cab + 1, f2 + 1) for c in otras if (c, f) not in tapadas and d(c, f)["texto"].strip())
-    if textos_cuadro:
+    # Columnas de formas (Economía Latinoamericana 04: la escala DOVISH-NEUTRAL-HAWKISH, sin textos en el cuerpo y con
+    # puntos y flechas dibujados encima): las de texto, a su medida en una línea; la primera, no más estrecha que
+    # ellas; la escala, el resto a partes iguales (publicado: 78 / 101 ×3 / 85 pt)
+    columnas_forma = [c for c in otras if not any(d(c, f)["texto"].strip() for f in range(fin_cab + 1, f2 + 1))
+                      and any((c, f) in celdas_forma for f in range(fin_cab + 1, f2 + 1))]
+    if columnas_forma and len(columnas_forma) < len(otras):
+        de_texto = [c for c in otras if c not in columnas_forma]
+        linea_t = {c: max([max(medir_de(c, f)(l.strip(), CUERPO_CELDA) for l in vista(c, f).split("\n")) + 2 * RELLENO_CELDA_PT
+                           for f in range(fin_cab + 1, f2 + 1) if (c, f) not in tapadas and d(c, f)["texto"].strip()]
+                          + [necesita[c]]) for c in de_texto}
+        primera_f = max(natural, max(linea_t.values()))
+        queda = espacio_pt - primera_f - sum(linea_t.values())
+        if queda / len(columnas_forma) >= max(necesita[c] for c in columnas_forma):
+            textos_cuadro = False
+            a_medida = True
+            # Las de formas, redondeadas hacia abajo (al subir a múltiplos de 3 quitaban sitio a la primera)
+            de_forma = MULTIPLO_PT * math.floor((queda - sum(MULTIPLO_PT * math.ceil(v / MULTIPLO_PT) - v for v in linea_t.values())
+                                                 - (MULTIPLO_PT * math.ceil(primera_f / MULTIPLO_PT) - primera_f)) / len(columnas_forma) / MULTIPLO_PT)
+            medida = {**{c: MULTIPLO_PT * math.ceil(v / MULTIPLO_PT) for c, v in linea_t.items()}, **{c: de_forma for c in columnas_forma}}
+            necesita = {c: max(necesita[c], medida[c]) if c in linea_t else necesita[c] for c in otras}
+            primera_pt = primera_f
+            resto = max(medida.values())
+            detalle.append("Columnas con puntos o flechas dibujados (" + ", ".join(ref(c, 1)[:-1] for c in columnas_forma)
+                           + f"): el resto del ancho, {de_forma:.0f} pt cada una; las de texto, a su medida "
+                           f"en una línea, y la primera, no más estrecha que ellas ({primera_f:.0f} pt)")
+    else:
+        columnas_forma = []
+    if columnas_forma:
+        pass
+    elif textos_cuadro:
         linea = dict(necesita)
         for f in range(fin_cab + 1, f2 + 1):
             for c in otras:
@@ -2916,7 +2946,7 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
                 resto = (espacio_pt - primera_pt) / len(otras)
 
     # 1) Muchas columnas de datos: aviso para valorar bajar la letra a 7 pt (decisión del usuario, 2026-11-17)
-    if otras and (len(otras) >= 10 or resto < 30 or (a_medida and not por_nombres and not textos_cuadro)):
+    if otras and (len(otras) >= 10 or resto < 30 or (a_medida and not por_nombres and not textos_cuadro and not columnas_forma)):
         detalle.append(f"Aviso: el cuadro tiene {len(otras)} columnas de datos" + ("" if a_medida else f" de {resto:.0f} pt")
                        + ": valora bajar la letra con «Probar letra a 7 pt» o «Probar letra a 6,5 pt» (la guía permite de 6 a "
                        "7,5 pt según el tamaño del cuadro; el publicado del Memoria 4.2 va a 6,5 pt)")
@@ -3201,6 +3231,13 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
         altos[f] = alto_fila(max(n, 1))
         if f > fin_cab and not pub.get("centrado_en_altura") and any(lineas.get((c, f), 0) > 1 for c in range(primera + 1, c2 + 1)):
             arriba.add(f)
+    # Filas con puntos o flechas dibujados (Economía Latinoamericana 04): 21 pt, como el publicado, con aire para ellos
+    con_puntos = [f for f in altos if f > fin_cab and any((c, f) in celdas_forma for c in columnas_forma)]
+    for f in con_puntos:
+        altos[f] = max(altos[f], ALTO_FILA_PUNTOS)
+    if con_puntos:
+        detalle.append(f"Filas con puntos o flechas dibujados, de {ALTO_FILA_PUNTOS} pt como mínimo (como el publicado): "
+                       + ", ".join(map(str, con_puntos)))
     # Cuadros que no caben en la altura de la retícula (Economía Latinoamericana 05: 57 filas de 14 pt son unos 800 pt
     # y la retícula mide 702; el publicado va a 9 pt): las filas bajan en proporción, sin bajar de 1,5 veces la letra
     pl_ = plantilla()

@@ -277,6 +277,10 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      y «2025»; en el 04 «Expectativas…» ocupa dos filas visibles y se queda) y herramienta «Probar letra a 6 pt» (el
      mínimo de la guía; el 05 publicado va a 6 pt): 05 a 6 pt, primera 105 pt y datos iguales de 36 (publicado 132/36,
      se salía de la retícula), filas de 9 pt.
+   - **Columnas con puntos o flechas dibujados** (Economía Latinoamericana 04, la escala DOVISH-NEUTRAL-HAWKISH: sin
+     textos en el cuerpo y con formas encima): las de texto, a su medida en una línea; la primera, no más estrecha que
+     ellas; la escala, el resto a partes iguales, redondeado hacia abajo (04: 81 / 102 ×3 / 75 pt; PDF 78 / 101 / 85).
+     Sus filas, de 21 pt como mínimo (`ALTO_FILA_PUNTOS`, publicado 04).
    - **Cuadros que no caben en altura** (todas las publicaciones): si las filas suman más de lo que deja la retícula
      (pastilla, 4 mm, 5 mm y FUENTES estimada por su texto), bajan en proporción sin bajar de 1,5 veces la letra (05 a
      6 pt: 9 pt, como el publicado; Memoria 4.2 a 7,5: 11,5 pt por línea; a 6,5 cabe y no cambia).
