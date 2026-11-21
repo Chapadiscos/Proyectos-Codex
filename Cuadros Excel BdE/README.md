@@ -309,6 +309,8 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      primera columna (Arg_02: «Diferencial soberano (cambio trimestral)», «Sobrevaloración cambiaria»…; Arg_03: «Activos
      de los bancos…») llevan línea A32938 de lado a lado. En el mapa de calor, las rosas solo bajo los conceptos (no
      sobre los colores) y la separación de 3 pt entre los conceptos y los colores (D) se queda.
+     Letra: `cuerpo_mapa_calor` 7 pt (todos los 02 publicados de los grandes van a 7; los demás cuadros de Indicadores,
+     6,5). Columnas estrechas: medio punto de tolerancia antes de ensancharlas (a 7 pt «II S» pide 15,1 → 15 pt).
    - **Herramienta «Igualar al modelo»** (orden `modelo`, petición del usuario, 2026-11-21): busca en la carpeta del
      original y en «Modelos» (junto a ella o en el proyecto) el EXCEL terminado más parecido (palabras en común sin
      países ni cifras, al menos un 50 %; si empatan, el último guardado) y copia de él, tal como esté guardado (con

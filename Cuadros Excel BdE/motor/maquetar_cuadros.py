@@ -2356,6 +2356,11 @@ def paso2(trabajo, pid=None):
     CUERPO_CELDA = float(pub_de(pid).get("cuerpo_celda", CUERPO_CELDA))
     try:
         with zipfile.ZipFile(base) as z:
+            # Los mapas de calor (cifras escondidas por el formato condicional), con su letra (Indicadores: 7 pt en todos
+            # los 02 publicados de los grandes; los demás cuadros, 6,5)
+            if pub_de(pid).get("cuerpo_mapa_calor") and cifras_ocultas(z.read(hoja_de(z, hoja)).decode("utf-8"),
+                                                                       z.read("xl/styles.xml").decode("utf-8")):
+                CUERPO_CELDA = float(pub_de(pid)["cuerpo_mapa_calor"])
             propuestas = []
             cambios, detalle, cuadro = celdas(z, hoja, estado.get("idioma", "es"), propuestas, pub_de(pid),
                                               col_reticula_autor(trabajo, estado))
@@ -2704,8 +2709,9 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
         pide = max([medir(l.strip(), CUERPO_CELDA) + 2 * RELLENO_CELDA_PT for f in range(f1, fin_cab + 1)
                     if (c, f) not in tapadas and d(c, f)["texto"].strip() and not any(a1 == c and b1 == f and a2 > a1 for a1, b1, a2, b2 in rangos)
                     for l in d(c, f)["texto"].split("\n")] or [0])
-        if pide > round(ancho_col(c) * mdw) + 0.01:
-            ensanchadas[c] = ancho_comun(MULTIPLO_PT * math.ceil(pide / MULTIPLO_PT - 1e-6), mdw, digito_windows(estilos.xml))
+        # medio punto de tolerancia: el relleno de celda es una estimación algo holgada (a 7 pt «II S» pide 15,1)
+        if pide > round(ancho_col(c) * mdw) + 0.5:
+            ensanchadas[c] = ancho_comun(MULTIPLO_PT * math.ceil((pide - 0.5) / MULTIPLO_PT - 1e-6), mdw, digito_windows(estilos.xml))
     if ensanchadas:
         detalle.append("Columnas estrechas con texto que no cabía en una línea, ensanchadas lo justo: " + ", ".join(
             f"{ref(c, 1)[:-1]} {round(ancho_col(c) * mdw)}→{round(w * mdw)} pt" for c, w in sorted(ensanchadas.items())))
