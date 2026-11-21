@@ -2380,6 +2380,45 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
     # Cabecera hecha con cuadros de texto (DO26XX_02: símbolos de ecuación 𝑡, 𝛽, 𝜌, 𝜎² sobre las celdas vacías de la
     # fila 11): la fila de justo encima del cuadro, sin textos en celdas y con cuadros de texto anclados en sus
     # columnas, es la cabecera (el publicado la colorea como tal)
+    # Bloque de arriba (LATAM/Indicadores Macrofinancieros 01: «PIB per cápita… 2026» y «Esperanza de vida… 2024», dos
+    # tablitas lado a lado encima de la tabla, separadas de ella por filas vacías): es parte del cuadro, con su año
+    # arriba, los conceptos a la izquierda y los valores a la derecha; cada tablita lleva sus líneas en su ancho
+    bloque = None
+    if pub.get("bloque_arriba"):
+        # Pegado a la tabla por una fila vacía (Br_01: bloque en 2-6, fila 7 vacía, tabla desde la 8): la tabla
+        # empieza después de la fila vacía si lo de encima tiene forma de bloque (3 filas con 2 textos al menos)
+        hay_txt = lambda f: any(todas.get((c, f), {}).get("texto", "").strip() for c in range(c1, c2 + 1) if ancho_col(c) > 0)
+        for r in range(f1 + 3, min(f2, f1 + 12)):
+            if r not in filas_ocultas and not hay_txt(r):
+                encima_r = [f for f in range(f1, r) if sum(1 for c in range(c1, c2 + 1) if ancho_col(c) > 0
+                                                          and todas.get((c, f), {}).get("texto", "").strip()) >= 2]
+                siguiente_r = next((f for f in range(r + 1, f2 + 1) if hay_txt(f)), None)
+                if len(encima_r) >= 3 and siguiente_r:
+                    f1 = siguiente_r
+                break
+        txt = lambda c, f: todas.get((c, f), {}).get("texto", "").strip() and ancho_col(c) > 0
+        filas_b = [f for f in range(max(1, f1 - 12), f1) if f not in filas_ocultas and sum(1 for c in range(c1, c2 + 1) if txt(c, f)) >= 1]
+        # el tramo de filas seguidas (con huecos de una fila como mucho) que acaba más cerca de la tabla
+        tramo = []
+        for f in reversed(filas_b):
+            if tramo and tramo[0] - f > 2:
+                break
+            tramo.insert(0, f)
+        es_num = lambda c, f: es_cifra(todas[(c, f)]) or bool(re.match(r'\s*[\d.,]+\s*(%|\(p\))?', todas[(c, f)]["texto"]))
+        cuerpo_b = [f for f in tramo if sum(1 for c in range(c1, c2 + 1) if txt(c, f)) >= 2]
+        if len(cuerpo_b) >= 3:
+            etiquetas = sorted({c for f in cuerpo_b for c in range(c1, c2 + 1) if txt(c, f) and not es_num(c, f)})
+            etiquetas = [c for c in etiquetas if sum(1 for f in cuerpo_b if txt(c, f) and not es_num(c, f)) >= 2]
+            valores = sorted({c for f in cuerpo_b for c in range(c1, c2 + 1) if txt(c, f) and c not in etiquetas})
+            grupos = []
+            for i, e in enumerate(etiquetas):
+                limite = etiquetas[i + 1] if i + 1 < len(etiquetas) else c2 + 1
+                v = [c for c in valores if e < c < limite]
+                if v:
+                    grupos.append((e, max(v)))
+            if grupos:
+                cabeza_b = tramo[0] if tramo[0] not in cuerpo_b or not any(txt(c, tramo[0]) for c in etiquetas) else None
+                bloque = {"filas": tramo, "cabecera": cabeza_b, "grupos": grupos, "valores": valores}
     formas_fila, cabecera_formas, filas_formas = {}, [], set()
     for anc in ANCLA.finditer(dibujo):
         desde = re.search(r'<xdr:from>\s*<xdr:col>(\d+)</xdr:col>.*?<xdr:row>(\d+)</xdr:row>', anc.group(0), re.S)
@@ -2423,7 +2462,8 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
              if x["texto"].strip() and not (c1 <= c <= c2 and f1 <= f <= f2) and ancho_col(c) > 0
              and (x_col.get(c, ancho_ret) < ancho_ret or (f1 <= f <= f2 and c2 < c <= c2 + 3
                   and sum(1 for (cc, ff), y in todas.items() if cc == c and f1 <= ff <= f2 and y["texto"].strip()) == 1))
-             and not (f > f2 and ROTULO.match(x["texto"]))]
+             and not (f > f2 and ROTULO.match(x["texto"]))
+             and not (bloque and f in bloque["filas"])]
     # Otra tabla del autor debajo del cuadro (Economía Latinoamericana 01: la mensual en A43:G59, que el publicado
     # borró): sus filas se ocultan, sin borrar nada, para que no se vean dentro de la retícula
     abajo = [(c, f) for c, f in fuera if f > f2 + 1]
@@ -2541,6 +2581,7 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
         for col_, fil_ in re.findall(r'<xdr:(?:from|to)>\s*<xdr:col>(\d+)</xdr:col>.*?<xdr:row>(\d+)</xdr:row>', anc.group(0), re.S):
             celdas_forma.add((int(col_) + 1, int(fil_) + 1))
     vacias_anchas = [c for c in otras if primera + 1 < c < c2
+                     and not (bloque and any(todas.get((c, f), {}).get("texto", "").strip() for f in bloque["filas"]))
                      and not any(d(c, f)["texto"].strip() or (c, f) in celdas_forma for f in range(f1, f2 + 1))]
     if vacias_anchas and len(otras) - len(vacias_anchas) >= 1:
         otras = [c for c in otras if c not in vacias_anchas]
@@ -2616,6 +2657,11 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
             w = mc(t, CUERPO_CELDA) if es_cifra(d(c, f)) and f > fin_cab else palabra(t, mc)
             tramo_cols = [k for k in otras if k == c or ((k, f) in tapadas and k > c and all((j, f) in tapadas for j in range(c + 1, k + 1)))]
             necesita[c] = max(necesita[c], w / max(1, len(tramo_cols)) + 2 * RELLENO_CELDA_PT)
+    if bloque:
+        for f in bloque["filas"]:
+            for c in bloque["valores"]:
+                if c in necesita and d(c, f)["texto"].strip():
+                    necesita[c] = max(necesita[c], medir_de(c, f)(vista(c, f).strip(), CUERPO_CELDA) + 2 * RELLENO_CELDA_PT)
     # Columnas de nombres propios (Memoria 6.1, «Entidad»: «Banco Bilbao Vizcaya Argentaria, SA»): solo textos, de
     # una línea, y cada uno con 2 o más palabras, todas en mayúscula inicial salvo los conectores. El publicado las
     # pone en una línea y a la izquierda; las de conceptos («Relajación, concentración», DO 05) siguen al centro
@@ -2779,8 +2825,34 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
         # del euro» ~41 pt y «España» ~32 en una línea) y la primera columna, el resto
         a_medida = True
         medida = {c: max(ancho_justo([c]), necesita[c]) for c in otras}
+        # Columnas que solo llevan valores del bloque de arriba (Arg_01: D, «14.643,7»): a lo justo, aparte
+        solo_bloque = [c for c in otras if not any(d(c, f)["texto"].strip() for f in range(f1, f2 + 1))]
+        reparten = [c for c in otras if c not in solo_bloque]
+        if natural + sum(medida.values()) <= espacio_pt and reparten:
+            # La primera columna cabe en una línea (01: «Deuda local en manos de no residentes (% del total)»): a su
+            # medida, y las de datos se reparten el resto a partes iguales (sin bajar de lo justo)
+            primera_pt = natural
+            arriba3 = lambda v: MULTIPLO_PT * math.ceil(v / MULTIPLO_PT - 1e-6)
+            libre = espacio_pt - arriba3(natural) - sum(arriba3(medida[c]) for c in solo_bloque)
+            fijas_r = []
+            while True:
+                parte = (libre - sum(arriba3(medida[c]) for c in fijas_r)) / max(1, len(reparten) - len(fijas_r))
+                nuevas = [c for c in reparten if c not in fijas_r and medida[c] > parte]
+                if not nuevas:
+                    break
+                fijas_r += nuevas
+            # hacia abajo en múltiplos de 3 (al subir quitaban sitio a la primera y partían sus textos), y las
+            # fijas hacia arriba
+            for c in reparten:
+                medida[c] = MULTIPLO_PT * math.ceil(medida[c] / MULTIPLO_PT - 1e-6) if c in fijas_r \
+                    else max(MULTIPLO_PT * math.floor(parte / MULTIPLO_PT + 1e-6), MULTIPLO_PT)
+            for c in solo_bloque:
+                medida[c] = MULTIPLO_PT * math.ceil(medida[c] / MULTIPLO_PT - 1e-6)
+            detalle.append(f"Primera columna a su medida ({natural:.0f} pt) y las de datos, el resto a partes iguales "
+                           f"({parte:.0f} pt)" + (", salvo las del bloque de arriba, a lo justo" if solo_bloque else ""))
+        else:
+            primera_pt = espacio_pt - sum(medida.values())
         necesita = dict(medida)
-        primera_pt = espacio_pt - sum(medida.values())
         resto = max(medida.values())
         detalle.append("Cada columna de datos a lo justo (su cabecera en una línea o su cifra más ancha) y la primera, el "
                        f"resto ({primera_pt:.0f} pt), como los publicados de " + pub.get("nombre", "la publicación"))
@@ -3231,6 +3303,37 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
         altos[f] = alto_fila(max(n, 1))
         if f > fin_cab and not pub.get("centrado_en_altura") and any(lineas.get((c, f), 0) > 1 for c in range(primera + 1, c2 + 1)):
             arriba.add(f)
+    estilos_bloque = {}
+    if bloque:
+        for f in bloque["filas"]:
+            altos[f] = alto_fila(1)
+        # hueco entre el bloque y la tabla: 4 mm en las filas vacías visibles de en medio
+        entre = [f for f in range(bloque["filas"][-1] + 1, f1) if f not in filas_ocultas]
+        for f in entre:
+            altos[f] = round(CABECERA_BAJO_PASTILLA / len(entre) * 4) / 4
+        color_b = pub.get("color", "A32938").upper()
+        linea_b = ("thin", matiz(color_b, TINTES["matiz1"])) if pub.get("solo_lineas") else LINEA_FILAS
+        cabeza_linea = ("thin", color_b) if pub.get("solo_lineas") else LINEA_OSCURA
+        cuerpo_filas = [f for f in bloque["filas"] if f != bloque["cabecera"]]
+        for e, v in bloque["grupos"]:
+            for f in bloque["filas"]:
+                for c in range(e, v + 1):
+                    if ancho_col(c) == 0:
+                        continue
+                    x = d(c, f)
+                    al = {"horizontal": "left" if c == e else "right", "vertical": "center"}
+                    s_ = estilos.nuevo(x["s"], al, cuerpo=CUERPO_CELDA)
+                    lados = {}
+                    if f == bloque["cabecera"]:
+                        lados["bottom"] = cabeza_linea
+                    elif f != cuerpo_filas[-1]:
+                        lados["bottom"] = linea_b
+                    estilos_bloque[(c, f)] = estilos.variante(s_, relleno="", borde=lados, letra="000000")
+        detalle.append("Bloque de arriba (filas " + f"{bloque['filas'][0]}-{bloque['filas'][-1]}" + "): parte del cuadro, "
+                       + str(len(bloque["grupos"])) + " tablita" + ("s" if len(bloque["grupos"]) > 1 else "") + " ("
+                       + ", ".join(f"{ref(e, 1)[:-1]}-{ref(v, 1)[:-1]}" for e, v in bloque["grupos"])
+                       + f"), conceptos a la izquierda y valores a la derecha, letra de {CUERPO_CELDA:g} pt".replace(".", ",")
+                       + "; línea bajo el año y entre filas, cada tablita en su ancho; a 4 mm de la tabla")
     # Filas con puntos o flechas dibujados (Economía Latinoamericana 04): 21 pt, como el publicado, con aire para ellos
     con_puntos = [f for f in altos if f > fin_cab and any((c, f) in celdas_forma for c in columnas_forma)]
     for f in con_puntos:
@@ -3386,7 +3489,7 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
         if f not in altos:
             return fila
         fila = re.sub(r'\s(ht|customHeight)="[^"]*"', "", fila)
-        if f == f1 - 1:
+        if f == (bloque["filas"][0] if bloque else f1) - 1:
             # La fila del hueco bajo la pastilla tiene que verse (DO26XX_04: el autor la ocultó y el alto nuevo no
             # contaba: la cabecera quedaba pegada a la pastilla)
             fila = re.sub(r'\shidden="[^"]*"', "", fila)
@@ -3415,18 +3518,21 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
         hoja_xml = re.sub(r'<row\b[^>]*?/?>', alto_bajo, hoja_xml)
     hoja_xml = re.sub(r'<row\b[^>]*?/?>', cambiar_fila, hoja_xml)
     hoja_xml = poner_anchos(hoja_xml, nuevos_anchos)
+    if estilos_bloque:
+        hoja_xml = con_estilo(hoja_xml, estilos_bloque)
 
     # Sitio del cuadro (decisión del usuario, 2026-11-17): la cabecera empieza 4 mm bajo las unidades o, si no hay,
     # 5 mm bajo la pastilla; FUENTES, 5 mm bajo el final del cuadro. Lo ajusta la fila de encima del cuadro.
     ruta_dibujo = dibujo_de_hoja(z, hoja)
     if ruta_dibujo and f1 > 1:
         caja = medidas_hoja(z, hoja, dibujo)
-        dibujo_nuevo, notas_sitio, alto_hueco = colocar_cuadro(dibujo, caja, altos_filas(z, hoja), altos, f1, f2)
+        f_ini = bloque["filas"][0] if bloque else f1
+        dibujo_nuevo, notas_sitio, alto_hueco = colocar_cuadro(dibujo, caja, altos_filas(z, hoja), altos, f_ini, f2)
         alto_hueco, altos_encima = alto_hueco
         cambiadas = {f: v for f, v in altos_encima.items() if abs(v * EMU_PT - altos_filas(z, hoja)[0].get(f - 1, altos_filas(z, hoja)[1])) > 0.5 * EMU_PT}
         altos.update(cambiadas)
-        altos[f1 - 1] = alto_hueco
-        hoja_xml = asegurar_filas(hoja_xml, [f1 - 1] + list(cambiadas))
+        altos[f_ini - 1] = alto_hueco
+        hoja_xml = asegurar_filas(hoja_xml, [f_ini - 1] + list(cambiadas))
         hoja_xml = re.sub(r'<row\b[^>]*?/?>', cambiar_fila, hoja_xml)
         if dibujo_nuevo != dibujo:
             cambios_dibujo[ruta_dibujo] = dibujo_nuevo.encode("utf-8")
@@ -3502,6 +3608,7 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
         comp = re.sub(r'\buniqueCount="\d+"', f'uniqueCount="{len(nuevas_si)}"', comp, count=1)
         cambios["xl/sharedStrings.xml"] = comp.encode("utf-8")
     return cambios, detalle, {"c1": c1, "f1": f1, "c2": c2, "f2": f2, "primera": primera, "fin_cabecera": fin_cab,
+                              "bloque_arriba": bloque["filas"] if bloque else [],
                               "cabecera_formas": [[c, f] for f in sorted(filas_formas) for c in sorted(formas_fila.get(f, set()))
                                                   if c1 <= c <= c2 and not todas.get((c, f), {}).get("texto", "").strip()]}
 
@@ -3951,7 +4058,8 @@ def lineas_y_fondos(z, hoja, cuadro, pub=None):
     # …y encima del cuadro (entre la pastilla y la cabecera) y en las columnas ocultas (publicado 3.3: el autor
     # dejó líneas azules en la fila 2 y en las separaciones)
     con_formato = lambda x: re.search(r'\bborderId="[1-9]', estilos.xf(x["s"])) or re.search(r'\bfillId="([2-9]|\d\d+)"', estilos.xf(x["s"]))
-    encima = [(c, f) for (c, f), x in todas.items() if f < f1 and c1 <= c <= c2 and not x["texto"].strip() and con_formato(x)]
+    encima = [(c, f) for (c, f), x in todas.items() if f < f1 and c1 <= c <= c2 and not x["texto"].strip() and con_formato(x)
+              and f not in cuadro.get("bloque_arriba", [])]
     ocultas = [(c, f) for (c, f), x in todas.items() if f1 <= f <= f2 and c1 <= c <= c2 and ancho_col(c) == 0
                and not x["texto"].strip() and con_formato(x)]
     # …y debajo (DO 05: la línea azul del autor encima de la FUENTE, en A14:B14, que se queda al pasar la FUENTE al

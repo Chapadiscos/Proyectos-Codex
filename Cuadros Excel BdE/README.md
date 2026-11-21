@@ -290,6 +290,13 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      también por las separaciones; primera columna sin fondo; entre grupos, A32938; los colores del autor en los datos
      se quedan), `cuerpo_celda` 6,5 pt, `datos_cada_uno_a_lo_justo` (cada columna de datos a su cabecera en una línea
      o su cifra; la primera, el resto: Arg_03 159/45/30 pt, publicado 170/41/32-35), centrado en altura.
+   - **Bloque de arriba** (`bloque_arriba`, Indicadores 01: «PIB per cápita… 2026» y «Esperanza de vida… 2024», dos
+     tablitas lado a lado encima de la tabla, separadas por filas vacías; en Br_01 con una sola fila vacía, dentro
+     del bloque de celdas del autor): parte del cuadro; año arriba con línea A32938, conceptos a la izquierda, valores a
+     la derecha, líneas F3CED3 entre filas, cada tablita en su ancho; el cuadro se coloca desde el bloque y entre
+     bloque y tabla quedan 4 mm. Anchos (`datos_cada_uno_a_lo_justo`): si la primera columna cabe en una línea, a su
+     medida y las de datos el resto a partes iguales (redondeo hacia abajo); las que solo llevan valores del bloque, a
+     lo justo (Arg_01: 180 / 51 pt, PDF 177 / 56). Si no cabe (03), datos a lo justo y la primera el resto.
    - **Filas ocultas del autor** (Arg_03: 4-7 con «#REF!» y 9-16, un bloque entero): siguen ocultas y no cuentan para
      la cabecera, los bloques, las sangrías ni los anchos (el cuadro se localiza con ellas, para que no se parta).
    - **Textos de fórmulas con espacios** (`<v xml:space="preserve">`, Economía Latinoamericana 05 y Memoria 2.1: la
