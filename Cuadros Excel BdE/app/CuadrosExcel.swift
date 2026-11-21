@@ -88,6 +88,7 @@ struct Respuesta: Decodable {
     let comparado: String?
     let original: String?
     let terminado: String?
+    let ancla_original: [Int]?
     let borrados: [String]?
 }
 
@@ -834,7 +835,9 @@ final class Taller: ObservableObject {
                         let medidas = [Int(self.reticula.ancho * 1.04), Int(self.reticula.alto * 1.04)]
                         // (el original del autor no se toca: se coloca ya abierto, no escribiendo en el archivo)
                         let guion = """
-                        on colocar(rutaLibro, nombreHoja, sitio, anchoRet, altoRet)
+                        -- Abre (como desde el Finder) y coloca un libro; con zFijo > 0, ese zoom; si no, el que encuadra la
+                        -- retícula entera. Devuelve el zoom
+                        on colocar(rutaLibro, nombreHoja, sitio, anchoRet, altoRet, zFijo, fila, columna)
                             do shell script "open -a 'Microsoft Excel' " & quoted form of rutaLibro
                             set nombreLibro to do shell script "basename " & quoted form of rutaLibro
                             tell application "Microsoft Excel"
@@ -849,29 +852,35 @@ final class Taller: ObservableObject {
                                     if wb is not missing value then exit repeat
                                     delay 0.1
                                 end repeat
-                                if wb is missing value then return
+                                if wb is missing value then return 0
                                 activate object wb
                                 try
                                     activate object worksheet nombreHoja of wb
                                 end try
                                 set w to active window
+                                set z to zFijo
                                 if sitio is not {} then
                                     try
                                         set bounds of w to sitio
                                     end try
-                                    set zoom of w to 100
-                                    set f to (width of visible range of w) / anchoRet
-                                    if (height of visible range of w) / altoRet < f then set f to (height of visible range of w) / altoRet
-                                    set z to round (100 * f) rounding down
-                                    if z > 400 then set z to 400
-                                    if z < 10 then set z to 10
+                                    if z is 0 then
+                                        set zoom of w to 100
+                                        set f to (width of visible range of w) / anchoRet
+                                        if (height of visible range of w) / altoRet < f then set f to (height of visible range of w) / altoRet
+                                        set z to round (100 * f) rounding down
+                                        if z > 400 then set z to 400
+                                        if z < 10 then set z to 10
+                                    end if
                                     set zoom of w to z
                                 end if
-                                set scroll row of w to 1
-                                set scroll column of w to 1
+                                try
+                                    set scroll row of w to fila
+                                    set scroll column of w to columna
+                                end try
                                 try
                                     select range "A1" of active sheet
                                 end try
+                                return z
                             end tell
                         end colocar
 
@@ -884,16 +893,20 @@ final class Taller: ObservableObject {
                                 set anchoRet to (item 8 of argv) as integer
                                 set altoRet to (item 9 of argv) as integer
                             end if
-                            -- Primero el original del autor y encima el EXCEL, en el mismo sitio y con el mismo zoom, para
-                            -- compararlos (petición del usuario, 2026-11-21)
-                            if (item 3 of argv) is not "" then my colocar(item 3 of argv, item 2 of argv, sitio, anchoRet, altoRet)
-                            my colocar(item 1 of argv, item 2 of argv, sitio, anchoRet, altoRet)
-                            return "ok"
+                            -- El EXCEL fija el zoom; el original, con ese mismo zoom, en el mismo sitio y desplazado a donde
+                            -- empieza la retícula del autor; y el EXCEL, otra vez delante (petición del usuario, 2026-11-21)
+                            set z to my colocar(item 1 of argv, item 2 of argv, sitio, anchoRet, altoRet, 0, 1, 1)
+                            if (item 3 of argv) is not "" then
+                                my colocar(item 3 of argv, item 2 of argv, sitio, anchoRet, altoRet, z, (item 10 of argv) as integer, (item 11 of argv) as integer)
+                                my colocar(item 1 of argv, item 2 of argv, sitio, anchoRet, altoRet, z, 1, 1)
+                            end if
+                            return z
                         end run
                         """
                         let vinculos = AXIsProcessTrusted() ? Task.detached { await noActualizarVinculos() } : nil
+                        let ancla = (r.ancla_original?.count == 2 ? r.ancla_original! : [1, 1]).map(String.init)
                         let argumentos = [url.path, hojaCuadro, original?.path ?? ""]
-                            + (sitio.count == 4 ? (sitio + medidas).map(String.init) : ["", "", "", "", "", ""])
+                            + (sitio.count == 4 ? (sitio + medidas).map(String.init) : ["", "", "", "", "", ""]) + ancla
                         let abierto = await osascript(guion, argumentos, espera: 120)
                         try? await Task.sleep(nanoseconds: 500_000_000)
                         vinculos?.cancel()

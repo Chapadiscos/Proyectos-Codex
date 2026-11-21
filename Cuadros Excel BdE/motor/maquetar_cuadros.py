@@ -5128,7 +5128,29 @@ def terminar(trabajo):
     destino = nombre_terminado(origen if origen.name else trabajo, carpeta)
     shutil.copyfile(copia_actual(trabajo), destino)
     os.chmod(destino, 0o644)
-    return {"terminado": str(destino), "borrados": borrar_generados(trabajo)}
+    return {"terminado": str(destino), "original": str(origen) if origen.name else None,
+            "ancla_original": ancla_reticula_original(origen, estado.get("hoja")), "borrados": borrar_generados(trabajo)}
+
+
+def ancla_reticula_original(origen, hoja=None):
+    """[fila, columna] (desde 1) donde empieza la retícula del autor (o su pastilla) en el original: la app desplaza
+    ahí el original para que se vea el mismo cuadro que el EXCEL (petición del usuario, 2026-11-21). [1, 1] si no."""
+    try:
+        with zipfile.ZipFile(origen) as z:
+            hoja = hoja or hoja_cuadro(z)[0]
+            ruta = dibujo_de_hoja(z, hoja)
+            if not ruta or ruta not in z.namelist():
+                return [1, 1]
+            anclas = [m.group(0) for m in ANCLA.finditer(z.read(ruta).decode("utf-8"))]
+            for buscar in (es_reticula, es_pastilla):
+                for a in anclas:
+                    if buscar(a):
+                        d = re.search(r'<xdr:from>\s*<xdr:col>(\d+)</xdr:col>.*?<xdr:row>(\d+)</xdr:row>', a, re.S)
+                        if d:
+                            return [int(d.group(2)) + 1, int(d.group(1)) + 1]
+    except (OSError, zipfile.BadZipFile, KeyError, Fallo):
+        pass
+    return [1, 1]
 
 
 # ---------------------------------------------------------------- configuración
