@@ -805,6 +805,7 @@ final class Taller: ObservableObject {
             self.pregunta = Pregunta(titulo: "¿Guardar como EXCEL?",
                                      texto: "Se guarda «\(self.nombreTerminado)» junto al original (si ya existe, no se pisa: se añade « (2)») y se deja abierto en Excel en lugar de la copia de trabajo. Se borran la copia de trabajo, su copia « (2)» y la carpeta «(pasos)» con todas las versiones. El original del autor no se toca. No se puede deshacer.",
                                      boton: "Guardar y borrar") {
+                let hojaCuadro = self.hoja
                 self.tarea("Guardar como EXCEL") { id in
                     await self.cerrarEnExcel(trabajo)
                     guard let r = await self.llamarMotor(["terminar", trabajo.path], registro: id),
@@ -820,19 +821,64 @@ final class Taller: ObservableObject {
                     // usuario, 2026-11-18: antes se cerraba y se enseñaba en el Finder)
                     if self.excel {
                         // Como desde el Finder («open -a»): macOS da a Excel permiso para el archivo y no pide
-                        // «Conceder acceso» (con «open workbook» lo pedía, petición del usuario, 2026-11-18)
+                        // «Conceder acceso» (con «open workbook» lo pedía, petición del usuario, 2026-11-18). En el
+                        // mismo sitio que la copia de trabajo, en la hoja del cuadro y con el zoom justo para ver la
+                        // retícula entera desde A1 (petición del usuario, 2026-11-21)
+                        let sitio = await self.colocarVentanas()
+                        if sitio.count == 4 { await Taller.fijarVentana(url, sitio) }
+                        let medidas = [Int(self.reticula.ancho * 1.04), Int(self.reticula.alto * 1.04)]
                         let guion = """
                         on run argv
-                            do shell script "open -a 'Microsoft Excel' " & quoted form of (item 1 of argv)
-                            tell application "Microsoft Excel" to activate
-                            return "ok"
+                            set rutaLibro to item 1 of argv
+                            do shell script "open -a 'Microsoft Excel' " & quoted form of rutaLibro
+                            set nombreLibro to do shell script "basename " & quoted form of rutaLibro
+                            tell application "Microsoft Excel"
+                                activate
+                                set wb to missing value
+                                repeat 300 times
+                                    try
+                                        repeat with i from 1 to (count workbooks)
+                                            if full name of workbook i is rutaLibro or name of workbook i is nombreLibro then set wb to workbook i
+                                        end repeat
+                                    end try
+                                    if wb is not missing value then exit repeat
+                                    delay 0.1
+                                end repeat
+                                if wb is missing value then return "ok"
+                                try
+                                    activate object worksheet (item 2 of argv) of wb
+                                end try
+                                set w to active window
+                                if (count of argv) > 3 then
+                                    try
+                                        set bounds of w to {(item 3 of argv) as integer, (item 4 of argv) as integer, (item 5 of argv) as integer, (item 6 of argv) as integer}
+                                    end try
+                                    set anchoRet to (item 7 of argv) as integer
+                                    set altoRet to (item 8 of argv) as integer
+                                    set zoom of w to 100
+                                    set f to (width of visible range of w) / anchoRet
+                                    if (height of visible range of w) / altoRet < f then set f to (height of visible range of w) / altoRet
+                                    set z to round (100 * f) rounding down
+                                    if z > 400 then set z to 400
+                                    if z < 10 then set z to 10
+                                    set zoom of w to z
+                                end if
+                                set scroll row of w to 1
+                                set scroll column of w to 1
+                                try
+                                    select range "A1" of active sheet
+                                end try
+                                return "ok"
+                            end tell
                         end run
                         """
                         let vinculos = AXIsProcessTrusted() ? Task.detached { await noActualizarVinculos() } : nil
-                        let abierto = await osascript(guion, [url.path], espera: 30)
-                        try? await Task.sleep(nanoseconds: 1_500_000_000)
+                        let argumentos = [url.path, hojaCuadro] + (sitio.count == 4 ? (sitio + medidas).map(String.init) : [])
+                        let abierto = await osascript(guion, argumentos, espera: 60)
+                        try? await Task.sleep(nanoseconds: 500_000_000)
                         vinculos?.cancel()
-                        self.anotar(id, abierto.ok ? "Abierto en Excel: \(url.lastPathComponent)" : "⚠ No he podido abrirlo en Excel (\(abierto.texto))")
+                        if organizadorVisual && sitio.count == 4 { _ = await self.juntarConExcel(sitio) }
+                        self.anotar(id, abierto.ok ? "Abierto en Excel: \(url.lastPathComponent), en el sitio de la copia de trabajo y encuadrado" : "⚠ No he podido abrirlo en Excel (\(abierto.texto))")
                     } else {
                         NSWorkspace.shared.activateFileViewerSelecting([url])
                     }
