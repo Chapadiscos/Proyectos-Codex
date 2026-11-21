@@ -3828,6 +3828,11 @@ def cabeceras(z, hoja, cuadro, pub):
     if len(filas_cab) > 4:
         detalle.append(f"Aviso: la cabecera tiene {len(filas_cab)} niveles; la guía prevé 4 (los de arriba van en sólido)")
     nuevos, usados = {}, {}
+    # Fila de cabecera de debajo de una fila de textos sueltos (1 o 2, sin combinar, con cabecera debajo en su columna)
+    fila_bajo_nota = None
+    textos_f1 = [c for c in range(c1, c2 + 1) if texto(c, f1)]
+    if 1 <= len(textos_f1) <= 2 and not any((c, f1) in combinada and combinada[(c, f1)][2] > combinada[(c, f1)][0] for c in textos_f1):
+        fila_bajo_nota = next((g for g in range(f1 + 1, fin_cab + 1) if sum(1 for c in range(c1, c2 + 1) if texto(c, g)) >= 2), None)
     for f in range(f1, fin_cab + 1):
         for c in range(primera, c2 + 1):
             a1, b1, a2, b2 = combinada.get((c, f), (c, f, c, f))
@@ -3851,8 +3856,14 @@ def cabeceras(z, hoja, cuadro, pub):
                 debajo_c = next((g for g in range(b2 + 1, fin_cab + 1) if texto(c, g)), None)
                 nota = (a1 == a2 and texto(*ancla) and debajo_c is not None
                         and sum(1 for k in range(c1, c2 + 1) if texto(k, b1)) <= 2)
-                if not estrecha and not nota and (f == fin_cab or (texto(*ancla) and f == b2 and not unidades)):
+                # (las estrechas con texto, como los semestres «I S», sí la llevan: solo las de separación vacías no)
+                separacion_vacia = estrecha and not any(texto(c, g) for g in range(f1, fin_cab + 1))
+                if not separacion_vacia and not nota and (f == fin_cab or (texto(*ancla) and f == b2 and not unidades)):
                     lados["bottom"] = ("thin", pub["color"].upper())
+                # Con un texto suelto encima (Arg_02: «Respecto al resto de los emergentes»), la primera fila de verdad de
+                # la cabecera lleva línea encima en todas las columnas de datos, también las separaciones (publicado)
+                if c > primera and f == fila_bajo_nota:
+                    lados["top"] = ("thin", pub["color"].upper())
                 nuevos[(c, f)] = estilos.variante(estilo(c, f), relleno="", borde=lados, letra="000000")
                 continue
             if not esquina_llena and (estrecha or vacia or (c == primera and not texto(*ancla)) or unidades):
