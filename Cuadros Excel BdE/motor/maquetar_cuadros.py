@@ -3332,7 +3332,8 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
                     if len(partir(junta, ancho, mc)) == 1:
                         nuevo = t = junta
                         juntadas.append(f"{ref(c, f)} «{junta[:40]}»")
-                partes = partir(t, ancho, mc)
+                # (con el mismo medio punto de tolerancia con que se ensanchan las columnas estrechas: «II S» a 7 pt)
+                partes = partir(t, ancho + (0.5 if c in ensanchadas else 0), mc)
                 if f <= fin_cab and len(partes) == 2 and "\n" not in t.strip():
                     # Cabecera de 2 líneas: el salto, puesto a mano por una frase (como los publicados)
                     dos = salto_cabecera(t.strip(), ancho, mc)
