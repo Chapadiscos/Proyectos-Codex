@@ -297,6 +297,14 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      bloque y tabla quedan 4 mm. Anchos (`datos_cada_uno_a_lo_justo`): si la primera columna cabe en una línea, a su
      medida y las de datos el resto a partes iguales (redondeo hacia abajo); las que solo llevan valores del bloque, a
      lo justo (Arg_01: 180 / 51 pt, PDF 177 / 56). Si no cabe (03), datos a lo justo y la primera el resto.
+   - **Mapa de calor** (Indicadores 02 de los grandes, Arg_02, 2026-11-21): el texto suelto encima de la cabecera,
+     separado por filas ocultas y con cabecera debajo en su columna («Respecto al resto de los emergentes» sobre
+     «Último dato (b)»), es la primera fila de la cabecera (sin línea debajo en Indicadores); las columnas estrechas
+     cuya cabecera no cabe en una línea se ensanchan lo justo en múltiplos de 3 («II S»: 14→15 pt; antes se partía en
+     «II⏎S»); las cifras que un formato condicional esconde (letra del color del fondo) no cuentan para los anchos y
+     esas columnas van a lo justo de su cabecera; las separaciones entre años se quedan (3 pt). Arg_02: 171 / 14-15 /
+     21 / 51 pt (PDF ≈179 / 14 / 45). Además: si un paso quita fórmulas se quita calcChain.xml (libro dañado), la
+     unidad de ancho de las formas solo con medidas positivas (columna 16384) y sumas acumuladas (no responde).
    - **Herramienta «Igualar al modelo»** (orden `modelo`, petición del usuario, 2026-11-21): busca en la carpeta del
      original y en «Modelos» (junto a ella o en el proyecto) el EXCEL terminado más parecido (palabras en común sin
      países ni cifras, al menos un 50 %; si empatan, el último guardado) y copia de él, tal como esté guardado (con
