@@ -3837,7 +3837,7 @@ def cabeceras(z, hoja, cuadro, pub):
         return max(1, len([f for f in filas_cab if f > b2]) + 1) if b2 >= filas_cab[0] else len(filas_cab)
     if len(filas_cab) > 4:
         detalle.append(f"Aviso: la cabecera tiene {len(filas_cab)} niveles; la guía prevé 4 (los de arriba van en sólido)")
-    nuevos, usados = {}, {}
+    nuevos, usados, grupos_7 = {}, {}, set()
     # Fila de cabecera de debajo de una fila de textos sueltos (1 o 2, sin combinar, con cabecera debajo en su columna)
     fila_bajo_nota = None
     textos_f1 = [c for c in range(c1, c2 + 1) if texto(c, f1)]
@@ -3874,7 +3874,13 @@ def cabeceras(z, hoja, cuadro, pub):
                 # la cabecera lleva línea encima en todas las columnas de datos, también las separaciones (publicado)
                 if c > primera and f == fila_bajo_nota:
                     lados["top"] = ("thin", pub["color"].upper())
-                nuevos[(c, f)] = estilos.variante(estilo(c, f), relleno="", borde=lados, letra="000000")
+                base_s = estilo(c, f)
+                # Cabeceras de grupo (combinadas sobre varias columnas, por encima de la última fila: «mm de dólares»,
+                # «Porcentaje del PIB»…), con su letra (Indicadores: 7 pt, como el original y el publicado de Arg_03)
+                if pub.get("cuerpo_grupos_cabecera") and a2 > a1 and f < fin_cab and texto(*ancla):
+                    base_s = estilos.nuevo(base_s, estilos.alineacion(base_s), cuerpo=float(pub["cuerpo_grupos_cabecera"]))
+                    grupos_7.add(ref(*ancla))
+                nuevos[(c, f)] = estilos.variante(base_s, relleno="", borde=lados, letra="000000")
                 continue
             if not esquina_llena and (estrecha or vacia or (c == primera and not texto(*ancla)) or unidades):
                 # Sin relleno ni líneas (el autor puede haber dejado alguna: 3.4, línea azul en A4 y G4)
@@ -3897,6 +3903,9 @@ def cabeceras(z, hoja, cuadro, pub):
             nuevos[(c, f)] = estilos.variante(estilo(c, f), relleno=colores[clave_color], borde=lados,
                                               letra=letra or "000000")
             usados.setdefault(nivel, set()).add(ancla)
+    if grupos_7:
+        detalle.append(f"Cabeceras de grupo a {float(pub['cuerpo_grupos_cabecera']):g} pt (como el original y el publicado): ".replace(".", ",")
+                       + ", ".join(sorted(grupos_7)))
     if pub.get("solo_lineas"):
         detalle.append(f"Cabecera sin fondo, en negro, con línea #{pub['color'].upper()} bajo cada texto (los grupos, solo en su "
                        "ancho) y bajo toda la última fila (como los publicados de " + pub.get("nombre", "la publicación") + ")")

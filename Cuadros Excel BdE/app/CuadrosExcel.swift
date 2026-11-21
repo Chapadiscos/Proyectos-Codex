@@ -71,6 +71,7 @@ struct Respuesta: Decodable {
     let ok: Bool
     let error: String?
     let trabajo: String?
+    let origen: String?
     let idioma: String?
     let motivo_idioma: String?
     let hoja: String?
@@ -457,6 +458,8 @@ final class Taller: ObservableObject {
     @Published var idioma = "es"
     /// Hoja del cuadro (la elige el motor al empezar)
     @Published var hoja = ""
+    /// El Excel del autor del trabajo abierto: al terminar se abre debajo del EXCEL, para compararlos
+    var origenTrabajo: URL?
     @Published var actual = 0
     @Published var pasos: [Paso] = []
     @Published var publicaciones: [Publicacion] = []
@@ -599,6 +602,7 @@ final class Taller: ObservableObject {
 
     private func aplicar(_ r: Respuesta) {
         if let t = r.trabajo { trabajo = URL(fileURLWithPath: t) }
+        if let o = r.origen { origenTrabajo = URL(fileURLWithPath: o) }
         idioma = r.idioma ?? idioma
         hoja = r.hoja ?? hoja
         actual = r.actual ?? actual
@@ -806,6 +810,7 @@ final class Taller: ObservableObject {
                                      texto: "Se guarda «\(self.nombreTerminado)» junto al original (si ya existe, no se pisa: se añade « (2)») y se deja abierto en Excel en lugar de la copia de trabajo. Se borran la copia de trabajo, su copia « (2)» y la carpeta «(pasos)» con todas las versiones. El original del autor no se toca. No se puede deshacer.",
                                      boton: "Guardar y borrar") {
                 let hojaCuadro = self.hoja
+                let original = self.origenTrabajo
                 self.tarea("Guardar como EXCEL") { id in
                     await self.cerrarEnExcel(trabajo)
                     guard let r = await self.llamarMotor(["terminar", trabajo.path], registro: id),
@@ -827,9 +832,9 @@ final class Taller: ObservableObject {
                         let sitio = await self.colocarVentanas()
                         if sitio.count == 4 { await Taller.fijarVentana(url, sitio) }
                         let medidas = [Int(self.reticula.ancho * 1.04), Int(self.reticula.alto * 1.04)]
+                        // (el original del autor no se toca: se coloca ya abierto, no escribiendo en el archivo)
                         let guion = """
-                        on run argv
-                            set rutaLibro to item 1 of argv
+                        on colocar(rutaLibro, nombreHoja, sitio, anchoRet, altoRet)
                             do shell script "open -a 'Microsoft Excel' " & quoted form of rutaLibro
                             set nombreLibro to do shell script "basename " & quoted form of rutaLibro
                             tell application "Microsoft Excel"
@@ -844,17 +849,16 @@ final class Taller: ObservableObject {
                                     if wb is not missing value then exit repeat
                                     delay 0.1
                                 end repeat
-                                if wb is missing value then return "ok"
+                                if wb is missing value then return
+                                activate object wb
                                 try
-                                    activate object worksheet (item 2 of argv) of wb
+                                    activate object worksheet nombreHoja of wb
                                 end try
                                 set w to active window
-                                if (count of argv) > 3 then
+                                if sitio is not {} then
                                     try
-                                        set bounds of w to {(item 3 of argv) as integer, (item 4 of argv) as integer, (item 5 of argv) as integer, (item 6 of argv) as integer}
+                                        set bounds of w to sitio
                                     end try
-                                    set anchoRet to (item 7 of argv) as integer
-                                    set altoRet to (item 8 of argv) as integer
                                     set zoom of w to 100
                                     set f to (width of visible range of w) / anchoRet
                                     if (height of visible range of w) / altoRet < f then set f to (height of visible range of w) / altoRet
@@ -868,17 +872,33 @@ final class Taller: ObservableObject {
                                 try
                                     select range "A1" of active sheet
                                 end try
-                                return "ok"
                             end tell
+                        end colocar
+
+                        on run argv
+                            set sitio to {}
+                            set anchoRet to 0
+                            set altoRet to 0
+                            if (item 4 of argv) is not "" then
+                                set sitio to {(item 4 of argv) as integer, (item 5 of argv) as integer, (item 6 of argv) as integer, (item 7 of argv) as integer}
+                                set anchoRet to (item 8 of argv) as integer
+                                set altoRet to (item 9 of argv) as integer
+                            end if
+                            -- Primero el original del autor y encima el EXCEL, en el mismo sitio y con el mismo zoom, para
+                            -- compararlos (petición del usuario, 2026-11-21)
+                            if (item 3 of argv) is not "" then my colocar(item 3 of argv, item 2 of argv, sitio, anchoRet, altoRet)
+                            my colocar(item 1 of argv, item 2 of argv, sitio, anchoRet, altoRet)
+                            return "ok"
                         end run
                         """
                         let vinculos = AXIsProcessTrusted() ? Task.detached { await noActualizarVinculos() } : nil
-                        let argumentos = [url.path, hojaCuadro] + (sitio.count == 4 ? (sitio + medidas).map(String.init) : [])
-                        let abierto = await osascript(guion, argumentos, espera: 60)
+                        let argumentos = [url.path, hojaCuadro, original?.path ?? ""]
+                            + (sitio.count == 4 ? (sitio + medidas).map(String.init) : ["", "", "", "", "", ""])
+                        let abierto = await osascript(guion, argumentos, espera: 120)
                         try? await Task.sleep(nanoseconds: 500_000_000)
                         vinculos?.cancel()
                         if organizadorVisual && sitio.count == 4 { _ = await self.juntarConExcel(sitio) }
-                        self.anotar(id, abierto.ok ? "Abierto en Excel: \(url.lastPathComponent), en el sitio de la copia de trabajo y encuadrado" : "⚠ No he podido abrirlo en Excel (\(abierto.texto))")
+                        self.anotar(id, abierto.ok ? "Abierto en Excel: \(url.lastPathComponent), en el sitio de la copia de trabajo y encuadrado" + (original != nil ? ", encima del original del autor (\(original!.lastPathComponent)), con el mismo zoom" : "") : "⚠ No he podido abrirlo en Excel (\(abierto.texto))")
                     } else {
                         NSWorkspace.shared.activateFileViewerSelecting([url])
                     }
