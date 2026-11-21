@@ -1539,7 +1539,10 @@ class Estilos:
         self.nuevos_formatos = []   # [(id, código)] de numFmt nuevos (cifras sin el relleno «_m_m_m» del autor)
 
     def xf(self, i):
-        return self.xfs[i] if i < len(self.xfs) else self.xfs[0]
+        # También los formatos nuevos (Indicadores 01: las líneas del bloque de arriba sobre un formato recién hecho
+        # tomaban el formato 0 del libro, con la letra Normal de 11 pt y sin alineación)
+        todos = self.xfs + self.nuevos_xfs
+        return todos[i] if i < len(todos) else self.xfs[0]
 
     def fuente_de(self, i):
         f = re.search(r'\bfontId="(\d+)"', self.xf(i))

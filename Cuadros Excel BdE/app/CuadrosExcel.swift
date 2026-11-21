@@ -1604,23 +1604,19 @@ struct TarjetaMaquetar: View {
             .disabled(taller.trabajo == nil || taller.publicacionActual == nil || taller.enCurso != nil)
             Rotulo("Herramientas")
             let celdasHechas = taller.pasos.contains { $0.titulo == "Celdas" && $0.n <= taller.actual }
-            let probada = taller.pasos.contains { $0.titulo == "Letra 7 pt" && $0.n <= taller.actual }
-            Accion(icono: herramientaLetra7.icono, titulo: herramientaLetra7.titulo, detalle: herramientaLetra7.detalle,
-                   color: colorApp, principal: false, marca: probada ? "checkmark.circle.fill" : nil) { taller.hacer(herramientaLetra7) }
-                .disabled(taller.trabajo == nil || taller.publicacionActual == nil || taller.enCurso != nil || !celdasHechas)
-            let probada65 = taller.pasos.contains { $0.titulo == "Letra 6,5 pt" && $0.n <= taller.actual }
-            Accion(icono: herramientaLetra65.icono, titulo: herramientaLetra65.titulo, detalle: herramientaLetra65.detalle,
-                   color: colorApp, principal: false, marca: probada65 ? "checkmark.circle.fill" : nil) { taller.hacer(herramientaLetra65) }
+            // Las tres pruebas de letra en un solo recuadro (petición del usuario, 2026-11-21)
+            let probadas: [String: Bool] = Dictionary(uniqueKeysWithValues: ["Letra 7 pt", "Letra 6,5 pt", "Letra 6 pt"].map { t in
+                (t, taller.pasos.contains { $0.titulo == t && $0.n <= taller.actual }) })
+            AccionLetra(color: colorApp,
+                        opciones: [("7 pt", herramientaLetra7, probadas["Letra 7 pt"] ?? false),
+                                   ("6,5 pt", herramientaLetra65, probadas["Letra 6,5 pt"] ?? false),
+                                   ("6 pt", herramientaLetra6, probadas["Letra 6 pt"] ?? false)]) { taller.hacer($0) }
                 .disabled(taller.trabajo == nil || taller.publicacionActual == nil || taller.enCurso != nil || !celdasHechas)
             let fondosListos = taller.pasos.contains { $0.titulo == "Líneas y fondos" && $0.n <= taller.actual }
             let igualado = taller.pasos.contains { $0.titulo == "Igual que el modelo" && $0.n <= taller.actual }
             Accion(icono: herramientaModelo.icono, titulo: herramientaModelo.titulo, detalle: herramientaModelo.detalle,
                    color: colorApp, principal: false, marca: igualado ? "checkmark.circle.fill" : nil) { taller.hacer(herramientaModelo) }
                 .disabled(taller.trabajo == nil || taller.publicacionActual == nil || taller.enCurso != nil || !fondosListos)
-            let probada6 = taller.pasos.contains { $0.titulo == "Letra 6 pt" && $0.n <= taller.actual }
-            Accion(icono: herramientaLetra6.icono, titulo: herramientaLetra6.titulo, detalle: herramientaLetra6.detalle,
-                   color: colorApp, principal: false, marca: probada6 ? "checkmark.circle.fill" : nil) { taller.hacer(herramientaLetra6) }
-                .disabled(taller.trabajo == nil || taller.publicacionActual == nil || taller.enCurso != nil || !celdasHechas)
             let fondosHechos = taller.pasos.contains { $0.titulo == "Líneas y fondos" && $0.n <= taller.actual }
             Accion(icono: herramientaLineaOscura.icono, titulo: herramientaLineaOscura.titulo, detalle: herramientaLineaOscura.detalle,
                    color: colorApp, principal: false, marca: nil) { taller.lineaOscura() }
@@ -1834,6 +1830,47 @@ struct Accion: View {
         .opacity(activa ? 1 : 0.45)
         .onHover { encima = $0 }
         .animation(.easeOut(duration: 0.12), value: encima)
+    }
+}
+
+/// Recuadro de «Probar letra más pequeña» con un botón por tamaño (7, 6,5 y 6 pt), cada uno con su marca si ya se probó
+struct AccionLetra: View {
+    let color: Color
+    let opciones: [(String, PasoMaquetacion, Bool)]
+    let hacer: (PasoMaquetacion) -> Void
+    @Environment(\.isEnabled) private var activa
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "textformat.size.smaller")
+                .font(.system(size: 14, weight: .semibold))
+                .frame(width: 32, height: 32)
+                .background(RoundedRectangle(cornerRadius: 8).fill(color.opacity(0.13)))
+                .foregroundStyle(color)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Probar letra más pequeña").font(.system(size: 13, weight: .semibold))
+                Text("Rehace «Celdas», «Cabeceras» y «Líneas y fondos» con la letra elegida en una versión nueva (la guía permite de 6 a 7,5 pt). Si no te convence, vuelve atrás con ⌘←")
+                    .font(.system(size: 10.5)).foregroundStyle(.secondary).lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 6) {
+                    ForEach(opciones, id: \.0) { opcion in
+                        Button { hacer(opcion.1) } label: {
+                            HStack(spacing: 3) {
+                                if opcion.2 { Image(systemName: "checkmark.circle.fill").font(.system(size: 10)) }
+                                Text(opcion.0).font(.system(size: 11.5, weight: .semibold))
+                            }
+                            .padding(.horizontal, 9).padding(.vertical, 3)
+                            .background(Capsule().fill(opcion.2 ? AnyShapeStyle(color.gradient) : AnyShapeStyle(color.opacity(0.13))))
+                            .foregroundStyle(opcion.2 ? Color.white : color)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            Spacer(minLength: 2)
+        }
+        .padding(6)
+        .opacity(activa ? 1 : 0.45)
     }
 }
 
