@@ -1402,10 +1402,10 @@ struct TarjetaSeccion: View {
                     recoger(proveedores)
                     return true
                 }
-                Accion(icono: "flag.2.crossed", titulo: "Recorrer marcas…", detalle: "Las dudas de la importación en orden de página, con su motivo",
-                       color: color, enInDesign: true, hecho: taller.hecho(.marcas, taller.nombreDestino)) { taller.lanzar(.marcas) }
                 Accion(icono: "number.square", titulo: "Sección…", detalle: "Marcador y prefijo de sección, los que suele tomar la cornisa",
                        color: color, hecho: taller.hecho(.seccion, taller.nombreDestino)) { taller.seccionDelDestino() }
+                Accion(icono: "flag.2.crossed", titulo: "Recorrer marcas…", detalle: "Las dudas de la importación en orden de página, con su motivo",
+                       color: color, enInDesign: true, hecho: taller.hecho(.marcas, taller.nombreDestino)) { taller.lanzar(.marcas) }
             }
         case .tipografia:
             VStack(alignment: .leading, spacing: 4) {
