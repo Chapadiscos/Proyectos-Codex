@@ -678,7 +678,9 @@ def entidades_fuente(texto, idioma="es"):
 def cursivas_en_runs(xml, frases):
     """Las frases dadas en cursiva dentro de los trozos de texto de una forma (LATAM/Indicadores: «Return on Assets»,
     «assessing reserve adequacy», como los PDF); devuelve el xml y cuántas se han puesto."""
-    patron = re.compile("|".join(re.escape(html.escape(f, quote=False)) for f in frases))
+    # (con sus paréntesis, si la frase va entre ellos: «(assessing reserve adequacy)», como el PDF)
+    frases_re = "|".join(re.escape(html.escape(f, quote=False)) for f in frases)
+    patron = re.compile(rf"\((?:{frases_re})\)|(?:{frases_re})")
     hechas = [0]
 
     def partir_run(m):
@@ -3634,7 +3636,8 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
                     porcentajes.append(ref(c, f))
     # Palabras en cursiva de la publicación (LATAM/Indicadores: «ARA *metrics*», «*Tier* 1», como los PDF)
     if pub.get("cursivas") and idioma == "es":
-        patron = re.compile(r'\b(' + "|".join(pub["cursivas"]) + r')\b')
+        palabras = "|".join(pub["cursivas"])
+        patron = re.compile(rf'\((?:{palabras})\)|\b(?:{palabras})\b')   # (con sus paréntesis si va entre ellos)
         for f in range(f1, f2 + 1):
             x = d(primera, f)
             t = nuevos_textos.get((primera, f), x["texto"])
