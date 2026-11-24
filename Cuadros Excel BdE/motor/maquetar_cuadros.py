@@ -5539,6 +5539,7 @@ def igualar_modelo(trabajo, pid=None):
         dibujo = z.read(dibujo_de_hoja(z, hoja)).decode("utf-8") if dibujo_de_hoja(z, hoja) else ""
         altos_v = altos_filas(z, hoja)
         caja = medidas_hoja(z, hoja, dibujo) if dibujo else None
+        tema_t = colores_tema(z)
     # Columnas por su papel
     cols = {et["primera"]: em["primera"]}
     for papel in ("datos", "solo_bloque"):
@@ -5585,6 +5586,15 @@ def igualar_modelo(trabajo, pid=None):
     hoja_xml = poner_anchos(hoja_xml, nuevos_anchos)
     # Altos
     altos = {ft: round(altos_m.get(fm - 1, defecto_m) / EMU_PT, 2) for ft, fm in filas.items()}
+    # Las filas sin pareja (Br_01: «CDS Petrobras», que Arg_01 no tiene) con el alto normal del modelo si la app las
+    # dejó con su alto normal (de una línea); antes salían a 11 pt entre filas de 11,5
+    moda = lambda xs: max(set(xs), key=xs.count) if xs else None
+    normal_app = moda([altos_v[0].get(f - 1, altos_v[1]) for f, _ in et["cuerpo"] if f in filas])
+    normal_m = moda([altos_m.get(fm - 1, defecto_m) for f, fm in filas.items() if f in dict(et["cuerpo"])])
+    if normal_app and normal_m:
+        for f in sin_pareja:
+            if altos_v[0].get(f - 1, altos_v[1]) == normal_app:
+                altos[f] = round(normal_m / EMU_PT, 2)
     entre_t = [f for f in range(et["bloque"][-1] + 1, cuadro_t["f1"])] if et["bloque"] else []
     entre_m = [f for f in range(em["bloque"][-1] + 1, cuadro_m["f1"])] if em["bloque"] else []
     hueco_m = sum(altos_m.get(f - 1, defecto_m) for f in entre_m) / EMU_PT
@@ -5605,12 +5615,29 @@ def igualar_modelo(trabajo, pid=None):
     pares_col = dict(cols)
     for st, sm in zip(et["separaciones"], em["separaciones"]):
         pares_col.setdefault(st, sm)
+    # Filas cuya siguiente no es la pareja de la siguiente del modelo (hay una fila de más o de menos debajo): sus
+    # líneas, las que puso la app (Br_01: «CDS soberano» es la última del grupo en Arg_01, con línea oscura, pero
+    # aquí la sigue «CDS Petrobras»; en el PDF, rosa)
+    orden_t, orden_m = [f for f, _ in et["cuerpo"]], [f for f, _ in em["cuerpo"]]
+    otra_vecina = set()
+    for i, ft in enumerate(orden_t):
+        fm = filas.get(ft)
+        if fm is None or fm not in orden_m:
+            continue
+        sig_t = orden_t[i + 1] if i + 1 < len(orden_t) else None
+        j = orden_m.index(fm)
+        sig_m = orden_m[j + 1] if j + 1 < len(orden_m) else None
+        if (filas.get(sig_t) if sig_t else None) != sig_m:
+            otra_vecina.add(ft)
     for ft, fm in filas.items():
         if ft in et["bloque"]:
             continue
         for ct, cm in pares_col.items():
-            formatos[(ct, ft)] = con_formato_de(est, todas_t.get((ct, ft), {}).get("s", 0),
-                                                formato_de(est_m, tema_m, celdas_m.get((cm, fm), {}).get("s", 0)))
+            s_t = todas_t.get((ct, ft), {}).get("s", 0)
+            formato = formato_de(est_m, tema_m, celdas_m.get((cm, fm), {}).get("s", 0))
+            if ft in otra_vecina:
+                formato = (formato[0], formato[1], formato_de(est, tema_t, s_t)[2], formato[3])
+            formatos[(ct, ft)] = con_formato_de(est, s_t, formato)
     # Bloque de arriba: por tablitas (concepto ↔ concepto, valor ↔ valor, lo de en medio como lo de en medio)
     for (et_e, et_v), (em_e, em_v) in zip(et["bloque_grupos"], em["bloque_grupos"]):
         medio_m = [c for c in range(em_e + 1, em_v) if ancho_m(c) > 0]
@@ -5637,6 +5664,10 @@ def igualar_modelo(trabajo, pid=None):
         detalle.append("Aviso: filas sin pareja en el modelo (conceptos nuevos o cambiados), como las deja la app: "
                        + ", ".join(f"«{todas_t.get((et['primera'], f), {}).get('texto', '').strip()[:30]}»" for f in sin_pareja[:6])
                        + ("…" if len(sin_pareja) > 6 else "") + marca([ref(et["primera"], f) for f in sin_pareja]))
+    if otra_vecina:
+        detalle.append("Con las líneas que puso la app (debajo hay otra fila que en el modelo): "
+                       + ", ".join(f"«{todas_t.get((et['primera'], f), {}).get('texto', '').strip()[:30]}»" for f in sorted(otra_vecina)[:6])
+                       + marca([ref(et["primera"], f) for f in sorted(otra_vecina)]))
     for a_ in avisos:
         detalle.append("Aviso: " + a_)
     return nuevo_paso(trabajo, IGUAL_AL_MODELO, cambios, detalle, cuadro_t)
