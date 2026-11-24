@@ -297,6 +297,9 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      bloque y tabla quedan 4 mm. Anchos (`datos_cada_uno_a_lo_justo`): si la primera columna cabe en una línea, a su
      medida y las de datos el resto a partes iguales (redondeo hacia abajo); las que solo llevan valores del bloque, a
      lo justo (Arg_01: 180 / 51 pt, PDF 177 / 56). Si no cabe (03), datos a lo justo y la primera el resto.
+     Si la segunda tablita empieza en la primera columna de datos de la tabla (Br_01: «Esperanza de vida…» en G, pegada a
+     la primera en cuanto se oculta la separación F), sus conceptos pasan a la siguiente columna de datos, como en el PDF
+     (decisión del usuario, 2026-11-24); lo que queda entre las tablitas, sin líneas ni fondos del autor.
    - **Mapa de calor** (Indicadores 02 de los grandes, Arg_02, 2026-11-21): el texto suelto encima de la cabecera,
      separado por filas ocultas y con cabecera debajo en su columna («Respecto al resto de los emergentes» sobre
      «Último dato (b)»), es la primera fila de la cabecera (sin línea debajo en Indicadores); las columnas estrechas

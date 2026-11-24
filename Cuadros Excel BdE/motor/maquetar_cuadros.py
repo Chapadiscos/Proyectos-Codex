@@ -2507,7 +2507,36 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
                     grupos.append((e, max(v)))
             if grupos:
                 cabeza_b = tramo[0] if tramo[0] not in cuerpo_b or not any(txt(c, tramo[0]) for c in etiquetas) else None
-                bloque = {"filas": tramo, "cabecera": cabeza_b, "grupos": grupos, "valores": valores}
+                bloque = {"filas": tramo, "cabecera": cabeza_b, "grupos": grupos, "valores": valores, "movidas": []}
+                # Una tablita que empieza en la primera columna de datos de la tabla (Br_01: «Esperanza de vida…» en G,
+                # pegada a la de la izquierda en cuanto se oculta la separación F): sus conceptos pasan a la siguiente
+                # columna de datos, como en el PDF publicado (decisión del usuario, 2026-11-24)
+                datos_tabla = [c for c in range(c1, c2 + 1) if ancho_col(c) > 0
+                               and any(es_cifra(todas[(c, f)]) for f in range(f1, f2 + 1) if (c, f) in todas and todas[(c, f)]["texto"].strip())]
+                for i, (e, v) in enumerate(list(grupos)):
+                    if i == 0 or not datos_tabla or e != datos_tabla[0] or grupos[i - 1][1] in datos_tabla:
+                        continue
+                    nueva_e = next((c for c in datos_tabla if c > e and c < v), None)
+                    if nueva_e is None:
+                        continue
+                    for f in tramo:
+                        orig = todas.get((e, f))
+                        if not orig or not orig["texto"].strip() or todas.get((nueva_e, f), {}).get("texto", "").strip():
+                            continue
+                        ra, rb = ref(e, f), ref(nueva_e, f)
+                        nueva_c = re.sub(r'\br="[A-Z]+\d+"', f'r="{rb}"', orig["xml"], count=1)
+                        vacia_c = re.sub(r'\st="\w+"', "", re.match(r'<c\b[^>]*?(?=/?>)', orig["xml"]).group(0)) + "/>"
+                        hoja_xml = re.sub(rf'<c r="{ra}"[^>]*?(?:/>|>.*?</c>)', lambda m_: vacia_c, hoja_xml, count=1, flags=re.S)
+                        if re.search(rf'<c r="{rb}"[^>]*?(?:/>|>.*?</c>)', hoja_xml, re.S):
+                            hoja_xml = re.sub(rf'<c r="{rb}"[^>]*?(?:/>|>.*?</c>)', lambda m_: nueva_c, hoja_xml, count=1, flags=re.S)
+                        else:
+                            hoja_xml = asegurar_filas(hoja_xml, [f])
+                            hoja_xml = con_estilo(hoja_xml, {(nueva_e, f): orig["s"]})
+                            hoja_xml = re.sub(rf'<c r="{rb}"[^>]*?/>', lambda m_: nueva_c, hoja_xml, count=1)
+                        bloque["movidas"].append(f"{ra}→{rb}")
+                    grupos[i] = (nueva_e, v)
+                if bloque["movidas"]:
+                    todas = sin_filas_ocultas(celdas_hoja(hoja_xml, compartidos), hoja_xml)
     formas_fila, cabecera_formas, filas_formas = {}, [], set()
     for anc in ANCLA.finditer(dibujo):
         desde = re.search(r'<xdr:from>\s*<xdr:col>(\d+)</xdr:col>.*?<xdr:row>(\d+)</xdr:row>', anc.group(0), re.S)
@@ -3459,11 +3488,21 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
                     elif f != cuerpo_filas[-1]:
                         lados["bottom"] = linea_b
                     estilos_bloque[(c, f)] = estilos.variante(s_, relleno="", borde=lados, letra="000000")
+        # Lo que queda entre las tablitas (y a sus lados), sin líneas ni fondo del autor (Br_01: la línea gris en G)
+        en_tablitas = {c for e, v in bloque["grupos"] for c in range(e, v + 1)}
+        for f in bloque["filas"]:
+            for c in range(c1, c2 + 1):
+                if c not in en_tablitas and (c, f) in todas and ancho_col(c) > 0:
+                    estilos_bloque[(c, f)] = estilos.variante(d(c, f)["s"], relleno="", borde={})
         detalle.append("Bloque de arriba (filas " + f"{bloque['filas'][0]}-{bloque['filas'][-1]}" + "): parte del cuadro, "
                        + str(len(bloque["grupos"])) + " tablita" + ("s" if len(bloque["grupos"]) > 1 else "") + " ("
                        + ", ".join(f"{ref(e, 1)[:-1]}-{ref(v, 1)[:-1]}" for e, v in bloque["grupos"])
                        + f"), conceptos a la izquierda y años y valores centrados, letra de {CUERPO_CELDA:g} pt".replace(".", ",")
                        + "; línea bajo el año y entre filas, cada tablita en su ancho; a 4 mm de la tabla")
+        if bloque["movidas"]:
+            detalle.append("Bloque de arriba: la segunda tablita empezaba en la primera columna de datos y quedaba pegada a la "
+                           "otra; sus conceptos, una columna de datos a la derecha, como en el PDF publicado ("
+                           + ", ".join(bloque["movidas"]) + ")")
     # Filas con puntos o flechas dibujados (Economía Latinoamericana 04): 21 pt, como el publicado, con aire para ellos
     con_puntos = [f for f in altos if f > fin_cab and any((c, f) in celdas_forma for c in columnas_forma)]
     for f in con_puntos:
