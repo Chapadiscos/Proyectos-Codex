@@ -3606,6 +3606,10 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
                 nuevos_textos[(c, f)] = t = con_millares(cp.group(1))
                 x = dict(x, texto=t)
                 sin_p.append(ref(c, f))
+            # Guion suelto sin dato, raya («-» → «—», Pe_03, como el PDF)
+            if pub.get("raya_sin_dato") and not x["numero"] and t.strip() in ("-", "–") and f > fin_cab:
+                nuevos_textos[(c, f)] = t = "—"
+                x = dict(x, texto=t)
             if es_cifra(x) and f > fin_cab:
                 lineas[(c, f)] = 1
                 # Asteriscos de significatividad pegados a la cifra: «0,237 ***» → «0,237***» (publicado 3.3)
@@ -3652,7 +3656,10 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
                 # Minúsculas de título en la primera columna: no se cambian (puede haber nombres de entidades), se
                 # proponen en un aviso (decisión del usuario, 2026-11-17, publicado del 1.5)
                 propuesta = minuscula_titulo(cuerpo, idioma)
-                if propuesta != cuerpo:
+                # (sin proponer en lo que la publicación pone a propósito: «Posición de Inversión Internacional», 03)
+                if propuesta != cuerpo and not any(re.search(poner.split("\\")[0], cuerpo) and re.search(buscar, x["texto"])
+                                                   for buscar, poner in (pub.get("textos_es", []) if idioma == "es" else [])
+                                                   if re.sub(r"\\\d", "", poner).strip()):
                     propuestas.append((ref(c, f), cuerpo, propuesta))
                 if re.fullmatch(r'total', cuerpo, re.I) and cuerpo != "TOTAL":
                     cambios_txt.append(f"«{cuerpo}» → «TOTAL»")
@@ -3663,7 +3670,10 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
                     # Salto de línea del autor en un concepto que cabe en una línea (Gua_01, «Deuda local en manos de no
                     # residentes⏎(% del total)»): fuera, como el PDF
                     junto = re.sub(r"\s*\r?\n\s*", " ", cuerpo.strip())
-                    if len(partir(junto, ancho - mc(espacios, CUERPO_CELDA), mc)) == 1:
+                    util = ancho - mc(espacios, CUERPO_CELDA)
+                    con_salto = len(partir("\n".join(l.strip() for l in cuerpo.split("\n")), util, mc))
+                    # (también si sin él ocupa menos líneas: Pe_03, «…que informan⏎al Banco de Pagos…» daba 4 y junto, 3)
+                    if len(partir(junto, util, mc)) == 1 or len(partir(junto, util, mc)) < con_salto:
                         cuerpo = junto
                         juntadas.append(f"{ref(c, f)} «{junto[:40]}»")
                 partes = partir("\n".join(l.strip() for l in cuerpo.split("\n")), ancho - mc(espacios, CUERPO_CELDA), mc)
@@ -3741,12 +3751,13 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
     if pub.get("cursivas") and idioma == "es":
         palabras = "|".join(pub["cursivas"])
         patron = re.compile(rf'\((?:{palabras})\)|\b(?:{palabras})\b')   # (con sus paréntesis si va entre ellos)
-        for f in range(f1, f2 + 1):
-            x = d(primera, f)
-            t = nuevos_textos.get((primera, f), x["texto"])
-            if t.strip() and patron.search(t) and indice_rico(x, compartidos) is None:
-                nuevos_textos[(primera, f)] = t
-                cursivas[(primera, f)] = patron
+        # (en la primera columna y en las cabeceras: «*Ranking*», 03)
+        for c_, f in [(primera, f) for f in range(f1, f2 + 1)] + [(k, f) for f in range(f1, fin_cab + 1) for k in range(c1, c2 + 1) if k != primera]:
+            x = d(c_, f)
+            t = nuevos_textos.get((c_, f), x["texto"])
+            if t.strip() and patron.search(t) and indice_rico(x, compartidos) is None and not x["numero"]:
+                nuevos_textos[(c_, f)] = t
+                cursivas[(c_, f)] = patron
     if sin_p:
         cambios_txt.append("cifras sin «(p)», como los PDF (la marca, en la cabecera de la tablita de arriba): " + ", ".join(sin_p[:8]))
     if cambios_pub:
@@ -5909,7 +5920,10 @@ def estructura(z, hoja, cuadro):
     bloque = cuadro.get("bloque_arriba", [])
     txt = lambda c, f: todas.get((c, f), {}).get("texto", "").strip()
     vis = [c for c in range(c1, c2 + 1) if ancho(c) > 0]
-    datos = [c for c in vis if c != primera and any(txt(c, f) for f in range(f1, f2 + 1))]
+    # (una separación de 3 pt con una cifra suelta no es columna de datos: Arg_03, F26; si no, el modelo tenía 9 y
+    # los demás 03, 8, y no se copiaban los anchos)
+    mdw_e = digito_maximo(z.read("xl/styles.xml").decode("utf-8"))
+    datos = [c for c in vis if c != primera and round(ancho(c) * mdw_e) >= 9 and any(txt(c, f) for f in range(f1, f2 + 1))]
     solo_bloque = [c for c in vis if c != primera and c not in datos and any(txt(c, f) for f in bloque)]
     cuerpo = [(f, norm_texto(txt(primera, f))) for f in range(fin_cab + 1, f2 + 1)
               if any(txt(c, f) for c in range(c1, c2 + 1))]

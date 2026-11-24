@@ -362,6 +362,11 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      exportaciones)», sin espacios dobles) y «*Rating*» en cursiva; FUENTE en singular si es una referencia con el año
      entre paréntesis; sin espacios dobles en FUENTES. Igualar al modelo deja su alto a las filas cuyo texto no cabe
      en una línea con el ancho final (antes tomaban el del modelo y se cortaban).
+   - **Indicadores 03 (Mx, Pe, 2026-11-24)**: textos como los PDF («Posición de Inversión Internacional», «al BIS» →
+     «al Banco de Pagos Internacionales (BPI)», «diciembre 2025» → «diciembre de 2025», FUENTES con «BPI»), «*Ranking*» en
+     cursiva (las cursivas de la publicación, también en las cabeceras), «-» sin dato → «—» (`raya_sin_dato`), el salto
+     del autor fuera también si sin él ocupa menos líneas, sin propuestas de minúsculas en lo que la publicación pone a
+     propósito; una separación de 3 pt con una cifra suelta no es columna de datos (Arg_03 tenía 9 y los demás 8).
    - **Aviso de modelo** (petición del usuario, 2026-11-24): al empezar (y al terminar «Líneas y fondos») el motor
      busca si el cuadro tiene modelo (`estado["modelo"]`). La app resalta en naranja «Igualar al modelo · hay
      modelo», avisa al acabar «Líneas y fondos» y, al «Guardar como EXCEL» sin igualar, pregunta antes.
