@@ -343,6 +343,9 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      constantes)», «PIB (m. USD)» → «PIB (mm de dólares)», «Average/Promedio 2000-2009» → «Promedio⏎2000-2009» (en dos
      líneas aunque quepa en una, Cos_01), «crédito - PIB» → «crédito-PIB»; `cursivas`: «ARA *metrics*», «*Tier* 1»
      (texto con formato, cada trozo en la letra de la celda). Esas celdas eran fórmulas: pasan a texto.
+     En FUENTES y las notas: `textos_notas_es` («inferiores a 3 dólares» → «a tres dólares») y `cursivas_notas`
+     («*assessing reserve adequacy*», «*Return on Assets*», «*Return on Equity*»). La barra solo se espacia entre
+     expresiones cortas (hasta 4 palabras a cada lado): «otros ingresos/gastos de explotación» queda pegado, como el PDF.
    - **Aviso de modelo** (petición del usuario, 2026-11-24): al empezar (y al terminar «Líneas y fondos») el motor
      busca si el cuadro tiene modelo (`estado["modelo"]`). La app resalta en naranja «Igualar al modelo · hay
      modelo», avisa al acabar «Líneas y fondos» y, al «Guardar como EXCEL» sin igualar, pregunta antes.

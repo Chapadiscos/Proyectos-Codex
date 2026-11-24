@@ -675,7 +675,31 @@ def entidades_fuente(texto, idioma="es"):
     return [p for p in re.split(separadores, t) if p.strip()]
 
 
-def maquetar_fuentes(ancla, idioma):
+def cursivas_en_runs(xml, frases):
+    """Las frases dadas en cursiva dentro de los trozos de texto de una forma (LATAM/Indicadores: «Return on Assets»,
+    «assessing reserve adequacy», como los PDF); devuelve el xml y cuántas se han puesto."""
+    patron = re.compile("|".join(re.escape(html.escape(f, quote=False)) for f in frases))
+    hechas = [0]
+
+    def partir_run(m):
+        rpr, texto = m.group(1), m.group(2)
+        if not patron.search(texto) or re.search(r'\si="1"', rpr[:rpr.find(">") + 1]):
+            return m.group(0)
+        trozos, pos = [], 0
+        for f in patron.finditer(texto):
+            if f.start() > pos:
+                trozos.append(f"<a:r>{rpr}<a:t>{texto[pos:f.start()]}</a:t></a:r>")
+            trozos.append(f'<a:r>{con_atributos(rpr, {"i": "1"})}<a:t>{f.group(0)}</a:t></a:r>')
+            hechas[0] += 1
+            pos = f.end()
+        if pos < len(texto):
+            trozos.append(f"<a:r>{rpr}<a:t>{texto[pos:]}</a:t></a:r>")
+        return "".join(trozos)
+    xml = re.sub(r'<a:r>(<a:rPr\b[^>]*?(?:/>|>.*?</a:rPr>))<a:t>([^<]*)</a:t></a:r>', partir_run, xml, flags=re.S)
+    return xml, hechas[0]
+
+
+def maquetar_fuentes(ancla, idioma, pub=None):
     """El marco de FUENTES con las reglas de «Gráficos Illus BdE»:
     - Rótulo FUENTE(S)/SOURCE(S)/NOTA(S) en mayúsculas y con dos puntos; en inglés, FUENTE → SOURCE.
       FUENTE(S)/SOURCE(S) en Roboto Medium y NOTA(S) en Light. Si la primera línea no lo tiene, «FUENTE:».
@@ -708,6 +732,10 @@ def maquetar_fuentes(ancla, idioma):
                 else:
                     salida.append(c)
             texto, n = re.subn(r"(\d)(?:[ \u202f]?)%", "\\1\u00a0%", "".join(salida))
+            # Textos como los publicados (LATAM/Indicadores: «inferiores a 3 dólares» → «a tres dólares»)
+            for buscar, poner in (pub or {}).get("textos_notas_es", []):
+                texto, k = re.subn(buscar, poner, texto)
+                cuenta["textos"] = cuenta.get("textos", 0) + k
         else:
             texto, n = re.subn(r"(\d)[ \u00a0\u202f]+%", r"\1%", texto)
         cuenta["porcentajes"] += n
@@ -771,9 +799,17 @@ def maquetar_fuentes(ancla, idioma):
             if blanco:
                 xml += vacio
                 blancos += 1
+    if idioma == "es" and (pub or {}).get("cursivas_notas"):
+        xml, n_cursivas = cursivas_en_runs(xml, pub["cursivas_notas"])
+        if n_cursivas:
+            cuenta["cursivas"] = n_cursivas
     ancla = re.sub(r'(<a:lstStyle/>|<a:lstStyle>.*?</a:lstStyle>)(.*)(</xdr:txBody>)',
                    lambda m: m.group(1) + xml + m.group(3), ancla, count=1, flags=re.S)
 
+    if cuenta.get("textos"):
+        notas.append(f"textos como los publicados ({cuenta['textos']})")
+    if cuenta.get("cursivas"):
+        notas.append(f"en cursiva, como los publicados: {', '.join(pub['cursivas_notas'])} ({cuenta['cursivas']})")
     notas.append(", ".join(f"«{r}»" for r in rotulos) + " en mayúsculas")
     if letras:
         notas.append(f"notas con letra y sangría de 8,5 pt ({letras})")
@@ -1505,7 +1541,7 @@ def textos(z, hoja, estado, propuestas=None, pub=None):
                 detalle.append(f"  «{f}» al final del párrafo, en Roboto Regular")
             titulo_mayus = mayusculas(corto)
         elif tipo == "fuentes":
-            a, notas = maquetar_fuentes(a, estado.get("idioma", "es"))
+            a, notas = maquetar_fuentes(a, estado.get("idioma", "es"), pub)
             # En el ancho de la plantilla, desde la columna A; el alto, el que pida el texto
             x, y, w, h = caja(a)
             ancho = tamano(pl["marco_fuentes"])[0]
@@ -5206,8 +5242,12 @@ def corregir_texto(texto, idioma="es", cabecera=False, provincias=False):
                     break
     # Barra entre expresiones de varias palabras, con espacios: «Deuda total/Activo total» → «Deuda total / Activo
     # total» (publicado 3.2); entre palabras sueltas, pegada («mb/d», «Deuda/PIB»)
+    # (solo entre expresiones cortas, de hasta 4 palabras: en una frase larga, «otros ingresos/gastos de explotación»
+    # tomaba toda la frase como expresión y lo espaciaba; el PDF de LATAM/Indicadores, pegado)
     def barra(m):
-        return f"{m.group(1)} / {m.group(2)}" if " " in m.group(1).strip() and " " in m.group(2).strip() else m.group(0)
+        a, b = m.group(1).strip(), m.group(2).strip()
+        cortas = len(a.split()) <= 4 and len(b.split()) <= 4
+        return f"{m.group(1)} / {m.group(2)}" if " " in a and " " in b and cortas else m.group(0)
     n2 = re.sub(r'([^()\[\],;:/\n]*\S)/(\S[^()\[\],;:/\n]*)', barra, nuevo)
     if n2 != nuevo:
         cambios.append("espacios a los lados de la barra")
