@@ -204,9 +204,13 @@ def reescribir_zip(origen, destino, cambios):
         # cálculo del libro (calcChain.xml) apunta a fórmulas que ya no están y Excel da el libro por dañado: se
         # quita y Excel la rehace al abrir
         nombres_zip = zin.namelist()
+        # (también si cambian de sitio, Br_01: los conceptos movidos de G a I son fórmulas)
+        def con_formula(xml):
+            return {re.search(rb'\br="([A-Z]+\d+)"', m_.group(0)).group(1)
+                    for m_ in re.finditer(rb'<c\b[^>]*?(?:/>|>.*?</c>)', xml, re.S) if b"<f" in m_.group(0)}
         quitar_calc = "xl/calcChain.xml" in nombres_zip and any(
             n.startswith("xl/worksheets/") and n in nombres_zip and datos is not None
-            and len(re.findall(rb"<f[ >]", datos)) < len(re.findall(rb"<f[ >]", zin.read(n)))
+            and con_formula(datos) != con_formula(zin.read(n))
             for n, datos in cambios.items())
         for info in zin.infolist():
             if quitar_calc and info.filename == "xl/calcChain.xml":
@@ -2507,36 +2511,17 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
                     grupos.append((e, max(v)))
             if grupos:
                 cabeza_b = tramo[0] if tramo[0] not in cuerpo_b or not any(txt(c, tramo[0]) for c in etiquetas) else None
-                bloque = {"filas": tramo, "cabecera": cabeza_b, "grupos": grupos, "valores": valores, "movidas": []}
-                # Una tablita que empieza en la primera columna de datos de la tabla (Br_01: «Esperanza de vida…» en G,
-                # pegada a la de la izquierda en cuanto se oculta la separación F): sus conceptos pasan a la siguiente
-                # columna de datos, como en el PDF publicado (decisión del usuario, 2026-11-24)
-                datos_tabla = [c for c in range(c1, c2 + 1) if ancho_col(c) > 0
-                               and any(es_cifra(todas[(c, f)]) for f in range(f1, f2 + 1) if (c, f) in todas and todas[(c, f)]["texto"].strip())]
-                for i, (e, v) in enumerate(list(grupos)):
-                    if i == 0 or not datos_tabla or e != datos_tabla[0] or grupos[i - 1][1] in datos_tabla:
-                        continue
-                    nueva_e = next((c for c in datos_tabla if c > e and c < v), None)
-                    if nueva_e is None:
-                        continue
-                    for f in tramo:
-                        orig = todas.get((e, f))
-                        if not orig or not orig["texto"].strip() or todas.get((nueva_e, f), {}).get("texto", "").strip():
-                            continue
-                        ra, rb = ref(e, f), ref(nueva_e, f)
-                        nueva_c = re.sub(r'\br="[A-Z]+\d+"', f'r="{rb}"', orig["xml"], count=1)
-                        vacia_c = re.sub(r'\st="\w+"', "", re.match(r'<c\b[^>]*?(?=/?>)', orig["xml"]).group(0)) + "/>"
-                        hoja_xml = re.sub(rf'<c r="{ra}"[^>]*?(?:/>|>.*?</c>)', lambda m_: vacia_c, hoja_xml, count=1, flags=re.S)
-                        if re.search(rf'<c r="{rb}"[^>]*?(?:/>|>.*?</c>)', hoja_xml, re.S):
-                            hoja_xml = re.sub(rf'<c r="{rb}"[^>]*?(?:/>|>.*?</c>)', lambda m_: nueva_c, hoja_xml, count=1, flags=re.S)
-                        else:
-                            hoja_xml = asegurar_filas(hoja_xml, [f])
-                            hoja_xml = con_estilo(hoja_xml, {(nueva_e, f): orig["s"]})
-                            hoja_xml = re.sub(rf'<c r="{rb}"[^>]*?/>', lambda m_: nueva_c, hoja_xml, count=1)
-                        bloque["movidas"].append(f"{ra}→{rb}")
-                    grupos[i] = (nueva_e, v)
-                if bloque["movidas"]:
-                    todas = sin_filas_ocultas(celdas_hoja(hoja_xml, compartidos), hoja_xml)
+                bloque = {"filas": tramo, "cabecera": cabeza_b, "grupos": grupos, "valores": valores, "hueco": []}
+                # Hueco entre tablitas (Br_01: el valor de 2026 en E, que no es columna de datos de la tabla, y la segunda
+                # tablita en G; la F vacía de en medio se ocultaba y las dos quedaban pegadas): esa columna se queda,
+                # con el ancho de una de datos, como en el PDF publicado (decisión del usuario, 2026-11-24)
+                con_texto_tabla = lambda c: any(todas.get((c, f), {}).get("texto", "").strip() for f in range(f1, f2 + 1))
+                for i in range(1, len(grupos)):
+                    v_ant, e_sig = grupos[i - 1][1], grupos[i][0]
+                    entre = [c for c in range(v_ant + 1, e_sig) if ancho_col(c) > 0]
+                    if not con_texto_tabla(v_ant) and entre and not any(con_texto_tabla(c) for c in entre) \
+                            and not any(todas.get((c, f), {}).get("texto", "").strip() for c in entre for f in tramo):
+                        bloque["hueco"].append(entre[-1])
     formas_fila, cabecera_formas, filas_formas = {}, [], set()
     for anc in ANCLA.finditer(dibujo):
         desde = re.search(r'<xdr:from>\s*<xdr:col>(\d+)</xdr:col>.*?<xdr:row>(\d+)</xdr:row>', anc.group(0), re.S)
@@ -2701,7 +2686,10 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
             continue
         for col_, fil_ in re.findall(r'<xdr:(?:from|to)>\s*<xdr:col>(\d+)</xdr:col>.*?<xdr:row>(\d+)</xdr:row>', anc.group(0), re.S):
             celdas_forma.add((int(col_) + 1, int(fil_) + 1))
-    vacias_anchas = [c for c in otras if primera + 1 < c < c2
+    hueco_bloque = set(bloque["hueco"]) if bloque else set()
+    otras = otras + [c for c in hueco_bloque if c not in otras and primera < c <= c2]
+    otras.sort()
+    vacias_anchas = [c for c in otras if primera + 1 < c < c2 and c not in hueco_bloque
                      and not (bloque and any(todas.get((c, f), {}).get("texto", "").strip() for f in bloque["filas"]))
                      and not any(d(c, f)["texto"].strip() or (c, f) in celdas_forma for f in range(f1, f2 + 1))]
     if vacias_anchas and len(otras) - len(vacias_anchas) >= 1:
@@ -2973,7 +2961,7 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
         a_medida = True
         medida = {c: max(ancho_justo([c]), necesita[c]) for c in otras}
         # Columnas que solo llevan valores del bloque de arriba (Arg_01: D, «14.643,7»): a lo justo, aparte
-        solo_bloque = [c for c in otras if not any(d(c, f)["texto"].strip() for f in range(f1, f2 + 1))]
+        solo_bloque = [c for c in otras if not any(d(c, f)["texto"].strip() for f in range(f1, f2 + 1)) and c not in hueco_bloque]
         # …y las de solo color (mapa de calor, Arg_02: «2026» y «Último dato (b)», con las cifras escondidas): a lo
         # justo de su cabecera; lo que sobra, a la primera columna
         solo_bloque += [c for c in otras if c not in solo_bloque and all(
@@ -3499,10 +3487,7 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
                        + ", ".join(f"{ref(e, 1)[:-1]}-{ref(v, 1)[:-1]}" for e, v in bloque["grupos"])
                        + f"), conceptos a la izquierda y años y valores centrados, letra de {CUERPO_CELDA:g} pt".replace(".", ",")
                        + "; línea bajo el año y entre filas, cada tablita en su ancho; a 4 mm de la tabla")
-        if bloque["movidas"]:
-            detalle.append("Bloque de arriba: la segunda tablita empezaba en la primera columna de datos y quedaba pegada a la "
-                           "otra; sus conceptos, una columna de datos a la derecha, como en el PDF publicado ("
-                           + ", ".join(bloque["movidas"]) + ")")
+
     # Filas con puntos o flechas dibujados (Economía Latinoamericana 04): 21 pt, como el publicado, con aire para ellos
     con_puntos = [f for f in altos if f > fin_cab and any((c, f) in celdas_forma for c in columnas_forma)]
     for f in con_puntos:
@@ -3787,6 +3772,7 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
                               "bloque_arriba": bloque["filas"] if bloque else [],
                               "bloque_cabecera": bloque["cabecera"] if bloque else None,
                               "bloque_grupos": [list(g) for g in bloque["grupos"]] if bloque else [],
+                              "bloque_hueco": list(bloque["hueco"]) if bloque else [],
                               "cabecera_formas": [[c, f] for f in sorted(filas_formas) for c in sorted(formas_fila.get(f, set()))
                                                   if c1 <= c <= c2 and not todas.get((c, f), {}).get("texto", "").strip()]}
 
@@ -5581,6 +5567,17 @@ def igualar_modelo(trabajo, pid=None):
     pt_de = lambda w, d_: round(w * d_)
     total_m = sum(pt_de(ancho_m(c), mdw_m) for c in em["vis"])
     total_t = sum(pt_de(nuevos_anchos[c], mdw) if c in nuevos_anchos else pt_de(ancho_t(c), mdw) for c in et["vis"])
+    # Un hueco entre tablitas del bloque que el modelo no tiene (Br_01: la F visible; Arg_01 no la necesita): lo que
+    # sobra sale de las columnas de datos, a partes iguales, y la primera conserva el ancho del modelo
+    huecos_t = [c for c in cuadro_t.get("bloque_hueco", []) if c in et["vis"]]
+    datos_t = [c for c in et["datos"] if c in nuevos_anchos]
+    if total_t - total_m >= 1 and huecos_t and datos_t:
+        quita = MULTIPLO_PT * math.ceil((total_t - total_m) / len(datos_t) / MULTIPLO_PT - 1e-6)
+        for c in datos_t:
+            nuevos_anchos[c] = ancho_comun(max(MULTIPLO_PT, pt_de(nuevos_anchos[c], mdw) - quita), mdw, digito_windows(est.xml))
+        total_t = sum(pt_de(nuevos_anchos[c], mdw) if c in nuevos_anchos else pt_de(ancho_t(c), mdw) for c in et["vis"])
+        detalle.append(f"Hueco entre las tablitas de arriba que el modelo no tiene ({', '.join(ref(c, 1)[:-1] for c in huecos_t)}): "
+                       f"las columnas de datos, {quita} pt más estrechas que en el modelo")
     if abs(total_m - total_t) >= 1 and et["primera"] in nuevos_anchos:
         pt_primera = pt_de(nuevos_anchos[et["primera"]], mdw) + total_m - total_t
         nuevos_anchos[et["primera"]] = ancho_comun(pt_primera, mdw, digito_windows(est.xml))
