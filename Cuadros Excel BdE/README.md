@@ -311,6 +311,8 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      sobre los colores) y la separación de 3 pt entre los conceptos y los colores (D) se queda.
      Letra: `cuerpo_mapa_calor` 7 pt (todos los 02 publicados de los grandes van a 7; los demás cuadros de Indicadores,
      6,5). Columnas estrechas: medio punto de tolerancia antes de ensancharlas (a 7 pt «II S» pide 15,1 → 15 pt).
+     En el mapa de calor las separaciones de 3 pt cortan las líneas del cuerpo (huecos blancos, como el publicado) y no
+     se oculta ninguna (también la de entre «2026» y «Último dato»).
    - **Aviso de cuadro que se sale de la retícula** (petición del usuario, 2026-11-21): en cada paso desde «Celdas», si
      las columnas del cuadro miden más que la retícula o si la tabla o FUENTES (medida por su texto, no por su marco)
      acaban más abajo, «Aviso: …» con los puntos que sobran y qué probar (letra más pequeña, acortar notas, quitar filas

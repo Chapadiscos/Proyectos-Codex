@@ -2700,7 +2700,8 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
         antes = max([k for k in con_datos if k < c] or [0])
         despues = min([k for k in con_datos if k > c] or [0])
         return any(a2 == antes or a1 == despues for a1, a2 in grupos if not (a1 < c < a2))
-    sueltas_sep = [c for c in separaciones if not separa_grupos(c)]
+    # (en un mapa de calor se quedan todas: Arg_02, la de entre «2026» y «Último dato» se ve en el publicado)
+    sueltas_sep = [] if no_se_ven else [c for c in separaciones if not separa_grupos(c)]
     if sueltas_sep:
         separaciones = [c for c in separaciones if c not in sueltas_sep]
         pegada = pegada + sueltas_sep
@@ -4062,6 +4063,7 @@ def lineas_y_fondos(z, hoja, cuadro, pub=None):
     usa_matiz_2 = bool((bloques and not apartados and not sin_fondo_bloque) or subtotales)
     linea_bloques = bool((pub or {}).get("linea_entre_bloques")) and not apartados
     solo_lineas = bool((pub or {}).get("solo_lineas"))
+    mapa_calor = False
     grupos_autor = set()
     if solo_lineas:
         linea_rosa = ("thin", matiz(pub["color"], TINTES["matiz1"]))
@@ -4108,7 +4110,9 @@ def lineas_y_fondos(z, hoja, cuadro, pub=None):
         for c in range(primera, c2 + 1):
             if ancho_col(c) == 0:
                 continue
-            if c in separaciones and not es_total and not solo_lineas:
+            # (en Indicadores las líneas cruzan las separaciones, salvo en el mapa de calor: ahí los huecos blancos las
+            # cortan, como el publicado Arg_02)
+            if c in separaciones and not es_total and (not solo_lineas or mapa_calor):
                 # Columnas de separación: sin líneas ni fondo (las líneas se cortan entre grupos, TERMINADO 3.4);
                 # en la fila TOTAL sí, sin hueco (guía)
                 nuevos[(c, f)] = estilos.variante(estilo(c, f), relleno="", borde={})
