@@ -356,6 +356,12 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      separación entre las tablitas (E) se queda visible a 12 pt (`HUECO_TABLITAS_PT`) para que sus líneas no se toquen.
      El cuadro de un EXCEL terminado con el bloque y la tabla separados por ≤3 filas se lee entero (antes, solo el
      bloque, y no servía de modelo).
+   - **Indicadores 02 (Br_02, 2026-11-24)**: «II S» sin partir también en las columnas estrechas que no hace falta
+     ensanchar (medio punto de tolerancia y sin «Ajustar texto» en todas las estrechas con texto); textos como el PDF
+     («Saldo de la balanza por cuenta corriente (% del PIB)», «(% del PIB)», «(% de las reservas)», «(% de las
+     exportaciones)», sin espacios dobles) y «*Rating*» en cursiva; FUENTE en singular si es una referencia con el año
+     entre paréntesis; sin espacios dobles en FUENTES. Igualar al modelo deja su alto a las filas cuyo texto no cabe
+     en una línea con el ancho final (antes tomaban el del modelo y se cortaban).
    - **Aviso de modelo** (petición del usuario, 2026-11-24): al empezar (y al terminar «Líneas y fondos») el motor
      busca si el cuadro tiene modelo (`estado["modelo"]`). La app resalta en naranja «Igualar al modelo · hay
      modelo», avisa al acabar «Líneas y fondos» y, al «Guardar como EXCEL» sin igualar, pregunta antes.

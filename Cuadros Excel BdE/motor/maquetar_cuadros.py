@@ -753,6 +753,7 @@ def maquetar_fuentes(ancla, idioma, pub=None):
     abierta = [False]
 
     def ortotipografia(texto):
+        texto = re.sub(r'(?<=\S) {2,}(?=\S)', " ", texto)   # espacios dobles (Br_02: «Banco de España.  https…»)
         if idioma == "es":
             salida = []
             for c in texto:
@@ -809,7 +810,9 @@ def maquetar_fuentes(ancla, idioma, pub=None):
     for tipo, trozos in parrafos:
         if tipo == "fuente" and len(trozos) > 2:
             nombre = texto_de(trozos[:1]).rstrip(":")
-            plural = len(entidades_fuente(texto_de(trozos[2:]), idioma)) >= 2
+            # (una referencia bibliográfica, con el año entre paréntesis, es una sola fuente aunque tenga varios autores:
+            # «Irma Alonso y Luis Molina. (2021). …», Br_02, «FUENTE:» en el PDF)
+            plural = len(entidades_fuente(texto_de(trozos[2:]), idioma)) >= 2 and not re.search(r'\(\d{4}\)', texto_de(trozos[2:]))
             base = "SOURCE" if nombre.startswith("SOURCE") else "FUENTE"
             nuevo = base + ("S" if plural else "")
             if nuevo != nombre:
@@ -3038,6 +3041,9 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
         # medio punto de tolerancia: el relleno de celda es una estimación algo holgada (a 7 pt «II S» pide 15,1)
         if pide > round(ancho_col(c) * mdw) + 0.5:
             ensanchadas[c] = ancho_comun(MULTIPLO_PT * math.ceil((pide - 0.5) / MULTIPLO_PT - 1e-6), mdw, digito_windows(estilos.xml))
+    # Las estrechas con texto (ensanchadas o no: Br_02, «II S» en 15 pt sin ensanchar), con el mismo medio punto de
+    # tolerancia y sin «Ajustar texto»: si no, se partía en «II⏎S»
+    estrechas_texto = set(ensanchadas) | {c for c in fijas if c not in separaciones and c not in pegada and ancho_col(c) > 0}
     if ensanchadas:
         detalle.append("Columnas estrechas con texto que no cabía en una línea, ensanchadas lo justo: " + ", ".join(
             f"{ref(c, 1)[:-1]} {round(ancho_col(c) * mdw)}→{round(w * mdw)} pt" for c, w in sorted(ensanchadas.items())))
@@ -3689,7 +3695,7 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
                         nuevo = t = junta
                         juntadas.append(f"{ref(c, f)} «{junta[:40]}»")
                 # (con el mismo medio punto de tolerancia con que se ensanchan las columnas estrechas: «II S» a 7 pt)
-                partes = partir(t, ancho + (0.5 if c in ensanchadas else 0), mc)
+                partes = partir(t, ancho + (0.5 if c in estrechas_texto else 0), mc)
                 if f <= fin_cab and len(partes) == 2 and "\n" not in t.strip():
                     # Cabecera de 2 líneas: el salto, puesto a mano por una frase (como los publicados)
                     dos = salto_cabecera(t.strip(), ancho, mc)
@@ -3933,7 +3939,7 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
             al = {"horizontal": h, "vertical": "top" if f in arriba else "center"}
             # (en las columnas estrechas ensanchadas lo justo, sin ajustar texto: si no, Excel partía «II S» por una
             # décima, Arg_02)
-            if (not es_cifra(x) or f <= fin_cab) and not (c == primera and f in desbordan) and c not in ensanchadas:
+            if (not es_cifra(x) or f <= fin_cab) and not (c == primera and f in desbordan) and c not in estrechas_texto:
                 al["wrapText"] = "1"
             if (c, f) in esquina_unidades:
                 nuevos_s[(c, f)] = estilos.nuevo(x["s"], {"horizontal": "left", "vertical": "top", "wrapText": "1"},
@@ -6006,6 +6012,26 @@ def igualar_modelo(trabajo, pid=None):
     hoja_xml = poner_anchos(hoja_xml, nuevos_anchos)
     # Altos
     altos = {ft: round(altos_m.get(fm - 1, defecto_m) / EMU_PT, 2) for ft, fm in filas.items()}
+    # …salvo las filas que aquí piden más (Br_02: «Servicio de la deuda externa (% de las exportaciones)» en dos líneas,
+    # en el modelo una): con el alto del modelo el texto se cortaba
+    medir_l = medidor("Roboto-Light.ttf")
+    ancho_primera = pt_de(nuevos_anchos.get(et["primera"], ancho_t(et["primera"])), mdw) - 2 * RELLENO_CELDA_PT
+
+    def no_cabe(ft):
+        x_ = todas_t.get((et["primera"], ft), {})
+        if not x_.get("texto", "").strip() or not medir_l:
+            return False
+        sz_ = re.search(r'<sz val="([\d.]+)"', est.fuente_de(x_["s"]))
+        pt_ = float(sz_.group(1)) if sz_ else CUERPO_CELDA
+        return len(partir(x_["texto"].strip(), ancho_primera, lambda t, _p: medir_l(t, pt_) * ESCALA_TEXTO_EXCEL)) > 1
+    mas_altas = [ft for ft in altos if altos_v[0].get(ft - 1, altos_v[1]) / EMU_PT > altos[ft] + 0.5
+                 and ft > cuadro_t["fin_cabecera"] and no_cabe(ft)]
+    for ft in mas_altas:
+        altos[ft] = round(altos_v[0].get(ft - 1, altos_v[1]) / EMU_PT, 2)
+    if mas_altas:
+        detalle.append("Filas más altas que en el modelo, con su alto (el texto pide más líneas): "
+                       + ", ".join(f"«{todas_t.get((et['primera'], f), {}).get('texto', '').strip()[:30]}»" for f in mas_altas[:6])
+                       + marca([ref(et["primera"], f) for f in mas_altas]))
     # Las filas sin pareja (Br_01: «CDS Petrobras», que Arg_01 no tiene) con el alto normal del modelo si la app las
     # dejó con su alto normal (de una línea); antes salían a 11 pt entre filas de 11,5
     moda = lambda xs: max(set(xs), key=xs.count) if xs else None
