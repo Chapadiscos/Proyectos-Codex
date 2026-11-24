@@ -247,7 +247,7 @@ def cifras_a_la_derecha(archivo, hoja, cuadro):
     primera, fin_cab = cuadro["primera"], cuadro["fin_cabecera"]
     filas = [f for f in cuadro.get("bloque_arriba", []) if f != cuadro.get("bloque_cabecera")] + list(range(fin_cab + 1, f2 + 1))
     cuerpo_de = lambda s_: float(re.search(r'<sz val="([\d.]+)"', est.fuente_de(s_)).group(1)) if re.search(r'<sz val="([\d.]+)"', est.fuente_de(s_)) else CUERPO_CELDA
-    por_col = {}
+    por_col, textos = {}, []
     for c in range(c1, c2 + 1):
         if c == primera or round(ancho(c) * mdw) < 9:
             continue   # (ni las ocultas ni las separaciones de 3 pt: Arg_03, una cifra suelta en F26)
@@ -255,6 +255,8 @@ def cifras_a_la_derecha(archivo, hoja, cuadro):
             d_ = todas.get((c, f))
             if d_ and d_["numero"] and d_["texto"].strip() and (c, f) not in ocultas:
                 por_col.setdefault(c, []).append((f, d_))
+            elif d_ and d_["texto"].strip() and es_cifra(d_) and est.alineacion(d_["s"]).get("horizontal") not in (None, "center"):
+                textos.append((c, f, d_))   # «—», «n. d.»: al centro aunque el modelo las traiga a la derecha (Ch_01)
     formatos, hechas = {}, 0
     for c, lista in por_col.items():
         w = round(ancho(c) * mdw)
@@ -266,6 +268,8 @@ def cifras_a_la_derecha(archivo, hoja, cuadro):
             ceros = max(0, round(((w - mas_ancha) / 2 - RELLENO_CELDA_PT) / cero))
             formatos[(c, f)] = est.a_la_derecha(d_["s"], ceros)
             hechas += 1
+    for c, f, d_ in textos:
+        formatos[(c, f)] = est.al_centro(d_["s"])
     if not formatos:
         return None
     x = con_estilo(x, formatos)
@@ -1741,6 +1745,34 @@ class Estilos:
         ids = [int(n) for n in re.findall(r'<numFmt\b[^>]*\bnumFmtId="(\d+)"', self.xml)] + [n for n, _ in self.nuevos_formatos]
         n = max(ids + [163]) + 1
         self.nuevos_formatos.append((n, codigo))
+        return n
+
+    def al_centro(self, i):
+        """Formato como el `i` centrado (y sin el relleno de ceros de las cifras)."""
+        clave = ("c", i)
+        if clave in self.cache:
+            return self.cache[clave]
+        base = sin_relleno_codigo(formato_numero(self, i))
+        nf = self.id_formato(base)
+        xf = self.xf(i)
+        apertura = re.match(r'<xf\b[^>]*?(/?)>', xf)
+        atributos = apertura.group(0)[3:-(2 if apertura.group(1) else 1)]
+        dentro = "" if apertura.group(1) else xf[apertura.end():xf.rindex("</xf>")]
+        for nombre, valor in (("numFmtId", nf), ("applyNumberFormat", 1), ("applyAlignment", 1)):
+            atributos = re.sub(rf'\s{nombre}="[^"]*"', "", atributos) + f' {nombre}="{valor}"'
+        al = dict(re.findall(r'(\w+)="([^"]*)"', re.search(r'<alignment\b[^>]*/>', dentro).group(0))) if re.search(r'<alignment\b[^>]*/>', dentro) else {}
+        al["horizontal"] = "center"
+        al.pop("indent", None)
+        dentro = re.sub(r'<alignment\b[^>]*/>', "", dentro)
+        dentro = "<alignment" + "".join(f' {k}="{v}"' for k, v in al.items()) + "/>" + dentro
+        nuevo = f"<xf{atributos}>{dentro}</xf>"
+        todos = self.xfs + self.nuevos_xfs
+        if nuevo in todos:
+            n = todos.index(nuevo)
+        else:
+            self.nuevos_xfs.append(nuevo)
+            n = len(todos)
+        self.cache[clave] = n
         return n
 
     def a_la_derecha(self, i, ceros):
