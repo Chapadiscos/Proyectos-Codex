@@ -5853,9 +5853,16 @@ def igualar_modelo(trabajo, pid=None):
             filas.update({et["cuerpo"][j][0]: em["cuerpo"][i][0] for i, j in zip(range(i1, i2), range(j1, j2))})
         elif j2 > j1:
             sin_pareja += [et["cuerpo"][j][0] for j in range(j1, j2)]
-    # Anchos
+    # Anchos: solo si las columnas son las mismas que en el modelo. Si no (Co_01 y Cos_01: el valor de «2026» va en la
+    # primera columna de datos; en Arg_01, en una columna aparte), los de la app, a la medida de este cuadro: con los
+    # del modelo la primera columna se quedaba con lo que sobraba (213 pt; PDF ≈160 y datos ≈60, como la app)
     nuevos_anchos = {}
-    for ct, cm in cols.items():
+    mismas_columnas = len(et["solo_bloque"]) == len(em["solo_bloque"]) and len(et["datos"]) == len(em["datos"])
+    if not mismas_columnas:
+        detalle.append("Anchos: los de la app (este cuadro no tiene las mismas columnas que el modelo: "
+                       f"{len(et['datos'])} de datos y {len(et['solo_bloque'])} solo del bloque de arriba aquí; "
+                       f"{len(em['datos'])} y {len(em['solo_bloque'])} en el modelo)")
+    for ct, cm in (cols.items() if mismas_columnas else []):
         pt = round(ancho_m(cm) * mdw_m)
         nuevos_anchos[ct] = ancho_comun(pt, mdw, digito_windows(est.xml))
     # Lo que falte o sobre para medir lo mismo que el modelo (Cos_01 no tiene columna aparte para el valor del bloque
