@@ -3616,7 +3616,7 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
                 x = dict(x, texto=t)
                 sin_p.append(ref(c, f))
             # Guion suelto sin dato, raya («-» → «—», Pe_03, como el PDF)
-            if pub.get("raya_sin_dato") and not x["numero"] and t.strip() in ("-", "–") and f > fin_cab:
+            if pub.get("raya_sin_dato") and not x["numero"] and t.strip() in ("-", "–", "_") and f > fin_cab:
                 nuevos_textos[(c, f)] = t = "—"
                 x = dict(x, texto=t)
             if es_cifra(x) and f > fin_cab:
@@ -6103,7 +6103,7 @@ def igualar_modelo(trabajo, pid=None):
     # líneas, las que puso la app (Br_01: «CDS soberano» es la última del grupo en Arg_01, con línea oscura, pero
     # aquí la sigue «CDS Petrobras»; en el PDF, rosa)
     orden_t, orden_m = [f for f, _ in et["cuerpo"]], [f for f, _ in em["cuerpo"]]
-    otra_vecina = set()
+    otra_vecina, linea_de = set(), {}
     for i, ft in enumerate(orden_t):
         fm = filas.get(ft)
         if fm is None or fm not in orden_m:
@@ -6113,13 +6113,20 @@ def igualar_modelo(trabajo, pid=None):
         sig_m = orden_m[j + 1] if j + 1 < len(orden_m) else None
         if (filas.get(sig_t) if sig_t else None) != sig_m:
             otra_vecina.add(ft)
+            # …y si la siguiente sí tiene pareja, la línea de la fila del modelo de justo encima de esa pareja (CARD_02:
+            # sin «Activos de los bancos…», la oscura de fin de grupo pasa a «Exposición crediticia…», como el PDF)
+            fm_sig = filas.get(sig_t) if sig_t else None
+            if fm_sig in orden_m and orden_m.index(fm_sig) > 0:
+                linea_de[ft] = orden_m[orden_m.index(fm_sig) - 1]
     for ft, fm in filas.items():
         if ft in et["bloque"]:
             continue
         for ct, cm in pares_col.items():
             s_t = todas_t.get((ct, ft), {}).get("s", 0)
             formato = formato_de(est_m, tema_m, celdas_m.get((cm, fm), {}).get("s", 0))
-            if ft in otra_vecina:
+            if ft in linea_de:
+                formato = (formato[0], formato[1], formato_de(est_m, tema_m, celdas_m.get((cm, linea_de[ft]), {}).get("s", 0))[2], formato[3])
+            elif ft in otra_vecina:
                 formato = (formato[0], formato[1], formato_de(est, tema_t, s_t)[2], formato[3])
             formatos[(ct, ft)] = con_formato_de(est, s_t, formato)
     # Bloque de arriba: por tablitas (concepto ↔ concepto, valor ↔ valor, lo de en medio como lo de en medio)

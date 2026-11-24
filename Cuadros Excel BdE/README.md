@@ -372,6 +372,9 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      «Cuadro 2⏎México: …» y el título ya va en otro, solo el rótulo (antes, título duplicado); Igualar al modelo oculta
      las filas vacías visibles de la cabecera si el modelo no las tiene (Co_02: 6 y 7) y respeta el alto de dos líneas
      del modelo (28 pt, no 30).
+   - **CARD_02 (2026-11-24)**: como los 03 (modelo Arg_03); «_» sin dato → «—»; Igualar al modelo, en una fila con
+     otra vecina debajo cuya pareja sí está en el modelo, toma la línea de la fila del modelo de justo encima de esa
+     pareja (sin «Activos de los bancos…», la oscura de fin de grupo pasa a «Exposición crediticia…», como el PDF).
    - **Aviso de modelo** (petición del usuario, 2026-11-24): al empezar (y al terminar «Líneas y fondos») el motor
      busca si el cuadro tiene modelo (`estado["modelo"]`). La app resalta en naranja «Igualar al modelo · hay
      modelo», avisa al acabar «Líneas y fondos» y, al «Guardar como EXCEL» sin igualar, pregunta antes.
