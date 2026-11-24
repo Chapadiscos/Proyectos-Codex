@@ -1321,6 +1321,13 @@ def separar_cuadro_y_titulo(partes, sig):
         lineas = [l for l in lineas_de(a) if texto_de(l).strip()]
         if len(lineas) > 1 and RE_CUADRO_LINEA.match(html.unescape(texto_de(lineas[0]))):
             rotulo = con_parrafos(a, lineas[:1])
+            # Si el título ya va en otro cuadro de texto (Mx_02 y Co_02: el del rótulo enlaza a una celda con
+            # «Cuadro 2⏎México: …» y hay otro con el título), solo el rótulo: si no, el título salía dos veces
+            resto = " ".join(html.unescape(texto_de(l)).strip() for l in lineas[1:])
+            if any(j != k and ANCLA.fullmatch(b) and " ".join(html.unescape(texto_forma(b)).split()) == " ".join(resto.split())
+                   for j, b in enumerate(partes)):
+                partes[k] = rotulo
+                return partes, html.unescape(texto_de(lineas[0])).strip()
             titulo, _ = renumerar(con_parrafos(a, lineas[1:]), sig, "Título del cuadro")
             partes[k:k + 1] = [rotulo, "", titulo]
             return partes, html.unescape(texto_de(lineas[0])).strip()
@@ -2307,7 +2314,9 @@ def buscar_tabla(celdas, rangos, ancho_col, a_emu, ancho_ret, estilos):
     # del autor pegada al cuadro): no es del cuadro (petición del usuario, 2026-11-18); el paso 2 avisa de ella
     while c2 > c1 and f2 - f1 >= 3:
         en_col = [k for k in texto if k[0] == c2]
-        if len(en_col) > 1 or any(celdas[k].get("numero") for k in en_col):
+        # (o dos: Co_02 y Pe_02, «IN EMERGING ECONOMIES: THE» y «VULNERABILITY DASHBOARD» en AC4:AC5, notas del autor
+        # que asoman dentro de la retícula porque la columna de al lado es más estrecha que en Br_02)
+        if len(en_col) > 2 or any(celdas[k].get("numero") for k in en_col):
             break
         texto -= set(en_col)
         c2 = max(k[0] for k in texto)
@@ -6038,8 +6047,11 @@ def igualar_modelo(trabajo, pid=None):
         sz_ = re.search(r'<sz val="([\d.]+)"', est.fuente_de(x_["s"]))
         pt_ = float(sz_.group(1)) if sz_ else CUERPO_CELDA
         return len(partir(x_["texto"].strip(), ancho_primera, lambda t, _p: medir_l(t, pt_) * ESCALA_TEXTO_EXCEL)) > 1
+    # (si en el modelo esa fila ya es de dos líneas, su alto: Co_02 daba 30 pt y el modelo Br_02 tiene 28)
+    altos_cuerpo_m = [altos_m.get(fm - 1, defecto_m) / EMU_PT for ft, fm in filas.items() if ft > cuadro_t["fin_cabecera"]]
+    comun_m = max(set(altos_cuerpo_m), key=altos_cuerpo_m.count) if altos_cuerpo_m else 0
     mas_altas = [ft for ft in altos if altos_v[0].get(ft - 1, altos_v[1]) / EMU_PT > altos[ft] + 0.5
-                 and ft > cuadro_t["fin_cabecera"] and no_cabe(ft)]
+                 and ft > cuadro_t["fin_cabecera"] and no_cabe(ft) and not (comun_m and altos[ft] >= 1.5 * comun_m)]
     for ft in mas_altas:
         altos[ft] = round(altos_v[0].get(ft - 1, altos_v[1]) / EMU_PT, 2)
     if mas_altas:
@@ -6055,6 +6067,16 @@ def igualar_modelo(trabajo, pid=None):
         for f in sin_pareja:
             if altos_v[0].get(f - 1, altos_v[1]) == normal_app:
                 altos[f] = round(normal_m / EMU_PT, 2)
+    # Filas vacías visibles en la cabecera que el modelo no tiene (Co_02: las 6 y 7, ocultas en Br_02): se ocultan
+    vacia_t = lambda f: not any(v.get("texto", "").strip() for (c_, f_), v in todas_t.items() if f_ == f and cuadro_t["c1"] <= c_ <= cuadro_t["c2"])
+    vacia_m = lambda f: not any(v.get("texto", "").strip() for (c_, f_), v in celdas_m.items() if f_ == f and cuadro_m["c1"] <= c_ <= cuadro_m["c2"])
+    vacias_vis_m = [f for f in range(cuadro_m["f1"], cuadro_m["fin_cabecera"] + 1) if vacia_m(f) and altos_m.get(f - 1, defecto_m) > 0]
+    ocultar = [f for f in range(cuadro_t["f1"], cuadro_t["fin_cabecera"] + 1)
+               if vacia_t(f) and altos_v[0].get(f - 1, altos_v[1]) > 0] if not vacias_vis_m else []
+    for f in ocultar:
+        altos[f] = 0
+    if ocultar:
+        detalle.append("Filas vacías de la cabecera, ocultas como en el modelo: " + ", ".join(str(f) for f in ocultar))
     entre_t = [f for f in range(et["bloque"][-1] + 1, cuadro_t["f1"])] if et["bloque"] else []
     entre_m = [f for f in range(em["bloque"][-1] + 1, cuadro_m["f1"])] if em["bloque"] else []
     hueco_m = sum(altos_m.get(f - 1, defecto_m) for f in entre_m) / EMU_PT
@@ -6068,6 +6090,8 @@ def igualar_modelo(trabajo, pid=None):
         if f not in altos:
             return fila
         fila = re.sub(r'\s(ht|customHeight)="[^"]*"', "", fila)
+        if altos[f] == 0 and 'hidden="1"' not in fila:
+            fila = fila[:-1].rstrip("/") + ' hidden="1"' + ("/>" if fila.endswith("/>") else ">")
         return fila[:-1].rstrip("/") + f' ht="{altos[f]:g}" customHeight="1"' + ("/>" if fila.endswith("/>") else ">")
     hoja_xml = re.sub(r'<row\b[^>]*?/?>', poner_alto, hoja_xml)
     # Formato de cada celda emparejada

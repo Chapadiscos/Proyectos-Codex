@@ -367,6 +367,11 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      cursiva (las cursivas de la publicación, también en las cabeceras), «-» sin dato → «—» (`raya_sin_dato`), el salto
      del autor fuera también si sin él ocupa menos líneas, sin propuestas de minúsculas en lo que la publicación pone a
      propósito; una separación de 3 pt con una cifra suelta no es columna de datos (Arg_03 tenía 9 y los demás 8).
+   - **Indicadores 02 de Ch, Co, Mx, Pe (2026-11-24)**: una columna del borde derecho con hasta dos textos sueltos y
+     sin cifras no es del cuadro (Co/Pe_02: «…VULNERABILITY DASHBOARD» en AC4:AC5); si el cuadro del rótulo trae
+     «Cuadro 2⏎México: …» y el título ya va en otro, solo el rótulo (antes, título duplicado); Igualar al modelo oculta
+     las filas vacías visibles de la cabecera si el modelo no las tiene (Co_02: 6 y 7) y respeta el alto de dos líneas
+     del modelo (28 pt, no 30).
    - **Aviso de modelo** (petición del usuario, 2026-11-24): al empezar (y al terminar «Líneas y fondos») el motor
      busca si el cuadro tiene modelo (`estado["modelo"]`). La app resalta en naranja «Igualar al modelo · hay
      modelo», avisa al acabar «Líneas y fondos» y, al «Guardar como EXCEL» sin igualar, pregunta antes.
