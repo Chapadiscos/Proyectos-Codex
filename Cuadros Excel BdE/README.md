@@ -347,6 +347,15 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      En FUENTES y las notas: `textos_notas_es` («inferiores a 3 dólares» → «a tres dólares») y `cursivas_notas`
      («*assessing reserve adequacy*», «*Return on Assets*», «*Return on Equity*»). La barra solo se espacia entre
      expresiones cortas (hasta 4 palabras a cada lado): «otros ingresos/gastos de explotación» queda pegado, como el PDF.
+   - **Indicadores 01 de los demás países** (2026-11-24, Mx, Pe y CARD, comparados con los PDF): título con el país del
+     archivo (`paises`; el original de México decía «Colombia», el de Rep. Dominicana «La República Dominicana»);
+     «Cuadro 1 (cont.)» se reconoce como rótulo, con «(cont.)» en Roboto Light; `quitar_p`: «25784 (p)» → «25.784» y la
+     cabecera de su tablita «2026 (p)», «0,9 (p)» → «0,9»; `millares`: punto de millares en formatos y cifras de texto
+     («4770,7» → «4.770,7»); cifras de texto a la derecha como las demás; «Tipos de interés» → «Tipo», «2,5 - 3,5» →
+     «2,5-3,5»; `juntar_saltos_primera`: el salto del autor en un concepto que cabe en una línea, fuera (Gua). En CARD la
+     separación entre las tablitas (E) se queda visible a 12 pt (`HUECO_TABLITAS_PT`) para que sus líneas no se toquen.
+     El cuadro de un EXCEL terminado con el bloque y la tabla separados por ≤3 filas se lee entero (antes, solo el
+     bloque, y no servía de modelo).
    - **Aviso de modelo** (petición del usuario, 2026-11-24): al empezar (y al terminar «Líneas y fondos») el motor
      busca si el cuadro tiene modelo (`estado["modelo"]`). La app resalta en naranja «Igualar al modelo · hay
      modelo», avisa al acabar «Líneas y fondos» y, al «Guardar como EXCEL» sin igualar, pregunta antes.

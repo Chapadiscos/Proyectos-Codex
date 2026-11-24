@@ -255,18 +255,23 @@ def cifras_a_la_derecha(archivo, hoja, cuadro):
             d_ = todas.get((c, f))
             if d_ and d_["numero"] and d_["texto"].strip() and (c, f) not in ocultas:
                 por_col.setdefault(c, []).append((f, d_))
+            elif d_ and re.fullmatch(r'\s*-?[\d.]*\d(?:,\d+)?\s*', d_["texto"]) and (c, f) not in ocultas:
+                por_col.setdefault(c, []).append((f, d_))   # cifra escrita como texto («25.784», CARD): como las demás
             elif d_ and d_["texto"].strip() and es_cifra(d_) and est.alineacion(d_["s"]).get("horizontal") not in (None, "center"):
                 textos.append((c, f, d_))   # «—», «n. d.»: al centro aunque el modelo las traiga a la derecha (Ch_01)
     formatos, hechas = {}, 0
     for c, lista in por_col.items():
         w = round(ancho(c) * mdw)
-        vistas = [(f, d_, cifra_vista(d_["texto"], sin_relleno_codigo(formato_numero(est, d_["s"]))).strip()) for f, d_ in lista]
+        millares = cuadro.get("millares")
+        vistas = [(f, d_, (cifra_vista(d_["texto"], con_millares_codigo(sin_relleno_codigo(formato_numero(est, d_["s"]))) if millares
+                                       else sin_relleno_codigo(formato_numero(est, d_["s"])))
+                           if d_["numero"] else d_["texto"]).strip()) for f, d_ in lista]
         mas_ancha = max(medir(v, cuerpo_de(d_["s"])) for _, d_, v in vistas)
         for f, d_, _ in vistas:
             pt = cuerpo_de(d_["s"])
             cero = medir("0", pt)
             ceros = max(0, round(((w - mas_ancha) / 2 - RELLENO_CELDA_PT) / cero))
-            formatos[(c, f)] = est.a_la_derecha(d_["s"], ceros)
+            formatos[(c, f)] = est.a_la_derecha(d_["s"], ceros, texto=not d_["numero"], millares=bool(millares))
             hechas += 1
     for c, f, d_ in textos:
         formatos[(c, f)] = est.al_centro(d_["s"])
@@ -673,6 +678,33 @@ def entidades_fuente(texto, idioma="es"):
     t = t.strip().rstrip(".")
     separadores = r'\s*[,;]\s*|\s+(?:y|e)\s+' if idioma == "es" else r'\s*[,;]\s*|\s+and\s+'
     return [p for p in re.split(separadores, t) if p.strip()]
+
+
+RE_CIFRA_P = re.compile(r'\s*(-?[\d.]*\d(?:,\d+)?)\s*\(p+\)\s*')
+
+
+def con_millares_codigo(codigo):
+    """El formato de número con punto de millares («0.0» → «#,##0.0»), en cada sección numérica que no lo lleve
+    (LATAM/Indicadores: todos los PDF lo llevan desde las 4 cifras; Gua_01 «4770,7» → «4.770,7»)."""
+    def una(sec):
+        if "@" in sec or "," in sec.split(".")[0] or not re.search(r'[0#]', sec) or re.search(r'[%Ee]', sec):
+            return sec
+        return re.sub(r'(?<![#0,\\])([0#])', r'#,##\1', sec, count=1)
+    return ";".join(una(s_) for s_ in codigo.split(";"))
+
+
+def con_millares(texto):
+    """«6084,5» → «6.084,5», «25784» → «25.784»: punto de millares en una cifra escrita como texto (LATAM/Indicadores:
+    todos los PDF lo llevan desde las 4 cifras)."""
+    m = re.fullmatch(r'(-?)(\d+)((?:,\d+)?)', texto.strip())
+    if not m or len(m.group(2)) < 4:
+        return texto
+    entera = m.group(2)
+    grupos = []
+    while len(entera) > 3:
+        grupos.insert(0, entera[-3:])
+        entera = entera[:-3]
+    return m.group(1) + ".".join([entera] + grupos) + m.group(3)
 
 
 def cursivas_en_runs(xml, frases):
@@ -1100,7 +1132,8 @@ EMU_MM = 36000
 # Final de párrafo del título que va en Roboto Regular (como en Gráficos): letras de nota entre paréntesis
 # («(a)», «(a) (b)», «(a, b)») o la continuación, en castellano «(cont.)» y en inglés «(cont'd)»
 FINAL_TITULO = re.compile(r"\s*((?:\((?:[a-zñ](?:\s*,\s*[a-zñ])*|cont\.|cont['’]d)\)\s*)+)$", re.I)
-RE_CUADRO_LINEA = re.compile(r'\s*(Cuadro|Table)\s+[A-Z]?\d+(?:\.\d+)*\s*$', re.I)
+# (también «Cuadro 1 (cont.)», LATAM/Indicadores de CARD: Gua, Hon, Nic, Rep, Salv; antes iba todo al título, a 8,5 pt)
+RE_CUADRO_LINEA = re.compile(r'\s*(Cuadro|Table)\s*[A-Z]?\d+(?:\.\d+)*(?:\s*\((?:cont\.|cont[\'’]d)\))?\s*$', re.I)
 
 
 def caja_mm(ancla, caja):
@@ -1291,7 +1324,7 @@ def separar_cuadro_y_titulo(partes, sig):
     return partes, None
 
 
-def con_marco(ancla, marco, filas, final_regular=None):
+def con_marco(ancla, marco, filas, final_regular=None, final_letra=None):
     """El marco de la plantilla (posición, tamaño, márgenes y letra) con el texto del autor, cada línea en un
     párrafo con el formato de la plantilla y el formato local del autor. Si `final_regular`, el final de cada
     párrafo que case (p. ej. «(a)» o «(cont.)») va en Roboto Regular. Conserva el id y el nombre del autor."""
@@ -1316,7 +1349,7 @@ def con_marco(ancla, marco, filas, final_regular=None):
             if final:
                 finales.append(final.group(1).strip())
                 lineas[k] = tramo(linea, final.start(1), len(texto_de(linea)),
-                                  cambiar_rpr=lambda r: fijar_letra(r, sz, ROBOTO, False))
+                                  cambiar_rpr=lambda r: fijar_letra(r, sz, final_letra or ROBOTO, False))
     parrafos = "".join(f"<a:p>{ppr}{runs_xml(linea)}</a:p>" for linea in lineas)
     cuerpo = re.sub(r'(<a:lstStyle/>|<a:lstStyle>.*?</a:lstStyle>)(.*)(</xdr:txBody>)',
                     lambda m: m.group(1) + parrafos + m.group(3), cuerpo, count=1, flags=re.S)
@@ -1525,8 +1558,10 @@ def textos(z, hoja, estado, propuestas=None, pub=None):
                            + marca(forma=nombre_forma(a)))
             continue
         if tipo == "cuadro":
-            a, _ = con_marco(a, pl["marco_cuadro"], filas)
-            detalle.append(f"«{corto}»: Roboto Regular 7 pt, marco y posición de la plantilla")
+            # «(cont.)» en Roboto Light, más fina que «Cuadro 1» (PDF de LATAM/Indicadores de CARD, Gua_01)
+            a, finales_c = con_marco(a, pl["marco_cuadro"], filas, final_regular=FINAL_TITULO, final_letra=ROBOTO_LIGHT)
+            detalle.append(f"«{corto}»: Roboto Regular 7 pt, marco y posición de la plantilla"
+                           + (f"; «{finales_c[0]}» en Roboto Light" if finales_c else ""))
             # Siempre «Cuadro» (o «Table»), en todas las publicaciones (decisión del usuario, 2026-11-17, Memoria 3.2)
             todo = html.unescape(texto_forma(a))
             bien = re.sub(r'(?i)\b(cuadro|table)\b', lambda m: m.group(1).capitalize(), todo, count=1)
@@ -1536,6 +1571,17 @@ def textos(z, hoja, estado, propuestas=None, pub=None):
                     a = cambiado
                     detalle.append(f"«{corto}» → «{bien.split(chr(10))[0].strip()}» (siempre «{bien.strip().split()[0]}»)")
         elif tipo == "titulo":
+            # El país del título, el del archivo (LATAM/Indicadores: el original de México traía «Colombia: …» y el de
+            # República Dominicana «La República Dominicana: …»; los PDF, bien)
+            codigo = re.search(r'_([A-Za-z]+)_\d+\b', Path(estado.get("origen", "")).name)
+            pais = pub.get("paises", {}).get(codigo.group(1)) if codigo else None
+            if pais:
+                todo = html.unescape(texto_forma(a))
+                antes = re.match(r'\s*([^:\n]+?)\s*:', todo)
+                if antes and antes.group(1) != pais and any(p_ in antes.group(1) for p_ in pub["paises"].values()):
+                    a = sustituir_en_runs(a, antes.start(1), antes.end(1), pais)
+                    detalle.append(f"Aviso: el título decía «{antes.group(1)}» y el archivo es de {pais}: «{pais}: …», como el PDF")
+                    corto = pais + todo[antes.end(1):antes.end(1) + 40]
             a, finales = con_marco(a, pl["marco_titulo"], filas, final_regular=FINAL_TITULO)
             titulo_k = k
             detalle.append(f"Título «{corto}»: Roboto Medium 8,5 pt, marco y posición de la plantilla")
@@ -1813,16 +1859,21 @@ class Estilos:
         self.cache[clave] = n
         return n
 
-    def a_la_derecha(self, i, ceros):
+    def a_la_derecha(self, i, ceros, texto=False, millares=False):
         """Formato como el `i` alineado a la derecha y con `ceros` anchos de cero invisibles detrás de la cifra (en
         cada sección numérica del formato; la de texto, igual)."""
-        clave = ("d", i, ceros)
+        clave = ("d", i, ceros, texto, millares)
         if clave in self.cache:
             return self.cache[clave]
         base = sin_relleno_codigo(formato_numero(self, i))
-        secciones = base.split(";")
+        if millares:
+            base = con_millares_codigo(base)
         relleno = "_0" * ceros
-        nuevo_codigo = ";".join(sec + relleno if k < 3 and not (k == 3 or "@" in sec) else sec for k, sec in enumerate(secciones))
+        if texto:
+            nuevo_codigo = "@" + relleno   # cifra escrita como texto: el mismo margen, en la sección de texto
+        else:
+            secciones = base.split(";")
+            nuevo_codigo = ";".join(sec + relleno if k < 3 and "@" not in sec else sec for k, sec in enumerate(secciones))
         nf = self.id_formato(nuevo_codigo)
         xf = self.xf(i)
         apertura = re.match(r'<xf\b[^>]*?(/?)>', xf)
@@ -2032,6 +2083,7 @@ def combinadas(hoja_xml):
     return rangos
 
 
+HUECO_TABLITAS_PT = 12   # separación entre las tablitas de arriba de LATAM/Indicadores de CARD (PDF ≈11-18 pt)
 SEPARACION_PT = 3     # columnas de separación de la cabecera: 3 pt (Memoria 3.4 TERMINADO: Excel enseña «0,25»)
 MULTIPLO_PT = 3       # anchos de columna en múltiplos de 3 pt: la medida en que coinciden el Mac (puntos) y Windows
                       # (píxeles de 0,75 pt); el cuadro mide 468 pt (retícula 468,9), «visualmente ni se aprecia»
@@ -2236,6 +2288,13 @@ def buscar_tabla(celdas, rangos, ancho_col, a_emu, ancho_ret, estilos):
               and len({k[0] for k in g if celdas.get(k, {}).get("texto", "").strip()}) >= 3]
     if len(tablas) > 1:
         grupo = min(tablas, key=lambda g: min(k[1] for k in g if celdas.get(k, {}).get("texto", "").strip()))
+        # …salvo que la de debajo empiece a 3 filas o menos: es el mismo cuadro (LATAM/Indicadores de CARD ya
+        # terminados, Cos_01: el bloque de arriba en 4-8 y la tabla desde la 11, con una fila fina y otra oculta en
+        # medio; sin las líneas del autor que las unían, eran dos tablas y se tomaba solo el bloque)
+        filas_txt = lambda g: [k[1] for k in g if celdas.get(k, {}).get("texto", "").strip()]
+        for otra in sorted(tablas, key=lambda g: min(filas_txt(g))):
+            if otra is not grupo and 0 < min(filas_txt(otra)) - max(filas_txt(grupo)) <= 3:
+                grupo = grupo | otra
     else:
         grupo = max(candidatos, key=lambda g: sum(1 for k in g if celdas.get(k, {}).get("texto", "").strip()))
     # Sin las filas y columnas de los bordes que no tienen texto (bordes o rellenos sueltos del autor)
@@ -2708,7 +2767,8 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
                     grupos.append((e, max(v)))
             if grupos:
                 cabeza_b = tramo[0] if tramo[0] not in cuerpo_b or not any(txt(c, tramo[0]) for c in etiquetas) else None
-                bloque = {"filas": tramo, "cabecera": cabeza_b, "grupos": grupos, "valores": valores, "hueco": [], "movidas": []}
+                bloque = {"filas": tramo, "cabecera": cabeza_b, "grupos": grupos, "valores": valores, "hueco": [], "movidas": [],
+                          "separa": []}
                 # Una tablita que empieza en la primera columna de datos de la tabla (Br_01: «Esperanza de vida…» en G,
                 # pegada a la de la izquierda en cuanto se oculta la separación F): sus conceptos pasan a la siguiente
                 # columna de datos, como en el PDF publicado (decisión del usuario, 2026-11-24, confirmada tras compararlo con el PDF)
@@ -2748,6 +2808,12 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
                     if not con_texto_tabla(v_ant) and entre and not any(con_texto_tabla(c) for c in entre) \
                             and not any(todas.get((c, f), {}).get("texto", "").strip() for c in entre for f in tramo):
                         bloque["hueco"].append(entre[-1])
+                    elif con_texto_tabla(v_ant) and entre and not any(con_texto_tabla(c) for c in entre) \
+                            and not any(todas.get((c, f), {}).get("texto", "").strip() for c in entre for f in tramo):
+                        # El valor de la de la izquierda es la 1.ª columna de datos y la de la derecha empieza en la
+                        # 2.ª, con solo una separación en medio (LATAM/Indicadores de CARD, Cos_01: D y F, con E): la
+                        # separación se queda, más ancha, para que las líneas de las dos no se toquen (PDF ≈11-18 pt)
+                        bloque["separa"].append(entre[-1])
     formas_fila, cabecera_formas, filas_formas = {}, [], set()
     for anc in ANCLA.finditer(dibujo):
         desde = re.search(r'<xdr:from>\s*<xdr:col>(\d+)</xdr:col>.*?<xdr:row>(\d+)</xdr:row>', anc.group(0), re.S)
@@ -2944,7 +3010,8 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
         despues = min([k for k in con_datos if k > c] or [0])
         return any(a2 == antes or a1 == despues for a1, a2 in grupos if not (a1 < c < a2))
     # (en un mapa de calor se quedan todas: Arg_02, la de entre «2026» y «Último dato» se ve en el publicado)
-    sueltas_sep = [] if no_se_ven else [c for c in separaciones if not separa_grupos(c)]
+    separa_tablitas = set(bloque["separa"]) if bloque else set()
+    sueltas_sep = [] if no_se_ven else [c for c in separaciones if not separa_grupos(c) and c not in separa_tablitas]
     if sueltas_sep:
         separaciones = [c for c in separaciones if c not in sueltas_sep]
         pegada = pegada + sueltas_sep
@@ -2952,8 +3019,13 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
                        "del 3.1: " + ", ".join(ref(c, 1)[:-1] for c in sueltas_sep))
     if separaciones or pegada:
         w_sep = ancho_comun(SEPARACION_PT, mdw, digito_windows(estilos.xml))
+        w_tablitas = ancho_comun(HUECO_TABLITAS_PT, mdw, digito_windows(estilos.xml))
         ancho_previo = ancho_col
-        ancho_col = lambda c, _v=ancho_previo, _s=set(separaciones), _w=w_sep, _p=set(pegada): 0.0 if c in _p else (_w if c in _s else _v(c))
+        ancho_col = lambda c, _v=ancho_previo, _s=set(separaciones), _w=w_sep, _p=set(pegada), _t=separa_tablitas, _wt=w_tablitas: \
+            0.0 if c in _p else (_wt if c in _t and c in _s else (_w if c in _s else _v(c)))
+        if separa_tablitas & set(separaciones):
+            detalle.append(f"Separación entre las tablitas de arriba ({', '.join(ref(c, 1)[:-1] for c in sorted(separa_tablitas))}): "
+                           f"visible, de {HUECO_TABLITAS_PT} pt, para que sus líneas no se toquen (como el PDF)")
     # Columnas estrechas con texto que no les cabe en una línea (Arg_02: semestres de 14 pt y «II S» pide 14,3): se
     # ensanchan lo justo, en múltiplos de 3 pt, a costa de la primera; así no se parten («II⏎S»)
     ensanchadas = {}
@@ -3473,7 +3545,7 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
         primera_final = MULTIPLO_PT * max(1, round(primera_pt / MULTIPLO_PT))
     nuevos_anchos = {primera: ancho_comun(primera_final, mdw, mdw_win)}
     for c in separaciones:
-        nuevos_anchos[c] = w_sep
+        nuevos_anchos[c] = w_tablitas if c in separa_tablitas else w_sep
     for c in pegada:
         nuevos_anchos[c] = 0
     for c in otras:
@@ -3485,7 +3557,8 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
     detalle.append(f"Anchos de columna en múltiplos de {MULTIPLO_PT} pt: el cuadro mide {total_pt} pt (retícula "
                    f"{ancho_ret / EMU_PT:.1f} pt); primera columna {primera_final} pt".replace(".", ",")
                    + (f" y columnas de datos de {', '.join(str(v) for v in sorted(set(otros_pt.values())))} pt" if otras else "")
-                   + (f"; {len(separaciones)} columna{'s' if len(separaciones) > 1 else ''} de separación de {SEPARACION_PT} pt"
+                   + (f"; {len(separaciones)} columna{'s' if len(separaciones) > 1 else ''} de separación de "
+                      + ", ".join(sorted({f"{HUECO_TABLITAS_PT if c in separa_tablitas else SEPARACION_PT}" for c in separaciones})) + " pt"
                       if separaciones else "")
                    + (f"; {len(fijas) - len(separaciones)} columna{'s' if len(fijas) - len(separaciones) > 1 else ''} estrecha{'s' if len(fijas) - len(separaciones) > 1 else ''} con texto, sin tocar"
                       if len(fijas) > len(separaciones) else ""))
@@ -3494,7 +3567,7 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
     nuevos_textos, lineas, cambios_txt, porcentajes, correcciones, saltos, sangrados, propuestas = {}, {}, [], [], [], [], [], []
     juntadas = []
     sangrar_ricos, ricos_sin_tocar, asteriscos, decimales = {}, [], [], []
-    cambios_pub, cursivas = [], {}
+    cambios_pub, cursivas, sin_p = [], {}, []
 
     def textos_es(t):
         """Reglas de texto en castellano: «3%(± 1 pp)» → «3 % (± 1 pp)» y las sustituciones de la publicación
@@ -3520,6 +3593,13 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
             else:
                 ancho_emu = unidades_a_emu(ancho_col(c))
             ancho = ancho_emu / EMU_PT - 2 * RELLENO_CELDA_PT
+            # Cifras con «(p)» de previsión (LATAM/Indicadores de CARD, «0,9 (p)», «-0,296 (pp)»): sin la marca, como
+            # los PDF, y con punto de millares
+            cp = RE_CIFRA_P.fullmatch(t) if pub.get("quitar_p") and not x["numero"] and f > fin_cab else None
+            if cp and indice_rico(x, compartidos) is None:
+                nuevos_textos[(c, f)] = t = con_millares(cp.group(1))
+                x = dict(x, texto=t)
+                sin_p.append(ref(c, f))
             if es_cifra(x) and f > fin_cab:
                 lineas[(c, f)] = 1
                 # Asteriscos de significatividad pegados a la cifra: «0,237 ***» → «0,237***» (publicado 3.3)
@@ -3573,6 +3653,13 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
                     cuerpo = "TOTAL"
                 espacios = " " * (SANGRIA * nivel_fila(f))
                 mc = medir_de(c, f)
+                if pub.get("juntar_saltos_primera") and "\n" in cuerpo:
+                    # Salto de línea del autor en un concepto que cabe en una línea (Gua_01, «Deuda local en manos de no
+                    # residentes⏎(% del total)»): fuera, como el PDF
+                    junto = re.sub(r"\s*\r?\n\s*", " ", cuerpo.strip())
+                    if len(partir(junto, ancho - mc(espacios, CUERPO_CELDA), mc)) == 1:
+                        cuerpo = junto
+                        juntadas.append(f"{ref(c, f)} «{junto[:40]}»")
                 partes = partir("\n".join(l.strip() for l in cuerpo.split("\n")), ancho - mc(espacios, CUERPO_CELDA), mc)
                 if espacios and not x["texto"].startswith(espacios + cuerpo.split("\n")[0][:1]):
                     sangrados.append(ref(c, f))
@@ -3630,6 +3717,16 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
             if not t.strip() or ancho_col(c) == 0 or x["numero"] or indice_rico(x, compartidos) is not None:
                 continue
             nuevo = textos_es(re.sub(r'(\d)[ \u202f]?%', '\\1\u00a0%', t))
+            cp = RE_CIFRA_P.fullmatch(nuevo) if pub.get("quitar_p") else None
+            if cp:
+                # «25784 (p)» → «25.784» y la cabecera de su tablita, «2026 (p)» (PDF de CARD)
+                nuevo = con_millares(cp.group(1))
+                sin_p.append(ref(c, f))
+                cab = bloque.get("cabecera")
+                if cab and d(c, cab)["texto"].strip() and "(p)" not in d(c, cab)["texto"]:
+                    nuevos_textos[(c, cab)] = d(c, cab)["texto"].strip() + " (p)"
+            elif pub.get("quitar_p"):
+                nuevo = con_millares(nuevo) if re.fullmatch(r'\s*-?\d+(?:,\d+)?\s*', nuevo) else nuevo
             if nuevo != t:
                 nuevos_textos[(c, f)] = nuevo
                 if re.search(r'\d[ \u202f]?%', t):
@@ -3644,6 +3741,8 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
             if t.strip() and patron.search(t) and indice_rico(x, compartidos) is None:
                 nuevos_textos[(primera, f)] = t
                 cursivas[(primera, f)] = patron
+    if sin_p:
+        cambios_txt.append("cifras sin «(p)», como los PDF (la marca, en la cabecera de la tablita de arriba): " + ", ".join(sin_p[:8]))
     if cambios_pub:
         cambios_txt.append("textos como los publicados: " + "; ".join(cambios_pub[:6]) + ("…" if len(cambios_pub) > 6 else ""))
     if cursivas:
@@ -4059,7 +4158,7 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
         comp = re.sub(r'\buniqueCount="\d+"', f'uniqueCount="{len(nuevas_si)}"', comp, count=1)
         cambios["xl/sharedStrings.xml"] = comp.encode("utf-8")
     return cambios, detalle, {"c1": c1, "f1": f1, "c2": c2, "f2": f2, "primera": primera, "fin_cabecera": fin_cab,
-                              "cifras_derecha": bool(pub.get("cifras_a_la_derecha")),
+                              "cifras_derecha": bool(pub.get("cifras_a_la_derecha")), "millares": bool(pub.get("millares")),
                               "bloque_arriba": bloque["filas"] if bloque else [],
                               "bloque_cabecera": bloque["cabecera"] if bloque else None,
                               "bloque_grupos": [list(g) for g in bloque["grupos"]] if bloque else [],
@@ -5192,6 +5291,25 @@ def recasar_textos(textos, de, a):
             i += 1
         salida.append("".join(trozo))
     return salida if i == len(pares) else None
+
+
+def sustituir_en_runs(xml, inicio, fin, nuevo):
+    """La forma con los caracteres [inicio, fin) de su texto cambiados por `nuevo` (en el trozo donde empiezan; lo
+    que ocupaban en los trozos siguientes, fuera), conservando el formato de cada trozo."""
+    patron = r'(<a:t>|<a:t\b[^>]*>)(.*?)(</a:t>)'
+    pos = [0]
+
+    def uno(m):
+        t = html.unescape(m.group(2))
+        a, b = pos[0], pos[0] + len(t)
+        pos[0] = b
+        if b <= inicio or a >= fin:
+            return m.group(0)
+        antes = t[:max(0, inicio - a)]
+        despues = t[max(0, fin - a):] if fin < b else ""
+        poner = nuevo if a <= inicio < b or (inicio < a and a == 0) else ""
+        return m.group(1) + html.escape(antes + poner + despues, quote=False) + m.group(3)
+    return re.sub(patron, uno, xml, flags=re.S)
 
 
 def recasar_xml(xml, de, a, forma=True):
