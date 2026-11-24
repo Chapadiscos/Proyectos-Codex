@@ -337,6 +337,12 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      la derecha; el margen va en el formato de número («0.0_0_0_0_0»: ceros invisibles), igual en Mac y Windows. Se
      rehace en cada paso (`nuevo_paso`), con los anchos y la letra del momento (Igualar al modelo, «Probar letra»).
      Textos («—», «n. d.», «3 % (± 1,5 pp)»), cifras escondidas del mapa de calor y separaciones de 3 pt, sin tocar.
+   - **Textos como los publicados** (Indicadores, en castellano; petición del usuario, 2026-11-24, Ch_01): espacio
+     que no parte línea entre la cifra y «%» también en el bloque de arriba («3%(± 1 pp)» → «3 % (± 1 pp)», con
+     espacio antes del paréntesis); `textos_es` en publicaciones.json: «PIB per cápita (USD)» → «(dólares
+     constantes)», «PIB (m. USD)» → «PIB (mm de dólares)», «Average/Promedio 2000-2009» → «Promedio⏎2000-2009» (en dos
+     líneas aunque quepa en una, Cos_01), «crédito - PIB» → «crédito-PIB»; `cursivas`: «ARA *metrics*», «*Tier* 1»
+     (texto con formato, cada trozo en la letra de la celda). Esas celdas eran fórmulas: pasan a texto.
    - **Aviso de modelo** (petición del usuario, 2026-11-24): al empezar (y al terminar «Líneas y fondos») el motor
      busca si el cuadro tiene modelo (`estado["modelo"]`). La app resalta en naranja «Igualar al modelo · hay
      modelo», avisa al acabar «Líneas y fondos» y, al «Guardar como EXCEL» sin igualar, pregunta antes.

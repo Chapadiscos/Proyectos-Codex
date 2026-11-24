@@ -3456,6 +3456,19 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
     nuevos_textos, lineas, cambios_txt, porcentajes, correcciones, saltos, sangrados, propuestas = {}, {}, [], [], [], [], [], []
     juntadas = []
     sangrar_ricos, ricos_sin_tocar, asteriscos, decimales = {}, [], [], []
+    cambios_pub, cursivas = [], {}
+
+    def textos_es(t):
+        """Reglas de texto en castellano: «3%(± 1 pp)» → «3 % (± 1 pp)» y las sustituciones de la publicación
+        (LATAM/Indicadores: «Average» → «Promedio», «PIB (m. USD)» → «PIB (mm de dólares)»…, como los PDF)."""
+        if idioma != "es":
+            return t
+        nuevo = re.sub(r'%\(', '% (', t)
+        for buscar, poner in pub.get("textos_es", []):
+            nuevo = re.sub(buscar, poner, nuevo)
+        if nuevo != t:
+            cambios_pub.append(f"«{t.strip()[:30]}» → «{nuevo.strip()[:30]}»".replace("\n", " / ").replace("\r", ""))
+        return nuevo
     for f in range(f1, f2 + 1):
         for c in range(c1, c2 + 1):
             if (c, f) in tapadas or ancho_col(c) == 0:
@@ -3492,7 +3505,7 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
             con_espacio = re.sub(r'(?<=[\w)])([<>≤≥])', r' \1', con_espacio)
             if con_espacio != t:
                 cambios_txt.append(f"«{t.strip()[:20]}» → «{con_espacio.strip()[:20]}»")
-            con_por = re.sub(r'(\d)[ \u202f]?%', '\\1\u00a0%', con_espacio)
+            con_por = textos_es(re.sub(r'(\d)[ \u202f]?%', '\\1\u00a0%', con_espacio))
             corregido, tipos_c = corregir_texto(con_por, idioma, cabecera=f <= fin_cab, provincias=f > fin_cab)
             if tipos_c:
                 correcciones.append(f"{ref(c, f)} «{con_por.strip()[:35]}» → «{corregido.strip()[:35]}» ({', '.join(tipos_c)})")
@@ -3540,7 +3553,9 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
                     limpio = re.sub(r"[ \t]*\r?\n[ \t]*", "\n", t.strip())
                     if limpio != t:
                         nuevo = t = limpio
-                if f <= fin_cab and "\n" in t.strip() and not re.search(r"\n\s*\(", t) and not pub.get("respetar_saltos_cabecera"):
+                # («Promedio⏎2000-2009» se queda en dos líneas aunque quepa en una: así todos los PDF de LATAM, Cos_01)
+                if f <= fin_cab and "\n" in t.strip() and not re.search(r"\n\s*\(", t) and not pub.get("respetar_saltos_cabecera") \
+                        and not re.fullmatch(r"(?:Promedio|Average)\s*\n\s*\d{4}-\d{4}", t.strip()):
                     # Salto de línea del autor en una cabecera que cabe en una línea: sobra (publicado 3.1,
                     # «Peso VAB⏎2023» → «Peso VAB 2023»); el de antes de un paréntesis se queda (publicado 1.5,
                     # «Deflactor del VAB⏎(crecimiento interanual promedio)»)
@@ -3569,6 +3584,31 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
                     sangrar_ricos[(c, f)] = (rico, nuevo[:len(nuevo) - len(nuevo.lstrip(" "))])
                 else:
                     ricos_sin_tocar.append(f"{ref(c, f)} «{x['texto'].strip()[:25]}» → «{nuevo.strip()[:25]}»")
+    # Bloque de arriba (Indicadores 01, «3%(± 1 pp)» y «PIB per cápita (USD)»): las mismas reglas de texto
+    for f in (bloque["filas"] if bloque else []):
+        for c in range(c1, c2 + 1):
+            x = d(c, f)
+            t = x["texto"]
+            if not t.strip() or ancho_col(c) == 0 or x["numero"] or indice_rico(x, compartidos) is not None:
+                continue
+            nuevo = textos_es(re.sub(r'(\d)[ \u202f]?%', '\\1\u00a0%', t))
+            if nuevo != t:
+                nuevos_textos[(c, f)] = nuevo
+                if re.search(r'\d[ \u202f]?%', t):
+                    porcentajes.append(ref(c, f))
+    # Palabras en cursiva de la publicación (LATAM/Indicadores: «ARA *metrics*», «*Tier* 1», como los PDF)
+    if pub.get("cursivas") and idioma == "es":
+        patron = re.compile(r'\b(' + "|".join(pub["cursivas"]) + r')\b')
+        for f in range(f1, f2 + 1):
+            x = d(primera, f)
+            t = nuevos_textos.get((primera, f), x["texto"])
+            if t.strip() and patron.search(t) and indice_rico(x, compartidos) is None:
+                nuevos_textos[(primera, f)] = t
+                cursivas[(primera, f)] = patron
+    if cambios_pub:
+        cambios_txt.append("textos como los publicados: " + "; ".join(cambios_pub[:6]) + ("…" if len(cambios_pub) > 6 else ""))
+    if cursivas:
+        cambios_txt.append("en cursiva, como los publicados: " + ", ".join(f"{ref(*k)} «{nuevos_textos[k].strip()[:25]}»" for k in sorted(cursivas)))
     if asteriscos:
         cambios_txt.append(f"asteriscos de significatividad pegados a la cifra («0,237 ***» → «0,237***», {len(asteriscos)} celda{'s' if len(asteriscos) > 1 else ''})")
     if ricos_sin_tocar:
@@ -3780,7 +3820,7 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
                    + (f"; lo que iba en negrita, en {LETRA_CELDA_NEGRITA} ({len(negritas)} celda{'s' if len(negritas) > 1 else ''}: "
                       + ", ".join(negritas[:8]) + ("…" if len(negritas) > 8 else "") + ")" if negritas else ""))
     detalle.append("Alineación: cabecera, la primera a la izquierda y las demás al centro; primera columna a la "
-                   "izquierda; cifras al centro; " + ("centrado en altura, también las filas de varias líneas (como los "
+                   "izquierda; " + ("cifras a la derecha (la más ancha, centrada); " if pub.get("cifras_a_la_derecha") else "cifras al centro; ") + ("centrado en altura, también las filas de varias líneas (como los "
                    "publicados de " + pub.get("nombre", "") + ")" if pub.get("centrado_en_altura") else "centrado en altura salvo las filas de arriba"))
 
     # Textos enriquecidos (con varios formatos) de las celdas del cuadro: también en Roboto Light 7,5, sin negrita
@@ -3816,7 +3856,27 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
         if todas.get((c, f), {}).get("borrar"):
             apertura = re.sub(r'\st="\w+"', "", apertura)
             return (apertura if apertura.endswith("/>") else apertura[:-1] + "/>")
-        if (c, f) in nuevos_textos:
+        if (c, f) in cursivas and s_nuevo is not None:
+            # Texto con trozos en cursiva: cada trozo con la letra de la celda (Roboto Light, su cuerpo y negro)
+            fuente = estilos.fuente_de(s_nuevo)
+            base = re.sub(r'<name\b', "<rFont", re.sub(r'</?font>|<family\b[^>]*/>|<scheme\b[^>]*/>|<[bi]\b[^>]*/>', "", fuente))
+            trozos = []
+            texto = nuevos_textos[(c, f)]
+            pos = 0
+            for m_ in cursivas[(c, f)].finditer(texto):
+                if m_.start() > pos:
+                    trozos.append((texto[pos:m_.start()], False))
+                trozos.append((m_.group(0), True))
+                pos = m_.end()
+            if pos < len(texto):
+                trozos.append((texto[pos:], False))
+            nuevas_si.append("<si>" + "".join(f'<r><rPr>{"<i/>" if it else ""}{base}</rPr><t xml:space="preserve">{html.escape(tz, quote=False)}</t></r>'
+                                              for tz, it in trozos) + "</si>")
+            apertura = re.sub(r'\st="\w+"', "", apertura).replace("<c ", '<c t="s" ', 1)
+            if apertura.endswith("/>"):
+                apertura = apertura[:-2] + ">"
+            cuerpo = f"<v>{len(nuevas_si) - 1}</v></c>"
+        elif (c, f) in nuevos_textos:
             nuevas_si.append(f'<si><t xml:space="preserve">{html.escape(nuevos_textos[(c, f)], quote=False)}</t></si>')
             apertura = re.sub(r'\st="\w+"', "", apertura).replace("<c ", '<c t="s" ', 1)
             if apertura.endswith("/>"):
@@ -3830,7 +3890,7 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
         xml = m.group(0)
         r = RE_REF.match(re.search(r'\br="([^"]+)"', xml).group(1))
         c, f = col_num(r.group(1)), int(r.group(2))
-        if not (c1 <= c <= c2 and f1 <= f <= f2):
+        if not (c1 <= c <= c2 and (f1 <= f <= f2 or (bloque and f in bloque["filas"]))):
             return xml
         return celda_nueva(c, f, xml)
     hoja_xml = re.sub(r'<c\b[^>]*?(?:/>|>.*?</c>)', cambiar_celda, hoja_xml, flags=re.S)
