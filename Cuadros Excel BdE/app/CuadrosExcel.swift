@@ -91,6 +91,7 @@ struct Respuesta: Decodable {
     let ancla_original: [Int]?
     let encuadre_pt: [Double]?
     let borrados: [String]?
+    let modelo: String?
 }
 
 /// Los pasos de maquetación que la app sabe hacer, en orden
@@ -464,6 +465,10 @@ final class Taller: ObservableObject {
     var origenTrabajo: URL?
     @Published var actual = 0
     @Published var pasos: [Paso] = []
+    /// El EXCEL terminado que sirve de modelo a este cuadro, para avisar de que hay que igualarlo (petición del
+    /// usuario, 2026-11-24: «para que no se nos pase ese punto»)
+    @Published var modelo: String?
+    var igualado: Bool { pasos.contains { $0.titulo == "Igual que el modelo" && $0.n <= actual } }
     @Published var publicaciones: [Publicacion] = []
     @Published var muestrario: [Muestra] = []
     @Published var publicacion = UserDefaults.standard.string(forKey: "publicacion") ?? "documentos" {
@@ -608,6 +613,7 @@ final class Taller: ObservableObject {
         idioma = r.idioma ?? idioma
         hoja = r.hoja ?? hoja
         actual = r.actual ?? actual
+        if r.pasos != nil { modelo = r.modelo }
         pasos = r.pasos ?? pasos
         comparacion = []
         if let m = r.reticula_pt, m.count == 2 { reticula = (m[0], m[1]) }
@@ -656,7 +662,14 @@ final class Taller: ObservableObject {
                 self.aplicar(r)
                 // Con la marca: en la actividad también se pulsan los avisos para verlos en Excel
                 self.pasoActual?.detalle.forEach { self.anotar(id, "• " + $0) }
-                return await self.mostrar(id)
+                let hecho = await self.mostrar(id)
+                // Hecho «Líneas y fondos» de un cuadro con modelo: que no se pase igualarlo
+                if hecho, paso.orden == "paso4", let m = self.modelo, !self.igualado {
+                    self.anotar(id, "Este cuadro tiene modelo: «\(m)». Falta «Igualar al modelo»")
+                    self.aviso = Aviso(titulo: "Este cuadro tiene un modelo",
+                                       texto: "«\(m)» es el mismo cuadro ya terminado. Pulsa «Igualar al modelo» para copiar sus anchos, altos y formatos (con tus retoques a mano) antes de guardar.")
+                }
+                return hecho
             }
         }
         if actual + 1 < pasos.count {
@@ -807,6 +820,22 @@ final class Taller: ObservableObject {
     """
 
     private func confirmarTerminar(_ trabajo: URL) {
+        // Con modelo y sin igualar: se pregunta antes (petición del usuario, 2026-11-24)
+        if let m = modelo, !igualado {
+            pregunta = Pregunta(titulo: "Falta «Igualar al modelo»",
+                                texto: "Este cuadro tiene modelo («\(m)») y no se ha igualado. Si guardas así, puede no quedar igual que el mismo cuadro de los otros países.",
+                                boton: "Guardar sin igualar") {
+                Task {
+                    try? await Task.sleep(nanoseconds: 300_000_000)
+                    self.confirmarSinModelo(trabajo)
+                }
+            }
+            return
+        }
+        confirmarSinModelo(trabajo)
+    }
+
+    private func confirmarSinModelo(_ trabajo: URL) {
         do {
             self.pregunta = Pregunta(titulo: "¿Guardar como EXCEL?",
                                      texto: "Se guarda «\(self.nombreTerminado)» junto al original (si ya existe, no se pisa: se añade « (2)») y se deja abierto en Excel en lugar de la copia de trabajo. Se borran la copia de trabajo, su copia « (2)» y la carpeta «(pasos)» con todas las versiones. El original del autor no se toca. No se puede deshacer.",
@@ -821,6 +850,7 @@ final class Taller: ObservableObject {
                     self.anotar(id, "Guardado: \(url.lastPathComponent)")
                     (r.borrados ?? []).forEach { self.anotar(id, "Borrado: \($0)") }
                     self.trabajo = nil
+                    self.modelo = nil
                     self.pasos = []
                     self.actual = 0
                     self.comparacion = []
@@ -1696,9 +1726,14 @@ struct TarjetaMaquetar: View {
                                    ("6 pt", herramientaLetra6, probadas["Letra 6 pt"] ?? false)]) { taller.hacer($0) }
                 .disabled(taller.trabajo == nil || taller.publicacionActual == nil || taller.enCurso != nil || !celdasHechas)
             let fondosListos = taller.pasos.contains { $0.titulo == "Líneas y fondos" && $0.n <= taller.actual }
-            let igualado = taller.pasos.contains { $0.titulo == "Igual que el modelo" && $0.n <= taller.actual }
-            Accion(icono: herramientaModelo.icono, titulo: herramientaModelo.titulo, detalle: herramientaModelo.detalle,
-                   color: colorApp, principal: false, marca: igualado ? "checkmark.circle.fill" : nil) { taller.hacer(herramientaModelo) }
+            let igualado = taller.igualado
+            // Con modelo y sin igualar: resaltada, con el nombre del modelo y una marca de aviso
+            let pendiente = taller.modelo != nil && !igualado
+            Accion(icono: herramientaModelo.icono, titulo: herramientaModelo.titulo + (pendiente ? " · hay modelo" : ""),
+                   detalle: pendiente ? "Este cuadro tiene modelo: «\(taller.modelo ?? "")». Iguálalo después de «Líneas y fondos» y antes de guardar: copia sus anchos, altos y formatos, con tus retoques a mano"
+                                      : herramientaModelo.detalle,
+                   color: pendiente ? .orange : colorApp, principal: pendiente,
+                   marca: igualado ? "checkmark.circle.fill" : pendiente ? "exclamationmark.circle.fill" : nil) { taller.hacer(herramientaModelo) }
                 .disabled(taller.trabajo == nil || taller.publicacionActual == nil || taller.enCurso != nil || !fondosListos)
             let fondosHechos = taller.pasos.contains { $0.titulo == "Líneas y fondos" && $0.n <= taller.actual }
             Accion(icono: herramientaLineaOscura.icono, titulo: herramientaLineaOscura.titulo, detalle: herramientaLineaOscura.detalle,

@@ -332,6 +332,14 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      fila hay otra que en el modelo (Br_01: «CDS soberano», última del grupo en Arg_01, seguida aquí de «CDS Petrobras»),
      sus líneas son las que puso la app (rosa, como el PDF), no la oscura de fin de grupo del modelo. Textos y cifras, siempre los del cuadro. Probado: Arg_01 como
      modelo de Br_01 y Cos_01, también con un retoque a mano (primera columna y un fondo).
+   - **Cifras a la derecha** (`cifras_a_la_derecha`, Indicadores; petición del usuario, 2026-11-24, como los PDF
+     Br_01 y Arg_03): cada columna con su cifra más ancha centrada bajo la cabecera y las demás alineadas con ella por
+     la derecha; el margen va en el formato de número («0.0_0_0_0_0»: ceros invisibles), igual en Mac y Windows. Se
+     rehace en cada paso (`nuevo_paso`), con los anchos y la letra del momento (Igualar al modelo, «Probar letra»).
+     Textos («—», «n. d.», «3 % (± 1,5 pp)»), cifras escondidas del mapa de calor y separaciones de 3 pt, sin tocar.
+   - **Aviso de modelo** (petición del usuario, 2026-11-24): al empezar (y al terminar «Líneas y fondos») el motor
+     busca si el cuadro tiene modelo (`estado["modelo"]`). La app resalta en naranja «Igualar al modelo · hay
+     modelo», avisa al acabar «Líneas y fondos» y, al «Guardar como EXCEL» sin igualar, pregunta antes.
    - **Filas ocultas del autor** (Arg_03: 4-7 con «#REF!» y 9-16, un bloque entero): siguen ocultas y no cuentan para
      la cabecera, los bloques, las sangrías ni los anchos (el cuadro se localiza con ellas, para que no se parta).
    - **Textos de fórmulas con espacios** (`<v xml:space="preserve">`, Economía Latinoamericana 05 y Memoria 2.1: la

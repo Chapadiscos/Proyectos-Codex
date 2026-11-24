@@ -119,8 +119,28 @@ def empezar(origen):
     estado = {"origen": str(origen), "idioma": lengua, "motivo_idioma": motivo, "hoja": hoja,
               "motivo_hoja": motivo_hoja, "actual": 0,
               "pasos": [{"n": 0, "titulo": "Copia exacta del original", "archivo": v0.name, "detalle": []}]}
+    estado["modelo"] = modelo_de(trabajo, estado)
     guardar_estado(trabajo, estado)
     return {"trabajo": str(trabajo), **estado}
+
+
+def modelo_de(trabajo, estado):
+    """Nombre del EXCEL terminado que serviría de modelo para «Igualar al modelo» (o None): la app lo avisa para que
+    no se pase igualar (petición del usuario, 2026-11-24)."""
+    try:
+        modelo, _ = buscar_modelo(trabajo, estado)
+    except Exception:   # (un aviso: nunca debe impedir trabajar)
+        return None
+    return modelo.name if modelo else None
+
+
+def estado_con_modelo(trabajo):
+    """El estado para la app, con el modelo si aún no se había buscado (trabajos empezados antes del aviso)."""
+    estado = leer_estado(trabajo)
+    if "modelo" not in estado:
+        estado["modelo"] = modelo_de(trabajo, estado)
+        guardar_estado(trabajo, estado)
+    return {"trabajo": trabajo, **estado}
 
 
 def borrar_generados(trabajo):
@@ -183,6 +203,12 @@ def nuevo_paso(trabajo, titulo, cambios, detalle, extra=None, propuestas=None, a
     n = actual + 1
     archivo = f"{n:02d} {titulo}.xlsx"
     reescribir_zip(pasos / estado["pasos"][actual]["archivo"], pasos / archivo, cambios)
+    # Cifras a la derecha con la más ancha de cada columna centrada (Indicadores, como los PDF publicados): se
+    # rehace en cada paso, con los anchos y la letra que haya (Igualar al modelo y «Probar letra» los cambian)
+    if extra and isinstance(extra, dict) and extra.get("cifras_derecha"):
+        nota = cifras_a_la_derecha(pasos / archivo, estado.get("hoja"), extra)
+        if nota and titulo == CELDAS:
+            detalle = list(detalle) + [nota]
     # ¿Se sale el cuadro de la retícula? (petición del usuario, 2026-11-21: avisar para ver cómo reducirlo)
     if extra and isinstance(extra, dict) and "c1" in extra:
         detalle = list(detalle) + desborde(pasos / archivo, estado.get("hoja"), extra)
@@ -191,8 +217,63 @@ def nuevo_paso(trabajo, titulo, cambios, detalle, extra=None, propuestas=None, a
     estado["pasos"].append({"n": n, "titulo": titulo, "archivo": archivo, "detalle": detalle, **({"cuadro": extra} if extra else {}),
                             **({"propuestas": propuestas} if propuestas else {}), **({"aplica": aplica} if aplica else {})})
     estado["actual"] = n
+    if titulo == LINEAS_Y_FONDOS:   # (puede haber un modelo nuevo desde que se empezó)
+        estado["modelo"] = modelo_de(trabajo, estado)
     guardar_estado(trabajo, estado)
     return {"trabajo": str(trabajo), **estado}
+
+
+def cifras_a_la_derecha(archivo, hoja, cuadro):
+    """Las cifras del cuadro (y las del bloque de arriba) a la derecha, cada columna con su cifra más ancha centrada
+    bajo la cabecera y las demás alineadas con ella por la derecha, como en los PDF de LATAM/Indicadores
+    Macrofinancieros (Br_01, Arg_03; petición del usuario, 2026-11-24). El margen de la derecha va en el formato de
+    número («0.0_0_0_0»: el ancho de unos ceros invisibles), igual en Mac y en Windows. Los textos («—», «n. d.»,
+    «3 % (± 1,5 pp)») y las cifras escondidas del mapa de calor, al centro."""
+    medir_l = medidor("Roboto-Light.ttf")
+    if not medir_l:
+        return None
+    medir = lambda t, pt: medir_l(t, pt) * ESCALA_TEXTO_EXCEL
+    with zipfile.ZipFile(archivo) as z:
+        hoja = hoja or hoja_cuadro(z)[0]
+        ruta = hoja_de(z, hoja)
+        x = z.read(ruta).decode("utf-8")
+        est_xml = z.read("xl/styles.xml").decode("utf-8")
+        compartidos = leer_compartidos(z)[1]
+    est = Estilos(est_xml)
+    todas = celdas_hoja(x, compartidos)
+    ancho, mdw = anchos_columnas(x), digito_maximo(est_xml)
+    ocultas = cifras_ocultas(x, est_xml)
+    c1, f1, c2, f2 = cuadro["c1"], cuadro["f1"], cuadro["c2"], cuadro["f2"]
+    primera, fin_cab = cuadro["primera"], cuadro["fin_cabecera"]
+    filas = [f for f in cuadro.get("bloque_arriba", []) if f != cuadro.get("bloque_cabecera")] + list(range(fin_cab + 1, f2 + 1))
+    cuerpo_de = lambda s_: float(re.search(r'<sz val="([\d.]+)"', est.fuente_de(s_)).group(1)) if re.search(r'<sz val="([\d.]+)"', est.fuente_de(s_)) else CUERPO_CELDA
+    por_col = {}
+    for c in range(c1, c2 + 1):
+        if c == primera or round(ancho(c) * mdw) < 9:
+            continue   # (ni las ocultas ni las separaciones de 3 pt: Arg_03, una cifra suelta en F26)
+        for f in filas:
+            d_ = todas.get((c, f))
+            if d_ and d_["numero"] and d_["texto"].strip() and (c, f) not in ocultas:
+                por_col.setdefault(c, []).append((f, d_))
+    formatos, hechas = {}, 0
+    for c, lista in por_col.items():
+        w = round(ancho(c) * mdw)
+        vistas = [(f, d_, cifra_vista(d_["texto"], sin_relleno_codigo(formato_numero(est, d_["s"]))).strip()) for f, d_ in lista]
+        mas_ancha = max(medir(v, cuerpo_de(d_["s"])) for _, d_, v in vistas)
+        for f, d_, _ in vistas:
+            pt = cuerpo_de(d_["s"])
+            cero = medir("0", pt)
+            ceros = max(0, round(((w - mas_ancha) / 2 - RELLENO_CELDA_PT) / cero))
+            formatos[(c, f)] = est.a_la_derecha(d_["s"], ceros)
+            hechas += 1
+    if not formatos:
+        return None
+    x = con_estilo(x, formatos)
+    datos = io.BytesIO()
+    reescribir_zip(archivo, datos, {ruta: x.encode("utf-8"), "xl/styles.xml": est.resultado().encode("utf-8")})
+    Path(archivo).write_bytes(datos.getvalue())
+    return (f"Cifras a la derecha, con la más ancha de cada columna centrada bajo su cabecera (como los PDF publicados); "
+            f"los textos («—», «n. d.»), al centro ({hechas} celdas)")
 
 
 def reescribir_zip(origen, destino, cambios):
@@ -1647,6 +1728,52 @@ class Estilos:
             return todas.index(fuente)
         self.nuevas_fuentes.append(fuente)
         return len(todas)
+
+    def id_formato(self, codigo):
+        """numFmtId de este código de formato de número (nuevo si no lo hay)."""
+        internos = {v: k for k, v in FORMATOS_INTERNOS.items()}
+        if codigo in internos:
+            return internos[codigo]
+        propios = dict((html.unescape(c), int(n)) for n, c in re.findall(r'<numFmt\b[^>]*\bnumFmtId="(\d+)"[^>]*\bformatCode="([^"]*)"', self.xml))
+        propios.update({c: n for n, c in self.nuevos_formatos})
+        if codigo in propios:
+            return propios[codigo]
+        ids = [int(n) for n in re.findall(r'<numFmt\b[^>]*\bnumFmtId="(\d+)"', self.xml)] + [n for n, _ in self.nuevos_formatos]
+        n = max(ids + [163]) + 1
+        self.nuevos_formatos.append((n, codigo))
+        return n
+
+    def a_la_derecha(self, i, ceros):
+        """Formato como el `i` alineado a la derecha y con `ceros` anchos de cero invisibles detrás de la cifra (en
+        cada sección numérica del formato; la de texto, igual)."""
+        clave = ("d", i, ceros)
+        if clave in self.cache:
+            return self.cache[clave]
+        base = sin_relleno_codigo(formato_numero(self, i))
+        secciones = base.split(";")
+        relleno = "_0" * ceros
+        nuevo_codigo = ";".join(sec + relleno if k < 3 and not (k == 3 or "@" in sec) else sec for k, sec in enumerate(secciones))
+        nf = self.id_formato(nuevo_codigo)
+        xf = self.xf(i)
+        apertura = re.match(r'<xf\b[^>]*?(/?)>', xf)
+        atributos = apertura.group(0)[3:-(2 if apertura.group(1) else 1)]
+        dentro = "" if apertura.group(1) else xf[apertura.end():xf.rindex("</xf>")]
+        for nombre, valor in (("numFmtId", nf), ("applyNumberFormat", 1), ("applyAlignment", 1)):
+            atributos = re.sub(rf'\s{nombre}="[^"]*"', "", atributos) + f' {nombre}="{valor}"'
+        al = dict(re.findall(r'(\w+)="([^"]*)"', re.search(r'<alignment\b[^>]*/>', dentro).group(0))) if re.search(r'<alignment\b[^>]*/>', dentro) else {}
+        al["horizontal"] = "right"
+        al.pop("indent", None)
+        dentro = re.sub(r'<alignment\b[^>]*/>', "", dentro)
+        dentro = "<alignment" + "".join(f' {k}="{v}"' for k, v in al.items()) + "/>" + dentro
+        nuevo = f"<xf{atributos}>{dentro}</xf>"
+        todos = self.xfs + self.nuevos_xfs
+        if nuevo in todos:
+            n = todos.index(nuevo)
+        else:
+            self.nuevos_xfs.append(nuevo)
+            n = len(todos)
+        self.cache[clave] = n
+        return n
 
     def variante(self, i, relleno=None, borde=None, letra=None):
         """Índice de un formato como el `i` con otro relleno, borde o color de letra (lo demás, igual)."""
@@ -3801,6 +3928,7 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
         comp = re.sub(r'\buniqueCount="\d+"', f'uniqueCount="{len(nuevas_si)}"', comp, count=1)
         cambios["xl/sharedStrings.xml"] = comp.encode("utf-8")
     return cambios, detalle, {"c1": c1, "f1": f1, "c2": c2, "f2": f2, "primera": primera, "fin_cabecera": fin_cab,
+                              "cifras_derecha": bool(pub.get("cifras_a_la_derecha")),
                               "bloque_arriba": bloque["filas"] if bloque else [],
                               "bloque_cabecera": bloque["cabecera"] if bloque else None,
                               "bloque_grupos": [list(g) for g in bloque["grupos"]] if bloque else [],
@@ -5710,7 +5838,7 @@ def dibujo_de_hoja_ruta(z_ruta, hoja):
         return dibujo_de_hoja(z, hoja)
 
 
-ORDENES = {"empezar": empezar, "estado": lambda t: {"trabajo": t, **leer_estado(t)}, "ir": ir, "reiniciar": reiniciar,
+ORDENES = {"empezar": empezar, "estado": estado_con_modelo, "ir": ir, "reiniciar": reiniciar,
            "paso1": paso1, "paso2": paso2,
            "paso3": paso3, "paso4": paso4, "letra7": letra7, "letra65": letra65, "letra6": letra6, "modelo": igualar_modelo, "linea_oscura": linea_oscura, "aplicar": aplicar,
            "comparar": comparar, "terminar": terminar, "info": info, "publicaciones": lambda: {},
