@@ -762,9 +762,10 @@ def textos_lineas(ancla):
     return [html.unescape(texto_de(linea)) for linea in lineas_de(ancla) if texto_de(linea).strip()]
 
 
-def interlineado(ancla, pt, fuente):
+def interlineado(ancla, pt, fuente, windows=False):
     """Distancia entre líneas (pt) del párrafo del cuadro: el alto de línea de la fuente (hhea, como Excel)
-    por el interlineado del párrafo (sencillo si no lleva)."""
+    por el interlineado del párrafo (sencillo si no lleva). Con `windows`, la mayor entre la del Mac (hhea) y la de
+    Windows (OS/2 winAscent + winDescent: Roboto 1,200 frente a 1,172; en Windows FUENTES se cortaba, Arg_01)."""
     ruta = next((c / fuente for c in CARPETAS_FUENTES if (c / fuente).exists()), None)
     factor = 1.171875   # Roboto: (1900 + 500) / 2048
     if ruta:
@@ -774,6 +775,9 @@ def interlineado(ancla, pt, fuente):
         em = struct.unpack(">H", d[tablas[b"head"] + 18:tablas[b"head"] + 20])[0]
         sube, baja, hueco = struct.unpack(">hhh", d[tablas[b"hhea"] + 4:tablas[b"hhea"] + 10])
         factor = (sube - baja + hueco) / em
+        if windows and b"OS/2" in tablas:
+            win_sube, win_baja = struct.unpack(">HH", d[tablas[b"OS/2"] + 74:tablas[b"OS/2"] + 78])
+            factor = max(factor, (win_sube + win_baja) / em)
     linea = re.search(r'<a:lnSpc>\s*<a:(spcPct|spcPts) val="(\d+)"', ancla)
     if linea and linea.group(1) == "spcPts":
         return int(linea.group(2)) / 100
@@ -1419,9 +1423,12 @@ def textos(z, hoja, estado, propuestas=None, pub=None):
             alto = h
             if medir_light:
                 l, t, r, b = margenes(a)
-                lineas = lineas_parrafos(textos_lineas(a), (ancho - l - r) / EMU_PT, 7, medir_light)
+                # Sin la sangría de las notas (8,5 pt), que estrecha sus líneas
+                lineas = lineas_parrafos(textos_lineas(a), (ancho - l - r) / EMU_PT - 8.5, 7, medir_light)
                 blancos = len(re.findall(r'<a:p>(?:<a:pPr\b[^>]*/>)?<a:endParaRPr\b[^>]*?(?:/>|>.*?</a:endParaRPr>)</a:p>', a, re.S))
-                alto = t + b + round((lineas + blancos) * interlineado(a, 7, "Roboto-Light.ttf") * EMU_PT) + 2 * EMU_PT
+                # (+1 línea de reserva: en Windows el texto sale algo más ancho y una nota larga puede partirse en una
+                # línea más que en el Mac; el texto va arriba, así que en el Mac no se nota)
+                alto = t + b + round((lineas + blancos + 1) * interlineado(a, 7, "Roboto-Light.ttf", windows=True) * EMU_PT) + 2 * EMU_PT
             a = anclar_en(a, 0, y, ancho, alto, caja)
             detalle.append(f"Fuentes «{corto[:50]}»: Roboto Light 7 pt" + "".join(f"; {n}" for n in notas if not n.startswith("Aviso")))
             detalle.append(f"  en el ancho de la plantilla ({ancho / EMU_MM:.1f} mm) desde la columna A, donde la dejó el autor"
