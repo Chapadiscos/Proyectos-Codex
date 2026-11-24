@@ -297,9 +297,11 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      bloque y tabla quedan 4 mm. Anchos (`datos_cada_uno_a_lo_justo`): si la primera columna cabe en una línea, a su
      medida y las de datos el resto a partes iguales (redondeo hacia abajo); las que solo llevan valores del bloque, a
      lo justo (Arg_01: 180 / 51 pt, PDF 177 / 56). Si no cabe (03), datos a lo justo y la primera el resto.
-     Si entre las dos tablitas solo hay una columna vacía de separación (Br_01: la F, que el autor tenía oculta y las
-     dejaba pegadas), esa columna se queda visible como hueco con el ancho de las de datos (Br_01: segunda tablita a
-     240 pt, PDF ≈244). «Igualar al modelo» con un modelo sin hueco (Arg_01) estrecha las de datos para medir lo mismo.
+     Si la segunda tablita empieza en la primera columna de datos de la tabla (Br_01: «Esperanza de vida…» en G,
+     pegada a la primera en cuanto se oculta la F), sus conceptos pasan a la siguiente columna de datos (G→I), como en
+     el PDF publicado y como está el Arg_01 (decisión del usuario, 2026-11-24, tras probar un hueco visible en F: la
+     tabla de abajo quedaba con la primera columna de datos 75 pt a la derecha del PDF). El hueco sigue para cuando
+     entre las tablitas solo haya una columna vacía que no lleve nada en la tabla.
    - **Mapa de calor** (Indicadores 02 de los grandes, Arg_02, 2026-11-21): el texto suelto encima de la cabecera,
      separado por filas ocultas y con cabecera debajo en su columna («Respecto al resto de los emergentes» sobre
      «Último dato (b)»), es la primera fila de la cabecera (sin línea debajo en Indicadores); las columnas estrechas
