@@ -3538,7 +3538,9 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
                 # Un subtítulo combinado a lo ancho de los datos, al centro (Economía Latinoamericana 01, B8:G8)
                 h = "left" if c in izquierda and (c, f) not in sobre_varias else "center"
             al = {"horizontal": h, "vertical": "top" if f in arriba else "center"}
-            if (not es_cifra(x) or f <= fin_cab) and not (c == primera and f in desbordan):
+            # (en las columnas estrechas ensanchadas lo justo, sin ajustar texto: si no, Excel partía «II S» por una
+            # décima, Arg_02)
+            if (not es_cifra(x) or f <= fin_cab) and not (c == primera and f in desbordan) and c not in ensanchadas:
                 al["wrapText"] = "1"
             if (c, f) in esquina_unidades:
                 nuevos_s[(c, f)] = estilos.nuevo(x["s"], {"horizontal": "left", "vertical": "top", "wrapText": "1"},
