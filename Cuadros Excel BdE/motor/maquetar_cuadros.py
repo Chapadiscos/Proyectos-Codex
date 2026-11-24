@@ -3860,6 +3860,7 @@ def cabeceras(z, hoja, cuadro, pub):
     if len(filas_cab) > 4:
         detalle.append(f"Aviso: la cabecera tiene {len(filas_cab)} niveles; la guía prevé 4 (los de arriba van en sólido)")
     nuevos, usados, grupos_7 = {}, {}, set()
+    mapa_calor_cab = bool(cifras_ocultas(hoja_xml, estilos.xml))
     # Fila de cabecera de debajo de una fila de textos sueltos (1 o 2, sin combinar, con cabecera debajo en su columna)
     fila_bajo_nota = None
     textos_f1 = [c for c in range(c1, c2 + 1) if texto(c, f1)]
@@ -3891,6 +3892,10 @@ def cabeceras(z, hoja, cuadro, pub):
                 # (las estrechas con texto, como los semestres «I S», sí la llevan: solo las de separación vacías no)
                 separacion_vacia = estrecha and not any(texto(c, g) for g in range(f1, fin_cab + 1))
                 if not separacion_vacia and not nota and (f == fin_cab or (texto(*ancla) and f == b2 and not unidades)):
+                    lados["bottom"] = ("thin", pub["color"].upper())
+                # La línea final de la cabecera cruza también las separaciones (publicado Arg_03), salvo en el mapa de
+                # calor, donde los huecos blancos la cortan (publicado Arg_02)
+                if separacion_vacia and f == fin_cab and not mapa_calor_cab:
                     lados["bottom"] = ("thin", pub["color"].upper())
                 # Con un texto suelto encima (Arg_02: «Respecto al resto de los emergentes»), la primera fila de verdad de
                 # la cabecera lleva línea encima en todas las columnas de datos, también las separaciones (publicado)
