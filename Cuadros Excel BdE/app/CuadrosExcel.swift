@@ -92,6 +92,7 @@ struct Respuesta: Decodable {
     let encuadre_pt: [Double]?
     let borrados: [String]?
     let modelo: String?
+    let modelo_usado: String?
 }
 
 /// Los pasos de maquetación que la app sabe hacer, en orden
@@ -661,6 +662,65 @@ final class Taller: ObservableObject {
 
     // MARK: Pasos y versiones
 
+    /// Abre `modelo` en Excel con el mismo sitio, zoom y desplazamiento que la ventana de la copia de trabajo y deja
+    /// la copia de trabajo delante: uno encima de otro, para pasar de uno a otro y compararlos
+    func compararEnExcel(_ trabajo: URL, _ modelo: URL, _ id: UUID) async {
+        let guion = """
+        on run argv
+            set rutaT to item 1 of argv
+            set rutaT2 to item 2 of argv
+            set rutaM to item 3 of argv
+            set nombreM to do shell script "basename " & quoted form of rutaM
+            set nombreT to do shell script "basename " & quoted form of rutaT
+            set nombreT2 to do shell script "basename " & quoted form of rutaT2
+            tell application "Microsoft Excel"
+                set wbT to missing value
+                repeat with i from 1 to (count workbooks)
+                    set f to full name of workbook i
+                    set n to name of workbook i
+                    if f is rutaT or f is rutaT2 or n is nombreT or n is nombreT2 then set wbT to workbook i
+                end repeat
+                if wbT is missing value then return "sin trabajo"
+                activate object wbT
+                set w to active window
+                set b to bounds of w
+                set z to zoom of w
+                set fr to scroll row of w
+                set fc to scroll column of w
+            end tell
+            do shell script "open -a 'Microsoft Excel' " & quoted form of rutaM
+            tell application "Microsoft Excel"
+                set wbM to missing value
+                repeat 300 times
+                    try
+                        repeat with i from 1 to (count workbooks)
+                            if name of workbook i is nombreM then set wbM to workbook i
+                        end repeat
+                    end try
+                    if wbM is not missing value then exit repeat
+                    delay 0.1
+                end repeat
+                if wbM is missing value then return "sin modelo"
+                activate object wbM
+                set w2 to active window
+                try
+                    set bounds of w2 to b
+                end try
+                set zoom of w2 to z
+                try
+                    set scroll row of w2 to fr
+                    set scroll column of w2 to fc
+                end try
+                activate object wbT
+            end tell
+            return "ok"
+        end run
+        """
+        let r = await osascript(guion, [trabajo.path, Taller.copiaB(trabajo).path, modelo.path], espera: 40)
+        anotar(id, r.texto.contains("ok") ? "Abierto en Excel para comparar, detrás de la traducción y con el mismo zoom: \(modelo.lastPathComponent)"
+                                          : "No he podido abrir en Excel \(modelo.lastPathComponent) (\(r.texto))")
+    }
+
     /// «Igualar a otro EXCEL…»: el modelo, elegido a mano (la versión retocada fuera de la app, esté donde esté;
     /// petición del usuario, 2026-11-25)
     func igualarAOtro(_ paso: PasoMaquetacion = herramientaModelo) {
@@ -681,6 +741,11 @@ final class Taller: ObservableObject {
                 // Con la marca: en la actividad también se pulsan los avisos para verlos en Excel
                 self.pasoActual?.detalle.forEach { self.anotar(id, "• " + $0) }
                 let hecho = await self.mostrar(id)
+                // Traducción igualada: el modelo usado (el EXCEL o el retocado elegido), en Excel encima de la traducción
+                // con el mismo sitio y zoom, para compararlos (petición del usuario, 2026-11-25)
+                if hecho, paso.orden == "traduccion", let m = r.modelo_usado {
+                    await self.compararEnExcel(trabajo, URL(fileURLWithPath: m), id)
+                }
                 // Hecho «Líneas y fondos» de un cuadro con modelo: que no se pase igualarlo
                 if hecho, paso.orden == "paso4", let m = self.modelo, !self.igualado {
                     self.anotar(id, "Este cuadro tiene modelo: «\(m)». Falta «Igualar al modelo»")
@@ -1759,13 +1824,14 @@ struct TarjetaMaquetar: View {
                 .disabled(taller.trabajo == nil || taller.publicacionActual == nil || taller.enCurso != nil || !fondosListos)
             // Traducción del autor: sin pasos (petición del usuario, 2026-11-25; sustituye a «Actualizar desde el otro idioma»)
             let traducida = taller.pasos.contains { $0.titulo == "Traducción igualada" && $0.n <= taller.actual }
+            let traducidaOtro = taller.pasos.contains { $0.titulo == "Traducción igualada a otro EXCEL" && $0.n <= taller.actual }
             Accion(icono: herramientaTraduccion.icono, titulo: herramientaTraduccion.titulo, detalle: herramientaTraduccion.detalle,
                    color: colorApp, principal: false, marca: traducida ? "checkmark.circle.fill" : nil) { taller.hacer(herramientaTraduccion) }
-                .disabled(taller.trabajo == nil || taller.publicacionActual == nil || taller.enCurso != nil)
+                .disabled(taller.trabajo == nil || taller.publicacionActual == nil || taller.enCurso != nil || traducidaOtro)
             Accion(icono: "doc.badge.ellipsis", titulo: "Igualar traducción a otro EXCEL…",
                    detalle: "Como «Igualar traducción», pero eliges tú el EXCEL al que igualarla: por ejemplo, el cuadro en el otro idioma retocado a mano y guardado en otro sitio o con otro nombre",
-                   color: colorApp, principal: false, marca: nil) { taller.igualarAOtro(herramientaTraduccion) }
-                .disabled(taller.trabajo == nil || taller.publicacionActual == nil || taller.enCurso != nil)
+                   color: colorApp, principal: false, marca: traducidaOtro ? "checkmark.circle.fill" : nil) { taller.igualarAOtro(herramientaTraduccion) }
+                .disabled(taller.trabajo == nil || taller.publicacionActual == nil || taller.enCurso != nil || traducida)
             // (sin «Línea oscura sobre la selección»: retirada a petición del usuario, 2026-11-25)
         }
     }

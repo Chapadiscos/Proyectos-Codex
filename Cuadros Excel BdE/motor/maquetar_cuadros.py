@@ -6497,6 +6497,7 @@ def igualar_celda_a_celda(trabajo, estado, base, hoja, ruta_hoja, hoja_xml, est,
     nuevo_paso(trabajo, titulo or IGUAL_AL_MODELO, cambios, detalle, cuadro_t)
     estado = leer_estado(trabajo)
     estado["huella_pareja"] = {"pareja": modelo.name, "textos": huella}
+    estado["modelo_usado"] = str(modelo)   # (la app lo abre en Excel junto a este para compararlos)
     guardar_estado(trabajo, estado)
     return {"trabajo": str(trabajo), **estado}
 
@@ -6560,6 +6561,7 @@ def actualizar_idioma(trabajo, pid=None):
 
 TEXTOS_DEL_IDIOMA = "Textos del idioma"
 TRADUCCION_IGUALADA = "Traducción igualada"
+TRADUCCION_IGUALADA_OTRO = "Traducción igualada a otro EXCEL"
 
 
 def reglas_texto(t, idioma_, pub):
@@ -6652,7 +6654,8 @@ def traduccion(trabajo, pid=None, ruta_modelo=None):
                     "¿es el mismo cuadro? Si el autor tradujo otra versión, hay que maquetarla con los pasos")
     return igualar_celda_a_celda(trabajo, estado, base, hoja, ruta_hoja, hoja_xml, est, mdw, todas_t, ancho_t, dibujo,
                                  altos_v, caja, cuadro_t, modelo, ancho_m, mdw_m, altos_m, defecto_m, celdas_m, est_m,
-                                 tema_m, cuadro_m, iguales, len(num_t), titulo=TRADUCCION_IGUALADA)
+                                 tema_m, cuadro_m, iguales, len(num_t),
+                                 titulo=TRADUCCION_IGUALADA_OTRO if ruta_modelo else TRADUCCION_IGUALADA)
 
 
 def dibujo_de_hoja_ruta(z_ruta, hoja):
