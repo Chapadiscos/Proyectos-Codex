@@ -2192,6 +2192,14 @@ def formato_numero(estilos, s):
     return html.unescape(propio.group(1)) if propio else FORMATOS_INTERNOS.get(n, "General")
 
 
+def numero_de(estilos, s):
+    """El formato de número del formato de celda `s`, para copiarlo a otro libro: su número si es uno interno de Excel
+    (< 164, iguales en todos los libros: «@» es el 49) y si no, su código."""
+    m = re.search(r'\bnumFmtId="(\d+)"', estilos.xf(s))
+    n = int(m.group(1)) if m else 0
+    return n if n < 164 else formato_numero(estilos, s)
+
+
 def cifra_vista(valor, codigo):
     """Cómo enseña Excel el número (en castellano: punto de millares y coma decimal), para medir su ancho."""
     try:
@@ -5997,9 +6005,9 @@ def formato_de(est, tema, i):
     return (colores_a_rgb(est.fuente_de(i), tema), colores_a_rgb(rell, tema), colores_a_rgb(bord, tema), est.alineacion(i))
 
 
-def con_formato_de(est, i, formato):
+def con_formato_de(est, i, formato, codigo=None):
     """Índice de un formato como el `i` (su formato de número) con la fuente, el relleno, el borde y la alineación
-    de otro libro."""
+    de otro libro; con `codigo`, también ese formato de número."""
     fuente, rell, bord, al = formato
     ids = []
     for lista, nuevos, xml in ((est.fuentes, est.nuevas_fuentes, fuente), (est.rellenos, est.nuevos_rellenos, rell),
@@ -6014,8 +6022,11 @@ def con_formato_de(est, i, formato):
     apertura = re.match(r'<xf\b[^>]*?(/?)>', xf)
     atributos = apertura.group(0)[3:-(2 if apertura.group(1) else 1)]
     dentro = "" if apertura.group(1) else xf[apertura.end():xf.rindex("</xf>")]
+    # (un número: formato interno de Excel, el mismo en todos los libros; un texto: el código)
+    numero = ((("numFmtId", codigo if isinstance(codigo, int) else est.id_formato(codigo)), ("applyNumberFormat", 1))
+              if codigo is not None else ())
     for nombre, valor in (("fontId", ids[0]), ("fillId", ids[1]), ("borderId", ids[2]), ("applyFont", 1), ("applyFill", 1),
-                          ("applyBorder", 1), ("applyAlignment", 1)):
+                          ("applyBorder", 1), ("applyAlignment", 1)) + numero:
         atributos = re.sub(rf'\s{nombre}="[^"]*"', "", atributos) + f' {nombre}="{valor}"'
     dentro = re.sub(r'<alignment\b[^>]*/>', "", dentro)
     dentro = "<alignment" + "".join(f' {k}="{v}"' for k, v in al.items()) + "/>" + dentro if al else dentro
@@ -6427,8 +6438,11 @@ def igualar_celda_a_celda(trabajo, estado, base, hoja, ruta_hoja, hoja_xml, est,
     for f in range(1, f_fin + 1):
         for c in range(1, c_fin + 1):
             if (c, f) in todas_t or (c, f) in celdas_m:
+                # (también el formato de número del modelo: el del autor puede ser el de un EXCEL antiguo, «0.0_m_m»
+                # frente a «#,##0.0_0_0_0_0», y las cifras no quedaban donde en el modelo; Arg_03 inglés, 2026-11-25)
                 formatos[(c, f)] = con_formato_de(est, todas_t.get((c, f), {}).get("s", 0),
-                                                  formato_de(est_m, tema_m, celdas_m.get((c, f), {}).get("s", 0)))
+                                                  formato_de(est_m, tema_m, celdas_m.get((c, f), {}).get("s", 0)),
+                                                  numero_de(est_m, celdas_m[(c, f)].get("s", 0)) if (c, f) in celdas_m else None)
     hoja_xml = con_estilo(hoja_xml, formatos)
     # Cifras corregidas en el otro idioma: se copian (las cifras no dependen del idioma); en celdas con fórmula, aviso
     cifras_copiadas, cifras_formula = [], []
@@ -6527,7 +6541,9 @@ def igualar_celda_a_celda(trabajo, estado, base, hoja, ruta_hoja, hoja_xml, est,
     if menos_lineas:
         detalle.append("Textos con menos líneas que en el modelo (su fila, más baja, con el alto del modelo para esas líneas): "
                        + ", ".join(menos_lineas[:10]) + marca(menos_lineas))
-    nuevo_paso(trabajo, titulo or IGUAL_AL_MODELO, cambios, detalle, cuadro_t)
+    # Sin «cifras a la derecha» después: el formato copiado del modelo ya es el bueno, también el retocado a mano
+    # (Arg_03 MODIFICADO: la columna D a la izquierda volvía a la derecha; el usuario, 2026-11-25)
+    nuevo_paso(trabajo, titulo or IGUAL_AL_MODELO, cambios, detalle, {**cuadro_t, "cifras_derecha": False})
     estado = leer_estado(trabajo)
     estado["huella_pareja"] = {"pareja": modelo.name, "textos": huella}
     estado["modelo_usado"] = str(modelo)   # (la app lo abre en Excel junto a este para compararlos)
