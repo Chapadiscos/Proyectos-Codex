@@ -834,9 +834,11 @@ final class Taller: ObservableObject {
             base = base.replacingOccurrences(of: #"\bORIGINALES\b"#, with: "EXCEL", options: .regularExpression)
         } else if base.range(of: #"\bORIGINAL\b"#, options: .regularExpression) != nil {
             base = base.replacingOccurrences(of: #"\bORIGINAL\b"#, with: "EXCEL", options: .regularExpression)
-        } else {
+        } else if base.range(of: #"\bEXCEL$"#, options: .regularExpression) == nil {
             base += " EXCEL"
         }
+        // Traducción igualada (en la versión elegida): «… EXCEL TRADUCIDO» (petición del usuario, 2026-11-25)
+        if pasos.contains(where: { $0.titulo.hasPrefix("Traducción igualada") && $0.n <= actual }) { base += " TRADUCIDO" }
         return base + ".xlsx"
     }
 

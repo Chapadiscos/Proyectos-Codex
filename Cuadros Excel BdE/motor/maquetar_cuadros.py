@@ -5608,8 +5608,11 @@ def pendiente(nombre):
     return paso
 
 
-def nombre_terminado(origen, carpeta):
+def nombre_terminado(origen, carpeta, traducido=False):
     stem = origen.stem
+    if traducido:
+        # Traducción igualada: «… EXCEL TRADUCIDO» (petición del usuario, 2026-11-25)
+        stem = re.sub(r"\s*\bEXCEL$", "", stem)
     if re.search(r'\bORIGINALES\b', stem):
         base = re.sub(r'\bORIGINALES\b', "EXCEL", stem)
     elif re.search(r'\bORIGINAL\b', stem):
@@ -5618,6 +5621,8 @@ def nombre_terminado(origen, carpeta):
         # «… EXCEL.xlsx» (petición del usuario, 2026-11-18; antes «TERMINADO(S)»); si ya acaba en EXCEL (una traducción
         # que el autor devuelve con el nombre de nuestro EXCEL), «… EXCEL (2)», no «… EXCEL EXCEL»
         base = stem if re.search(r"\bEXCEL$", stem) else stem + " EXCEL"
+    if traducido:
+        base += " TRADUCIDO"
     destino, n = carpeta / f"{base}.xlsx", 2
     while destino.exists():   # nunca se pisa un TERMINADO que ya exista
         destino, n = carpeta / f"{base} ({n}).xlsx", n + 1
@@ -5654,7 +5659,7 @@ def terminar(trabajo):
         shutil.copy2(origen, anteriores / f"{origen.stem} {time.strftime('%Y-%m-%d %H.%M')}.xlsx")
         destino = origen
     else:
-        destino = nombre_terminado(origen if origen.name else trabajo, carpeta)
+        destino = nombre_terminado(origen if origen.name else trabajo, carpeta, traducido=traducida)
     shutil.copyfile(copia_actual(trabajo), destino)
     os.chmod(destino, 0o644)
     # La huella de los textos del mismo cuadro en el otro idioma, junto al EXCEL (para «Actualizar desde el otro idioma»)
