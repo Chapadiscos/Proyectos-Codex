@@ -6193,6 +6193,58 @@ def igualar_modelo(trabajo, pid=None):
     return nuevo_paso(trabajo, IGUAL_AL_MODELO, cambios, detalle, cuadro_t)
 
 
+def textos_formas(dibujo, fila_tabla):
+    """Rótulo, título y párrafos de FUENTES de un dibujo: {"rotulo", "titulo", "fuentes": [párrafos]}."""
+    res = {"rotulo": "", "titulo": "", "fuentes": []}
+    titulos = []
+    for a in ANCLA.finditer(dibujo):
+        g = a.group(0)
+        parrafos = [html.unescape("".join(re.findall(r'<a:t>(.*?)</a:t>', p_, re.S))).strip() for p_ in re.findall(r'<a:p>.*?</a:p>', g, re.S)]
+        parrafos = [p_ for p_ in parrafos if p_]
+        if not parrafos:
+            continue
+        todo = " ".join(parrafos)
+        fila = re.search(r'<xdr:from>.*?<xdr:row>(\d+)</xdr:row>', g, re.S)
+        if RE_CUADRO_LINEA.match(parrafos[0]) and len(parrafos) == 1:
+            res["rotulo"] = parrafos[0]
+        elif ROTULO.match(parrafos[0]):
+            res["fuentes"] = parrafos
+        elif fila and int(fila.group(1)) + 1 < fila_tabla:
+            titulos.append(todo)
+    if titulos:
+        res["titulo"] = max(titulos, key=len)
+    return res
+
+
+def comparar_formas(t, m_, idioma_t):
+    """Avisos al comparar título, rótulo y notas de un cuadro con los del mismo cuadro en el otro idioma."""
+    avisos = []
+    cifras = lambda x: sorted(re.findall(r"\d+(?:[.,]\d+)?", x))
+    n_t, n_m = re.findall(r"\d+", t["rotulo"]), re.findall(r"\d+", m_["rotulo"])
+    if t["rotulo"] and m_["rotulo"] and n_t != n_m:
+        avisos.append(f"el rótulo «{t['rotulo']}» no lleva el número del modelo («{m_['rotulo']}»)")
+    if t["titulo"] and m_["titulo"]:
+        if t["titulo"] == m_["titulo"]:
+            avisos.append(f"el título es igual que en el modelo, ¿sin traducir? «{t['titulo'][:60]}»")
+        elif cifras(t["titulo"]) != cifras(m_["titulo"]):
+            avisos.append(f"el título no lleva las mismas cifras que el del modelo: «{t['titulo'][:70]}» frente a «{m_['titulo'][:70]}»")
+    letra = lambda p_: re.match(r"([a-z])\t", p_)
+    notas_t = {letra(p_).group(1): p_ for p_ in t["fuentes"] if letra(p_)}
+    notas_m = {letra(p_).group(1): p_ for p_ in m_["fuentes"] if letra(p_)}
+    if t["fuentes"] and m_["fuentes"]:
+        if sorted(notas_t) != sorted(notas_m):
+            avisos.append(f"notas con letra distintas: {', '.join(sorted(notas_t)) or 'ninguna'} aquí y {', '.join(sorted(notas_m)) or 'ninguna'} en el modelo")
+        for k in sorted(set(notas_t) & set(notas_m)):
+            if notas_t[k] == notas_m[k]:
+                avisos.append(f"la nota {k} es igual que en el modelo, ¿sin traducir?")
+            elif cifras(notas_t[k]) != cifras(notas_m[k]):
+                avisos.append(f"la nota {k} no lleva las mismas cifras que en el modelo ({', '.join(cifras(notas_t[k])) or '—'} frente a "
+                              f"{', '.join(cifras(notas_m[k])) or '—'})")
+        if t["fuentes"][0] == m_["fuentes"][0]:
+            avisos.append("la fuente es igual que en el modelo, ¿sin traducir?")
+    return avisos
+
+
 def igualar_celda_a_celda(trabajo, estado, base, hoja, ruta_hoja, hoja_xml, est, mdw, todas_t, ancho_t, dibujo, altos_v,
                           caja, cuadro_t, modelo, ancho_m, mdw_m, altos_m, defecto_m, celdas_m, est_m, tema_m, cuadro_m,
                           iguales, n_cifras):
@@ -6278,6 +6330,18 @@ def igualar_celda_a_celda(trabajo, estado, base, hoja, ruta_hoja, hoja_xml, est,
     if solo_uno:
         detalle.append(f"Aviso: celdas con texto en un idioma y vacías en el otro ({len(solo_uno)}): " + ", ".join(solo_uno[:10])
                        + ("…" if len(solo_uno) > 10 else "") + marca(solo_uno))
+    # Rótulo, título y notas, frente a los del modelo (Arg_03 inglés: el título del autor no lleva «(2025, …)»)
+    try:
+        with zipfile.ZipFile(modelo) as zm:
+            hm = hoja_cuadro(zm)[0]
+            dib_m = zm.read(dibujo_de_hoja(zm, hm)).decode("utf-8") if dibujo_de_hoja(zm, hm) else ""
+        dib_t = cambios.get(dibujo_de_hoja_ruta(z_ruta=base, hoja=hoja), b"").decode("utf-8") or dibujo
+        fila_t = min(cuadro_t.get("bloque_arriba") or [cuadro_t["f1"]])
+        fila_m = min(cuadro_m.get("bloque_arriba") or [cuadro_m["f1"]])
+        for a_ in comparar_formas(textos_formas(dib_t, fila_t), textos_formas(dib_m, fila_m), estado.get("idioma", "es")):
+            detalle.append("Aviso: " + a_)
+    except (KeyError, zipfile.BadZipFile):
+        pass
     if sin_traducir:
         detalle.append(f"Aviso: textos iguales que en el modelo, ¿sin traducir? ({len(sin_traducir)}): "
                        + ", ".join(f"{r} «{todas_t[(col_num(RE_REF.match(r).group(1)), int(RE_REF.match(r).group(2)))]['texto'].strip()[:20]}»"
