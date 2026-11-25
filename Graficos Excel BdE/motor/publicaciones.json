@@ -18,6 +18,7 @@
     {"nombre": "Estudios de Historia Económica", "color": "F7E9E5"}
   ],
   "publicaciones": [
-    {"id": "documentos-ocasionales-y-de-trabajo", "nombre": "Documentos Ocasionales y de Trabajo", "color": "FFE0C9", "tema": "BdE_2026"}
+    {"id": "documentos-ocasionales-y-de-trabajo", "nombre": "Documentos Ocasionales y de Trabajo", "color": "FFE0C9", "tema": "BdE_2026"},
+    {"id": "informe-anual", "nombre": "Informe Anual", "color": "B3D9FF", "tema": "BdE_2026"}
   ]
 }
