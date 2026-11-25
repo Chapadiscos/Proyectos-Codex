@@ -1713,6 +1713,17 @@ RELLENO_CELDA_PT = 2.5                     # lo que Excel deja libre a cada lado
 # Excel, 2026-11-13: «Régimen de tenencia de la vivienda», 114,7 pt, cabe en una línea desde 125 pt de columna;
 # «País de nacimiento», 62,4 pt, desde 70)
 ESCALA_TEXTO_EXCEL = 1.05
+# Para contar las líneas que Excel da a un texto al igualar una traducción, sin el colchón de los anchos: Arg_03 inglés,
+# columna C de 159 pt a 6,5 pt, «Settlements (BIS) reporting banks (a) (December 2025)» mide 156 y Excel la deja en una
+# línea (con el colchón salían 3 líneas y 40 pt donde Excel enseña 2; el usuario, 2026-11-25)
+ESCALA_LINEAS_EXCEL = 1.0
+RELLENO_LINEAS_PT = 1.5
+
+
+def lineas_limpias(texto):
+    """El texto con los saltos de línea del autor como «\n» y sin espacios a sus lados (Arg_03 inglés, «…Portfolio
+    investment. \r\nAssets»: el espacio y el «\r» pasaban la línea a la siguiente)."""
+    return "\n".join(l.strip() for l in re.split(r"\r?\n|\r", texto.strip()))
 DATO_JUSTO_MINIMO = 60                     # columnas de datos «a lo justo» (Documentos Ocasionales): no menos de esto (pt)
 LARGO_TEXTO_IZQUIERDA = 80                 # columnas de texto largo (media de caracteres) a la izquierda; umbral en pruebas
 SANGRIA = 4                                # espacios por nivel: 4 (1.º), 8 (2.º), 12 (3.º)
@@ -6347,8 +6358,8 @@ def igualar_celda_a_celda(trabajo, estado, base, hoja, ruta_hoja, hoja_xml, est,
                 continue
             sz_ = re.search(r'<sz val="([\d.]+)"', est_m.fuente_de(v.get("s", 0)))
             pt_ = float(sz_.group(1)) if sz_ else CUERPO_CELDA
-            n_ = len(partir(v["texto"].strip(), round(ancho_m(c) * mdw_m) - 2 * RELLENO_CELDA_PT,
-                            lambda t, _p, _pt=pt_: medir_l(t, _pt) * ESCALA_TEXTO_EXCEL))
+            n_ = len(partir(lineas_limpias(v["texto"]), round(ancho_m(c) * mdw_m) - 2 * RELLENO_LINEAS_PT,
+                            lambda t, _p, _pt=pt_: medir_l(t, _pt) * ESCALA_LINEAS_EXCEL))
             alto_por_lineas.setdefault(n_, []).append(round(h_m, 2))
         alto_por_lineas = {n_: max(set(l_), key=l_.count) for n_, l_ in alto_por_lineas.items()}
         # Un alto retocado a mano a propósito (prueba del usuario, 2026-11-25: Arg_03 MODIFICADO, fila 25 de 2 líneas a
@@ -6362,13 +6373,13 @@ def igualar_celda_a_celda(trabajo, estado, base, hoja, ruta_hoja, hoja_xml, est,
                 continue
             if altos[f] == 0 or f <= cuadro_t["fin_cabecera"]:
                 continue
-            ancho_c = round(ancho_m(c) * mdw_m) - 2 * RELLENO_CELDA_PT
+            ancho_c = round(ancho_m(c) * mdw_m) - 2 * RELLENO_LINEAS_PT
             sz_ = re.search(r'<sz val="([\d.]+)"', est_m.fuente_de(celdas_m.get((c, f), {}).get("s", 0)))
             pt_ = float(sz_.group(1)) if sz_ else CUERPO_CELDA
-            m_ = lambda t, _p, _pt=pt_: medir_l(t, _pt) * ESCALA_TEXTO_EXCEL
-            n_t = len(partir(v["texto"].strip(), ancho_c, m_))
+            m_ = lambda t, _p, _pt=pt_: medir_l(t, _pt) * ESCALA_LINEAS_EXCEL
+            n_t = len(partir(lineas_limpias(v["texto"]), ancho_c, m_))
             t_m = celdas_m.get((c, f), {}).get("texto", "").strip()
-            n_m = len(partir(t_m, ancho_c, m_)) if t_m else 1
+            n_m = len(partir(lineas_limpias(t_m), ancho_c, m_)) if t_m else 1
             if n_t != n_m and c == cuadro_t["primera"]:
                 # (más líneas o menos: el alto que tienen en el modelo las filas de esas líneas; Arg_03 inglés, fila 25,
                 # 3 líneas en español y 2 en inglés → 24 pt)
