@@ -6266,7 +6266,22 @@ def igualar_celda_a_celda(trabajo, estado, base, hoja, ruta_hoja, hoja_xml, est,
     altos = {f: round(altos_m.get(f - 1, defecto_m) / EMU_PT, 2) for f in range(1, f_fin + 1)}
     # …salvo las que aquí piden más líneas (un concepto en inglés más largo): con su alto de la app, y aviso
     medir_l = medidor("Roboto-Light.ttf")
-    mas_lineas = []
+    mas_lineas, menos_lineas = [], []
+    # Alto por número de líneas, el del modelo (Arg_03: 1 línea 14 pt, 2 líneas 24, 3 líneas 40)
+    alto_por_lineas = {}
+    if medir_l:
+        for (c, f), v in celdas_m.items():
+            if c != cuadro_m["primera"] or not (cuadro_m["fin_cabecera"] < f <= cuadro_m["f2"]) or not v.get("texto", "").strip():
+                continue
+            h_m = altos_m.get(f - 1, defecto_m) / EMU_PT
+            if h_m <= 0:
+                continue
+            sz_ = re.search(r'<sz val="([\d.]+)"', est_m.fuente_de(v.get("s", 0)))
+            pt_ = float(sz_.group(1)) if sz_ else CUERPO_CELDA
+            n_ = len(partir(v["texto"].strip(), round(ancho_m(c) * mdw_m) - 2 * RELLENO_CELDA_PT,
+                            lambda t, _p, _pt=pt_: medir_l(t, _pt) * ESCALA_TEXTO_EXCEL))
+            alto_por_lineas.setdefault(n_, []).append(round(h_m, 2))
+        alto_por_lineas = {n_: max(set(l_), key=l_.count) for n_, l_ in alto_por_lineas.items()}
     if medir_l:
         for (c, f), v in todas_t.items():
             if not (cuadro_t["f1"] <= f <= f_fin and c <= c_fin) or v.get("numero") or not v.get("texto", "").strip():
@@ -6280,7 +6295,18 @@ def igualar_celda_a_celda(trabajo, estado, base, hoja, ruta_hoja, hoja_xml, est,
             n_t = len(partir(v["texto"].strip(), ancho_c, m_))
             t_m = celdas_m.get((c, f), {}).get("texto", "").strip()
             n_m = len(partir(t_m, ancho_c, m_)) if t_m else 1
-            if n_t > n_m:
+            if n_t != n_m and c == cuadro_t["primera"]:
+                # (más líneas o menos: el alto que tienen en el modelo las filas de esas líneas; Arg_03 inglés, fila 25,
+                # 3 líneas en español y 2 en inglés → 24 pt)
+                if n_t in alto_por_lineas:
+                    altos[f] = alto_por_lineas[n_t]
+                elif n_t > n_m:
+                    alto_app = altos_v[0].get(f - 1, altos_v[1]) / EMU_PT
+                    altos[f] = round(max(altos[f] * n_t / max(1, n_m), alto_app), 2)
+                else:
+                    altos[f] = round(altos[f] * n_t / max(1, n_m), 2)
+                (mas_lineas if n_t > n_m else menos_lineas).append(ref(c, f))
+            elif n_t > n_m:
                 alto_app = altos_v[0].get(f - 1, altos_v[1]) / EMU_PT
                 altos[f] = round(max(altos[f] * n_t / max(1, n_m), alto_app), 2)
                 mas_lineas.append(ref(c, f))
@@ -6349,6 +6375,9 @@ def igualar_celda_a_celda(trabajo, estado, base, hoja, ruta_hoja, hoja_xml, est,
     if mas_lineas:
         detalle.append("Aviso: textos que piden más líneas que en el modelo (su fila, más alta): " + ", ".join(mas_lineas[:10])
                        + marca(mas_lineas))
+    if menos_lineas:
+        detalle.append("Textos con menos líneas que en el modelo (su fila, más baja, con el alto del modelo para esas líneas): "
+                       + ", ".join(menos_lineas[:10]) + marca(menos_lineas))
     return nuevo_paso(trabajo, IGUAL_AL_MODELO, cambios, detalle, cuadro_t)
 
 
