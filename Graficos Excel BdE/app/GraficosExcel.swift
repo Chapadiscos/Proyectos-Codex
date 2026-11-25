@@ -62,6 +62,24 @@ let nombresColorPaleta = ["dk1": "Texto oscuro 1", "lt1": "Fondo claro 1", "dk2"
                           "accent1": "Énfasis 1", "accent2": "Énfasis 2", "accent3": "Énfasis 3",
                           "accent4": "Énfasis 4", "accent5": "Énfasis 5", "accent6": "Énfasis 6"]
 
+/// Una línea del detalle puede acabar en una marca «⟦forma:hoja|k|nombre⟧» con la forma (el gráfico de un panel,
+/// FUENTES…) a la que se refiere, como en Cuadros Excel BdE: se quita para mostrarla y, al pulsar la línea, Excel
+/// selecciona esa forma (petición del usuario, 2026-11-25).
+func partirMarca(_ linea: String) -> (texto: String, marca: String?) {
+    guard linea.hasSuffix("⟧"), let r = linea.range(of: " ⟦", options: .backwards) else { return (linea, nil) }
+    return (String(linea[..<r.lowerBound]), String(linea[r.upperBound..<linea.index(before: linea.endIndex)]))
+}
+
+/// Lo que se ve de una marca en la ayuda: «Gráfico 6» (hoja «Gráfico») o las celdas B9, B10 (hoja «Datos»)
+func descripcionMarca(_ marca: String) -> String {
+    if marca.hasPrefix("celdas:") {
+        let partes = marca.dropFirst("celdas:".count).split(separator: "|", maxSplits: 1).map(String.init)
+        return partes.count == 2 ? "\(partes[1].replacingOccurrences(of: " ", with: ", ")) (hoja «\(partes[0])»)" : marca
+    }
+    let partes = marca.dropFirst("forma:".count).split(separator: "|", maxSplits: 2).map(String.init)
+    return partes.count == 3 ? "«\(partes[2])» (hoja «\(partes[0])»)" : marca
+}
+
 struct Respuesta: Decodable {
     let ok: Bool
     let error: String?
@@ -292,6 +310,11 @@ final class Taller: ObservableObject {
     @Published var ahora = Date()
     /// Resultado de «Comparar con el original» (se borra al cambiar de versión: ya no vale)
     @Published var comparacion: [String] = []
+    /// Hay una versión de la app más nueva que la que está abierta (se ha compilado después de arrancar), como en
+    /// Cuadros Excel BdE (petición del usuario, 2026-11-25)
+    @Published var appNueva = false
+    private let arranque = Date()
+    private var ultimaRevision = Date.distantPast
 
     var motorEncontrado: Bool { FileManager.default.fileExists(atPath: motor.appendingPathComponent("maquetar_excel.py").path) }
     var publicacionActual: Publicacion? { publicaciones.first { $0.id == publicacion } }
@@ -314,6 +337,15 @@ final class Taller: ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.excel = !NSRunningApplication.runningApplications(withBundleIdentifier: idExcel).isEmpty
+                // Cada 10 s: ¿se ha compilado la app después de abrirla? (si no se reabre, se sigue usando la vieja)
+                if !self.appNueva, Date().timeIntervalSince(self.ultimaRevision) > 10 {
+                    self.ultimaRevision = Date()
+                    if let ejecutable = Bundle.main.executableURL,
+                       let fecha = (try? FileManager.default.attributesOfItem(atPath: ejecutable.path))?[.modificationDate] as? Date,
+                       fecha > self.arranque {
+                        self.appNueva = true
+                    }
+                }
                 // El contador solo corre con la ventana a la vista: cada redibujo con la ventana escondida (el
                 // Organizador visual) dejaba la app esperando a que macOS lo mostrara, y parada mientras tanto
                 if self.enCurso != nil, NSApp.windows.contains(where: { $0.isVisible && $0.occlusionState.contains(.visible) }) {
@@ -502,6 +534,100 @@ final class Taller: ObservableObject {
         }
     }
 
+    /// Selecciona en Excel (en el libro abierto, sin tocar el archivo) la forma de una línea del detalle: el gráfico
+    /// del panel o FUENTES. Va por su número en la hoja (los autores repiten nombres) y, si no casa, por su nombre.
+    func verEnExcel(_ marca: String) {
+        guard let ruta = trabajo else { return }
+        if marca.hasPrefix("celdas:") { verCeldasEnExcel(marca, ruta); return }
+        let partes = marca.dropFirst("forma:".count).split(separator: "|", maxSplits: 2).map(String.init)
+        guard marca.hasPrefix("forma:"), partes.count == 3 else { return }
+        let guion = """
+        on run argv
+            set ruta to item 1 of argv
+            set rutaB to item 2 of argv
+            set hoja to item 3 of argv
+            set k to (item 4 of argv) as integer
+            set nombre to item 5 of argv
+            tell application "Microsoft Excel"
+                set wb to missing value
+                repeat with i from 1 to (count workbooks)
+                    if full name of workbook i is ruta or full name of workbook i is rutaB then set wb to workbook i
+                end repeat
+                if wb is missing value then return "sin libro"
+                activate object wb
+                set h to worksheet hoja of wb
+                activate object h
+                set hecho to false
+                try
+                    set s to shape k of h
+                    if name of s is nombre then
+                        select s
+                        set hecho to true
+                    end if
+                end try
+                if not hecho then select (shape nombre of h)
+                -- Delante: con Excel detrás, la selección casi no se ve
+                activate
+                return "ok"
+            end tell
+        end run
+        """
+        Task {
+            let r = await osascript(guion, [ruta.path, Taller.copiaB(ruta).path] + partes, espera: 15)
+            if !r.ok || r.texto == "sin libro" {
+                aviso = Aviso(titulo: "No se puede enseñar en Excel",
+                              texto: r.texto == "sin libro" ? "La copia de trabajo no está abierta en Excel: pulsa «Colocar Excel»."
+                                                           : "Excel no ha podido seleccionarlo (\(r.texto)).")
+            }
+        }
+    }
+
+    /// Selecciona en Excel unas celdas de una hoja (las de un dato que falta o cambia en la comparación con el
+    /// original), sin tocar el archivo. Varias celdas: el Excel en castellano las separa con «;»; si falla, «,».
+    private func verCeldasEnExcel(_ marca: String, _ ruta: URL) {
+        let partes = marca.dropFirst("celdas:".count).split(separator: "|", maxSplits: 1).map(String.init)
+        guard partes.count == 2 else { return }
+        let guion = """
+        on run argv
+            set ruta to item 1 of argv
+            set rutaB to item 2 of argv
+            set hoja to item 3 of argv
+            set que to item 4 of argv
+            tell application "Microsoft Excel"
+                set wb to missing value
+                repeat with i from 1 to (count workbooks)
+                    if full name of workbook i is ruta or full name of workbook i is rutaB then set wb to workbook i
+                end repeat
+                if wb is missing value then return "sin libro"
+                activate object wb
+                set h to worksheet hoja of wb
+                activate object h
+                try
+                    select (range que of h)
+                on error
+                    set AppleScript's text item delimiters to ";"
+                    set trozos to text items of que
+                    set AppleScript's text item delimiters to ","
+                    set otra to trozos as text
+                    set AppleScript's text item delimiters to ""
+                    select (range otra of h)
+                end try
+                activate
+                return "ok"
+            end tell
+        end run
+        """
+        Task {
+            let r = await osascript(guion, [ruta.path, Taller.copiaB(ruta).path, partes[0],
+                                            partes[1].replacingOccurrences(of: " ", with: ";")], espera: 15)
+            if !r.ok || r.texto == "sin libro" {
+                aviso = Aviso(titulo: "No se puede enseñar en Excel",
+                              texto: r.texto == "sin libro" ? "La copia de trabajo no está abierta en Excel: pulsa «Colocar Excel»."
+                                                           : "Excel no ha podido seleccionarlo (\(r.texto)).")
+            }
+        }
+    }
+
     // MARK: Terminar
 
     /// Compara la copia de trabajo (lo guardado: la más reciente de las dos) con el Excel del autor: textos y
@@ -519,16 +645,19 @@ final class Taller: ObservableObject {
         }
     }
 
-    /// Nombre que tendrá el TERMINADO: el del original con «ORIGINAL» cambiado por «TERMINADO», o con
-    /// « TERMINADO» al final (si ya existe, el motor le pone « (2)»…)
+    /// Nombre que tendrá el resultado: el del original con «ORIGINALES»/«ORIGINAL» cambiado por «EXCEL», o con
+    /// « EXCEL» al final (si ya existe, el motor le pone « (2)»…). Como en Cuadros Excel BdE (petición del usuario,
+    /// 2026-11-25; antes «TERMINADO»)
     var nombreTerminado: String {
         guard let trabajo else { return "" }
         var base = trabajo.deletingPathExtension().lastPathComponent
         if base.hasSuffix(" maquetado") { base = String(base.dropLast(" maquetado".count)) }
-        if base.range(of: #"\bORIGINAL\b"#, options: .regularExpression) != nil {
-            base = base.replacingOccurrences(of: #"\bORIGINAL\b"#, with: "TERMINADO", options: .regularExpression)
-        } else {
-            base += " TERMINADO"
+        if base.range(of: #"\bORIGINALES\b"#, options: .regularExpression) != nil {
+            base = base.replacingOccurrences(of: #"\bORIGINALES\b"#, with: "EXCEL", options: .regularExpression)
+        } else if base.range(of: #"\bORIGINAL\b"#, options: .regularExpression) != nil {
+            base = base.replacingOccurrences(of: #"\bORIGINAL\b"#, with: "EXCEL", options: .regularExpression)
+        } else if base.range(of: #"\bEXCEL$"#, options: .regularExpression) == nil {
+            base += " EXCEL"
         }
         return base + ".xlsx"
     }
@@ -549,7 +678,7 @@ final class Taller: ObservableObject {
     end run
     """
 
-    /// Guarda el resultado como «… TERMINADO.xlsx» junto al original y borra lo generado (las dos copias de
+    /// Guarda el resultado como «… EXCEL.xlsx» junto al original y borra lo generado (las dos copias de
     /// trabajo y la carpeta de pasos con todas las versiones). Antes: que no haya cambios sin guardar en Excel
     /// y confirmación.
     func terminar() {
@@ -558,13 +687,13 @@ final class Taller: ObservableObject {
             let estado = await osascript(Taller.guionGuardado, [trabajo.path, Taller.copiaB(trabajo).path], espera: 10)
             if estado.texto.contains("sin guardar") {
                 self.aviso = Aviso(titulo: "Hay cambios sin guardar en Excel",
-                                   texto: "Guarda el libro en Excel (⌘S) si quieres conservarlos, o deshazlos, y vuelve a pulsar «Guardar como TERMINADO».")
+                                   texto: "Guarda el libro en Excel (⌘S) si quieres conservarlos, o deshazlos, y vuelve a pulsar «Guardar como EXCEL».")
                 return
             }
-            self.pregunta = Pregunta(titulo: "¿Guardar como TERMINADO?",
-                                     texto: "Se guarda «\(self.nombreTerminado)» junto al original (si ya existe, no se pisa: se añade « (2)»). Después se cierra en Excel y se borran la copia de trabajo, su copia « (2)» y la carpeta «(pasos)» con todas las versiones. El original del autor no se toca. No se puede deshacer.",
+            self.pregunta = Pregunta(titulo: "¿Guardar como EXCEL?",
+                                     texto: "Se guarda «\(self.nombreTerminado)» junto al original (si ya existe, no se pisa: se añade « (2)») y se abre en Excel encima del original del autor, en el mismo sitio y con el mismo zoom, para compararlos. Se borran la copia de trabajo, su copia « (2)» y la carpeta «(pasos)» con todas las versiones. El original del autor no se toca. No se puede deshacer.",
                                      boton: "Guardar y borrar") {
-                self.tarea("Guardar como TERMINADO") { id in
+                self.tarea("Guardar como EXCEL") { id in
                     await self.cerrarEnExcel(trabajo)
                     guard let r = await self.llamarMotor(["terminar", trabajo.path], registro: id),
                           let hecho = r.terminado else { return false }
@@ -575,7 +704,16 @@ final class Taller: ObservableObject {
                     self.pasos = []
                     self.actual = 0
                     self.comparacion = []
-                    NSWorkspace.shared.activateFileViewerSelecting([url])
+                    // El EXCEL y, detrás, el original del autor, en el sitio de la copia de trabajo y con el mismo zoom,
+                    // para pasar de uno a otro y compararlos (petición del usuario, 2026-11-25, como en Cuadros)
+                    if self.excel {
+                        let original = r.original.map { URL(fileURLWithPath: $0) }
+                        let abierto = await self.abrirParaComparar(url, original)
+                        self.anotar(id, abierto ? "Abierto en Excel: \(url.lastPathComponent)" + (original != nil ? ", encima del original del autor (\(original!.lastPathComponent)), en el mismo sitio y con el mismo zoom" : "")
+                                                : "⚠ No he podido abrirlo en Excel")
+                    } else {
+                        NSWorkspace.shared.activateFileViewerSelecting([url])
+                    }
                     return true
                 }
             }
@@ -588,6 +726,94 @@ final class Taller: ObservableObject {
     /// (Excel no puede abrir dos veces el mismo archivo ni dos libros que se llamen igual).
     /// La posición y el tamaño de la ventana guardados en el libro (workbookView de xl/workbook.xml, en
     /// veinteavos de punto) pasan a ser `sitio` = {izquierda, arriba, derecha, abajo}.
+    /// Abre (como desde el Finder) el EXCEL y, si hay, el original del autor, los dos en el sitio de la copia de
+    /// trabajo, en la hoja del gráfico desde A1: el EXCEL fija el zoom que encuadra la retícula, el original toma
+    /// ese mismo zoom y el EXCEL vuelve delante. El original no se toca: se coloca ya abierto.
+    private func abrirParaComparar(_ resultado: URL, _ original: URL?) async -> Bool {
+        let sitio = await colocarVentanas()
+        let medidas = [Int(reticula.ancho * 1.04), Int(reticula.alto * 1.04)]
+        let guion = """
+        on colocar(rutaLibro, sitio, anchoRet, altoRet, zFijo)
+            do shell script "open -a 'Microsoft Excel' " & quoted form of rutaLibro
+            set nombreLibro to do shell script "basename " & quoted form of rutaLibro
+            tell application "Microsoft Excel"
+                activate
+                set wb to missing value
+                repeat 300 times
+                    try
+                        repeat with i from 1 to (count workbooks)
+                            if full name of workbook i is rutaLibro or name of workbook i is nombreLibro then set wb to workbook i
+                        end repeat
+                    end try
+                    if wb is not missing value then exit repeat
+                    delay 0.1
+                end repeat
+                if wb is missing value then return 0
+                activate object wb
+                -- La hoja «Gráfico» o, si el autor la llamó de otra forma («G1»), la primera con gráficos
+                try
+                    activate object worksheet "Gráfico" of wb
+                on error
+                    repeat with i from 1 to (count worksheets of wb)
+                        if (count chart objects of worksheet i of wb) > 0 then
+                            activate object worksheet i of wb
+                            exit repeat
+                        end if
+                    end repeat
+                end try
+                set w to active window
+                set z to zFijo
+                if sitio is not {} then
+                    try
+                        set bounds of w to sitio
+                    end try
+                    if z is 0 then
+                        set zoom of w to 100
+                        set f to (width of visible range of w) / anchoRet
+                        if (height of visible range of w) / altoRet < f then set f to (height of visible range of w) / altoRet
+                        set z to round (100 * f) rounding down
+                        if z > 400 then set z to 400
+                        if z < 10 then set z to 10
+                    end if
+                    set zoom of w to z
+                end if
+                try
+                    set scroll row of w to 1
+                    set scroll column of w to 1
+                    select range "A1" of active sheet
+                end try
+                return z
+            end tell
+        end colocar
+
+        on run argv
+            set sitio to {}
+            set anchoRet to 0
+            set altoRet to 0
+            if (item 3 of argv) is not "" then
+                set sitio to {(item 3 of argv) as integer, (item 4 of argv) as integer, (item 5 of argv) as integer, (item 6 of argv) as integer}
+                set anchoRet to (item 7 of argv) as integer
+                set altoRet to (item 8 of argv) as integer
+            end if
+            set z to my colocar(item 1 of argv, sitio, anchoRet, altoRet, 0)
+            if (item 2 of argv) is not "" then
+                my colocar(item 2 of argv, sitio, anchoRet, altoRet, z)
+                my colocar(item 1 of argv, sitio, anchoRet, altoRet, z)
+            end if
+            return z
+        end run
+        """
+        if sitio.count == 4 { await Taller.fijarVentana(resultado, sitio) }
+        let vinculos = AXIsProcessTrusted() ? Task.detached { await noActualizarVinculos() } : nil
+        let argumentos = [resultado.path, original?.path ?? ""]
+            + (sitio.count == 4 ? (sitio + medidas).map(String.init) : ["", "", "", "", "", ""])
+        let r = await osascript(guion, argumentos, espera: 120)
+        try? await Task.sleep(nanoseconds: 500_000_000)
+        vinculos?.cancel()
+        if organizadorVisual && sitio.count == 4 { _ = await juntarConExcel(sitio) }
+        return r.ok
+    }
+
     static func fijarVentana(_ archivo: URL, _ sitio: [Int]) async {
         guard sitio.count == 4 else { return }
         let lectura = await ejecutar("/usr/bin/unzip", ["-p", archivo.path, "xl/workbook.xml"], espera: 10)
@@ -1238,6 +1464,14 @@ struct Cabecera: View {
                 Text(detalle).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
             }
             Spacer()
+            if taller.appNueva {
+                Label("Hay una versión nueva de la app: ciérrala (⌘Q) y vuelve a abrirla", systemImage: "arrow.triangle.2.circlepath")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Capsule().fill(Color.orange))
+            }
             if let e = taller.ejecucionEnCurso {
                 HStack(spacing: 8) {
                     // Fijo, sin ruedecita: una animación continua bloqueaba la app con el Organizador visual
@@ -1375,16 +1609,30 @@ struct TarjetaVersiones: View {
             if let p = taller.pasoActual, !p.detalle.isEmpty {
                 VStack(alignment: .leading, spacing: 5) {
                     Rotulo("Cambios de la versión \(p.n)")
-                    ForEach(p.detalle, id: \.self) { linea in
-                        // Los avisos, en rojo y negrita: piden comprobar algo a mano
+                    ForEach(p.detalle, id: \.self) { entera in
+                        // Los avisos, en rojo y negrita: piden comprobar algo a mano. Con marca (diana), al pulsar la
+                        // línea Excel selecciona el gráfico del panel o la forma a la que se refiere
+                        let (linea, marca) = partirMarca(entera)
                         let aviso = linea.hasPrefix("Aviso")
-                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        let fila = HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Image(systemName: aviso ? "exclamationmark.triangle.fill" : "circle.fill")
                                 .font(.system(size: aviso ? 10 : 4))
                                 .foregroundStyle(aviso ? Color.red : colorVersiones)
                             Text(linea).font(.system(size: 11.5, weight: aviso ? .bold : .regular))
                                 .foregroundStyle(aviso ? Color.red : Color.primary)
                                 .fixedSize(horizontal: false, vertical: true)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            if marca != nil {
+                                Image(systemName: "scope").font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(aviso ? Color.red : colorVersiones)
+                            }
+                        }
+                        if let marca {
+                            Button { taller.verEnExcel(marca) } label: { fila.contentShape(Rectangle()) }
+                                .buttonStyle(.plain)
+                                .help("Seleccionar en Excel \(descripcionMarca(marca))")
+                        } else {
+                            fila
                         }
                     }
                 }
@@ -1407,7 +1655,7 @@ struct TarjetaTerminar: View {
                 Accion(icono: "doc.text.magnifyingglass", titulo: "Comparar con el original",
                        detalle: "Textos, cifras y datos de todas las hojas frente al Excel del autor (no la colocación): avisa de lo que falte y de los cambios de cifras, fechas, trimestres, mayúsculas… No crea versión",
                        color: color, principal: taller.comparacion.isEmpty) { taller.comparar() }
-                Accion(icono: "checkmark.circle", titulo: "Guardar como TERMINADO",
+                Accion(icono: "checkmark.circle", titulo: "Guardar como EXCEL",
                        detalle: taller.trabajo == nil ? "Guarda el resultado junto al original y borra las copias y las versiones"
                            : "Guarda «\(taller.nombreTerminado)» junto al original y borra las copias de trabajo y la carpeta de versiones",
                        color: color, principal: !taller.comparacion.isEmpty) { taller.terminar() }
@@ -1416,17 +1664,31 @@ struct TarjetaTerminar: View {
             if !taller.comparacion.isEmpty {
                 VStack(alignment: .leading, spacing: 5) {
                     Rotulo("Comparación con el original (versión \(taller.actual), lo guardado)")
-                    ForEach(taller.comparacion, id: \.self) { linea in
+                    ForEach(taller.comparacion, id: \.self) { entera in
+                        // Con marca (diana), al pulsar la línea Excel selecciona las celdas, el gráfico o el texto
+                        // del que habla (petición del usuario, 2026-11-25)
+                        let (linea, marca) = partirMarca(entera)
                         let aviso = linea.hasPrefix("Aviso")
                         let cambio = linea.hasPrefix("Cambio")
-                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        let fila = HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Image(systemName: aviso ? "exclamationmark.triangle.fill" : cambio ? "arrow.left.arrow.right" : "circle.fill")
                                 .font(.system(size: aviso || cambio ? 10 : 4))
                                 .foregroundStyle(aviso ? Color.red : cambio ? Color.orange : color)
                             Text(linea).font(.system(size: 11.5, weight: aviso ? .bold : .regular))
                                 .foregroundStyle(aviso ? Color.red : Color.primary)
                                 .fixedSize(horizontal: false, vertical: true)
-                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            if marca != nil {
+                                Image(systemName: "scope").font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(aviso ? Color.red : cambio ? Color.orange : color)
+                            }
+                        }
+                        if let marca {
+                            Button { taller.verEnExcel(marca) } label: { fila.contentShape(Rectangle()) }
+                                .buttonStyle(.plain)
+                                .help("Seleccionar en Excel \(descripcionMarca(marca))")
+                        } else {
+                            fila.textSelection(.enabled)
                         }
                     }
                 }
@@ -1547,11 +1809,26 @@ struct Consola: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         VStack(alignment: .leading, spacing: 1) {
-                            ForEach(Array(e.texto.components(separatedBy: "\n").enumerated()), id: \.offset) { _, linea in
-                                Text(linea.isEmpty ? " " : linea)
+                            ForEach(Array(e.texto.components(separatedBy: "\n").enumerated()), id: \.offset) { _, entera in
+                                // Las líneas con marca se pulsan: Excel selecciona la forma a la que se refieren
+                                let (linea, marca) = partirMarca(entera)
+                                let texto = Text(linea.isEmpty ? " " : linea)
                                     .font(.system(size: 11.5, weight: linea.hasPrefix("• Aviso") ? .bold : .regular, design: .monospaced))
                                     .foregroundStyle(color(linea))
-                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                if let marca {
+                                    Button { taller.verEnExcel(marca) } label: {
+                                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                            texto.multilineTextAlignment(.leading)
+                                            Image(systemName: "scope").font(.system(size: 10, weight: .semibold)).foregroundStyle(color(linea))
+                                        }
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help("Pulsa para verlo seleccionado en Excel")
+                                } else {
+                                    texto.frame(maxWidth: .infinity, alignment: .leading)
+                                }
                             }
                             Color.clear.frame(height: 1).id("fin")
                         }

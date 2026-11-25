@@ -151,6 +151,19 @@ Las versiones hechas cuando retícula y textos eran dos pasos («Retícula y pas
        separador de miles; respeta el %), escritos en las etiquetas (`sourceLinked 0`; las celdas no se tocan).
        Va después de pasar las tartas a 0-100: el G_26XX_05 queda con un decimal (62,6), no con dos como su
        TERMINADO. Si una etiqueta lleva texto (categoría, serie o valor de las celdas) y número, separador «: ».
+     - Etiquetas de datos **sin borde ni fondo**, en todas las publicaciones (`etiquetas_sin_marco`; petición del
+       usuario, 2026-11-25: en el G_IA2025_1.1 el autor las puso en recuadros blancos con borde gris y en el .ai van
+       sin nada). Solo la forma de las etiquetas; sus líneas guía no se tocan.
+     - FUENTES: la diéresis «¨» usada como comilla de apertura también pasa a «« »» (G_IA2025_1.1).
+     - Texto de las etiquetas de datos con las reglas de FUENTES (`orto_texto`, `etiquetas_ortotipografia`;
+       petición del usuario, 2026-11-25): en castellano comillas angulares y espacio de no separación entre cifra y
+       % («10 %»); en inglés sin espacio; sin espacios dobles. El escrito en la etiqueta y el que sale de celdas
+       («Valor de las celdas»: en la caché y en sus celdas, que Excel repone al abrir).
+     - Etiquetas de tamaño fijo en las que ya no cabe el texto a 6 pt (Excel lo corta con «…»): en el paso 2,
+       con el tamaño final del gráfico, crecen a lo alto (y a lo ancho si no cabe la palabra más larga):
+       `etiquetas_que_caben` («no puede desaparecer texto», G_IA2025_1.1 «Aranceles a China, Canadá y México»).
+     - Fechas: el código es el de la guía; Excel para Mac escribe el mes con el idioma del Mac y con es-US da
+       «sept» (con es-ES, «sep.»), sea cual sea el código (probado: [$-1540A], [$-es-US,1], [$-540A], [$-2C0A]).
      - Trimestres → «I TR … IV TR» (es) / «Q1 … Q4» (en), con el año detrás: en leyendas, categorías (celdas y
        caché), textos de la hoja dentro de la retícula y textos de dentro de los gráficos.
      - Eje horizontal: nunca en oblicuo. Horizontal (explícito, para que Excel no lo incline) si la palabra
@@ -200,7 +213,12 @@ Las versiones hechas cuando retícula y textos eran dos pasos («Retícula y pas
    - Sin título del gráfico (solo «Gráfico NN», como en el G_Trim_03): la pastilla se acorta lo que va de la
      línea de base de «Gráfico NN» a la del título en la plantilla (unos 4 mm: queda en 9,2 mm; el TERMINADO,
      8,6), para acabar a la misma distancia del último texto; los paneles suben con ella.
-   - Leyenda: empieza en la columna 2 (el cuadro, 3 mm antes, por el aire que deja alrededor del texto), a la
+   - Leyenda: la muestra empieza **medio milímetro después de la línea de la columna 2** (petición del usuario,
+     2026-11-25, G_IA2025_1.1: las muestras se metían en la línea). Medido en el PDF de Excel, con el cuadro 3 mm
+     antes de la columna las muestras de una leyenda solo de líneas (anchas) empezaban 1,3 mm antes de la línea
+     y las de una leyenda con barras (más estrechas, también con la muestra ancha « ») 0,2 mm antes; el cuadro
+     se corre lo que toque (`MUESTRA_LINEA_ANTES`, `MUESTRA_BARRA_ANTES`) y el texto sigue sin pasar del final
+     de la columna 2. Las de las tartas, como estaban. A la
      altura del comienzo del gráfico, con el ancho justo de su línea más larga (los nombres que no caben en
      la columna 2 se parten), para que vayan una debajo de otra. Medido en Excel: Excel **centra** las
      entradas si el cuadro es más ancho (por eso el ancho justo); la muestra de una serie de líneas mide unos
@@ -282,6 +300,10 @@ Las versiones hechas cuando retícula y textos eran dos pasos («Retícula y pas
      a distancia 100 (en el de valores Excel no tiene ese ajuste).
    - Eje cortado: un máximo fijo sube y un mínimo fijo baja al siguiente tramo del intervalo (55 → 60 de 10
      en 10), para cerrar con una línea de división. Si el intervalo es automático, solo avisa.
+   - El eje de valores cuenta como «con negativos» también si baja de 0 sin datos negativos: con el máximo fijo y el
+     mínimo automático, Excel baja el mínimo para que los saltos acaben en el máximo (130 con saltos de 20: de −10
+     a 130, G_IA2025_1.1; `escala_eje` lo calcula así). Entonces el horizontal cruza en 0 con marcas en Cruz
+     (petición del usuario, 2026-11-25).
    - Los ejes ocultos no se tocan (como en el TERMINADO 2.6).
    - Dispersión: solo cuando el grupo `scatterChart` va sobre dos ejes de valores; en un gráfico combinado
      (columnas + puntos) la dispersión puede ir sobre el eje de categorías y no cuenta.
@@ -397,11 +419,39 @@ Para los gráficos de barras verticales que lo pidan (modelo: «G_DO26XX_04 TERM
   El resultado sale en la tarjeta y en la actividad: «Aviso…» en rojo, «Cambio de…» en naranja. No crea versión
   y se borra al cambiar de versión. Trampa: `difflib` con `autojunk` (por defecto) da parecidos muy bajos en
   textos de más de 200 caracteres (FUENTES con notas): siempre `autojunk=False`.
-- **Guardar como TERMINADO** (`terminar`): si la copia abierta en Excel tiene cambios sin guardar, avisa y no
-  sigue; pide confirmación; cierra en Excel; copia lo guardado como «… TERMINADO.xlsx» junto al original
-  («ORIGINAL» del nombre pasa a «TERMINADO», o se añade al final; si ya existe no se pisa: « (2)», « (3)»…) y
-  borra las dos copias de trabajo y la carpeta «(pasos)». El original del autor no se toca. Al acabar enseña el
-  TERMINADO en el Finder.
+- **Guardar como EXCEL** (`terminar`; antes «Guardar como TERMINADO», cambiado a petición del usuario el
+  2026-11-25, como en Cuadros Excel BdE): si la copia abierta en Excel tiene cambios sin guardar, avisa y no
+  sigue; pide confirmación; cierra en Excel; copia lo guardado como «… EXCEL.xlsx» junto al original
+  («ORIGINALES»/«ORIGINAL» del nombre pasan a «EXCEL», o se añade « EXCEL» al final; si ya existe no se pisa:
+  « (2)», « (3)»…) y borra las dos copias de trabajo y la carpeta «(pasos)». El original del autor no se toca.
+  Al acabar abre en Excel el EXCEL y, detrás, el original del autor, los dos en el sitio de la copia de trabajo,
+  en la hoja del gráfico desde A1 y con el mismo zoom (el que encuadra la retícula), con el EXCEL delante: para
+  pasar de uno a otro y compararlos (`abrirParaComparar`, abiertos como desde el Finder).
+
+### App actualizada (2026-11-25, como en Cuadros Excel BdE)
+
+Cada 10 s la app mira si su ejecutable es más nuevo que su arranque (se ha compilado o instalado después de
+abrirla) y, si lo es, enseña en la cabecera una cápsula naranja: «Hay una versión nueva de la app: ciérrala (⌘Q) y
+vuelve a abrirla».
+
+### Avisos que se ven en Excel (2026-11-25, como en Cuadros Excel BdE)
+
+Las líneas del detalle que hablan de un panel («Panel 2: …», «Aviso: panel 2: …», «Aviso: el panel 2 …») y los
+avisos de FUENTES llevan al final una marca invisible «⟦forma:hoja|k|nombre⟧» (`marcar_detalle`, al guardar cada
+versión). La app la quita al mostrarlas y pone una diana: al pulsar la línea (en «Cambios de la versión» o en la
+actividad), Excel pasa delante y selecciona esa forma en la hoja del gráfico, sin tocar el archivo. La forma va por
+su número en la hoja (el orden del dibujo, el mismo que «shape k» en Excel; comprobado con el 1.13) porque los
+autores repiten nombres (los cuatro gráficos del 1.13 se llaman «Chart 1»); si no casa, por su nombre. Los paneles
+se cuentan como en cada paso: en el 1, en el orden del dibujo; en los demás, de arriba abajo.
+
+También en «Comparar con el original» (`marcar_comparacion`): los datos que faltan o cambian llevan
+«⟦celdas:hoja|B9 B10⟧» (Excel selecciona esas celdas en su hoja; «;» o «,» según el idioma de Excel), los cambios
+de formato de un eje y las series, el gráfico, y los textos, el cuadro o gráfico donde están (primero los cuadros
+de la hoja y el texto suelto: «1.1» va a «Gráfico 1.1», no a «1.1.a»).
+
+Septiembre: con el código de la guía, Excel para Mac escribe «sept» (comprobado: los otros once meses salen con 3
+letras, y en inglés todos). Si un eje de fechas en castellano tiene septiembre, el paso 1 avisa («Aviso: panel N:
+…»).
 
 ### Gráficos de tarta (guía, págs. 16 y 17; prueba: «G_MemoriaSupervision_2.3 CIRCULAR»)
 

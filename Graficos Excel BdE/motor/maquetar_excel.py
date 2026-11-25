@@ -23,6 +23,7 @@ Uso (la salida es siempre JSON):
   maquetar_excel.py borrar_publicacion <id>
   maquetar_excel.py paletas [actualizar]
 """
+import datetime
 import difflib
 import html
 from collections import Counter
@@ -170,10 +171,57 @@ def nuevo_paso(trabajo, titulo, cambios, detalle):
     reescribir_zip(pasos / estado["pasos"][actual]["archivo"], pasos / archivo, cambios)
     solo_lectura(pasos / archivo)
     shutil.copyfile(pasos / archivo, trabajo)
-    estado["pasos"].append({"n": n, "titulo": titulo, "archivo": archivo, "detalle": detalle})
+    estado["pasos"].append({"n": n, "titulo": titulo, "archivo": archivo,
+                            "detalle": marcar_detalle(pasos / archivo, detalle, orden_documento=(titulo == RETICULA_Y_TEXTOS))})
     estado["actual"] = n
     guardar_estado(trabajo, estado)
     return {"trabajo": str(trabajo), **estado}
+
+
+def marca(hoja, indice, forma):
+    """Marca invisible al final de una línea del detalle con la forma que hay que enseñar en Excel (como en Cuadros
+    Excel BdE): la app la quita al mostrarla y, al pulsar la línea, selecciona esa forma en su hoja (petición del
+    usuario, 2026-11-25). La forma va por su número en la hoja (orden del dibujo, como el de «shape k» en Excel),
+    porque los autores repiten nombres (los cuatro gráficos del 1.13 se llaman «Chart 1»), y por su nombre."""
+    return f" ⟦forma:{hoja}|{indice}|{forma}⟧"
+
+
+RE_LINEA_PANEL = re.compile(r'^(?:Aviso: (?:el )?panel|Panel) (\d+)\b', re.I)
+
+
+def marcar_detalle(libro, detalle, orden_documento=False):
+    """Añade a las líneas del detalle que hablan de un panel (o de FUENTES, si son avisos) la marca de su forma en
+    la hoja del gráfico. Los paneles se cuentan como en cada paso: en el 1, en el orden del dibujo; en los demás,
+    de arriba abajo."""
+    try:
+        with zipfile.ZipFile(libro) as z:
+            ruta_hoja = hoja_de(z, HOJA_GRAFICO)
+            wb = z.read("xl/workbook.xml").decode("utf-8")
+            relaciones = rels(z, "xl/workbook.xml")
+            hoja = next((html.unescape(n) for n, rid in re.findall(r'<sheet\b(?=[^>]*\bname="([^"]*)")(?=[^>]*\br:id="([^"]+)")', wb)
+                         if relaciones.get(rid, ("", ""))[1] == ruta_hoja), None)
+            dibujo = z.read(dibujo_de_hoja(z, HOJA_GRAFICO)).decode("utf-8")
+            partes = list(partes_dibujo(dibujo))
+            caja = medidas_hoja(z, dibujo)
+    except (Fallo, KeyError, OSError, zipfile.BadZipFile):
+        return detalle
+    if not hoja:
+        return detalle
+    anclas = [a for a in partes if ANCLA.fullmatch(a)]
+    graficos = [(caja(a)[1], k, nombre_forma(a)) for k, a in enumerate(anclas, 1) if "<c:chart " in a]
+    nombres = [(k, n) for _, k, n in (graficos if orden_documento else sorted(graficos))]
+    fuentes = next(((k, nombre_forma(a)) for k, a in enumerate(anclas, 1) if "<xdr:txBody>" in a
+                    and re.match(r'\s*(FUENTES?|SOURCES?)\b', html.unescape(texto_forma(a)), re.I)), None)
+    salida = []
+    for linea in detalle:
+        if not linea.endswith("⟧"):
+            m = RE_LINEA_PANEL.match(linea)
+            if m and 1 <= int(m.group(1)) <= len(nombres):
+                linea += marca(hoja, *nombres[int(m.group(1)) - 1])
+            elif fuentes and linea.startswith("Aviso") and re.search(r'(?i)\bfuentes?\b|\bsources?\b', linea):
+                linea += marca(hoja, *fuentes)
+        salida.append(linea)
+    return salida
 
 
 def reescribir_zip(origen, destino, cambios):
@@ -439,7 +487,9 @@ def en_minuscula(texto, idioma="es"):
         # Letra suelta entre paréntesis («(O)», «(D)»): abreviatura, se deja
         if len(limpia) == 1 and parte.startswith("(") and limpia.isalpha():
             nueva = parte
-        elif limpia in siglas or limpia.replace(".", "") in siglas or any(c.isdigit() for c in limpia) or (limpia and ROMANOS.match(limpia)):
+        elif limpia in siglas or limpia.replace(".", "") in siglas or any(c.isdigit() for c in limpia) or (limpia and ROMANOS.match(limpia)) \
+                or re.fullmatch(r"[A-ZÁÉÍÓÚÑ]+(?:[&+][A-ZÁÉÍÓÚÑ]+)+", limpia):
+            # (siglas con «&» o «+», «S&P», «I+D»: se dejan; antes «S&P 500» → «S&p 500», G_IA2025_1.13)
             escrita = SIGLAS_ESCRITAS.get(limpia, limpia)
             if mayuscula and escrita[:1].islower():
                 escrita = escrita[0].upper() + escrita[1:]   # «pymes» al principio: «Pymes»
@@ -883,6 +933,12 @@ def textos(z, estado):
                 especiales.append("unidad «%» añadida arriba a la izquierda")
         # Etiquetas de datos: decimales de la guía y separador «: » (después de pasar las tartas a 0-100)
         graf, notas_etiquetas = etiquetas_datos(graf)
+        graf, sin_marco = etiquetas_sin_marco(graf)
+        if sin_marco:
+            notas_etiquetas.append(f"etiquetas de datos sin borde ni fondo ({sin_marco})")
+        graf, orto = etiquetas_ortotipografia(z, graf, hojas_datos, estado["idioma"])
+        if orto:
+            notas_etiquetas.append("texto de las etiquetas con las reglas de FUENTES: " + ", ".join(orto[:4]))
         especiales += notas_etiquetas
         graf, antes_color = textos_en_negro(graf)
         otros_colores += antes_color
@@ -1242,7 +1298,8 @@ def maquetar_fuentes(ancla, idioma):
         if idioma == "es":
             salida = []
             for c in texto:
-                if c == "“" or (c == '"' and not abierta[0]):
+                # «¨» de apertura (teclado: la diéresis en lugar de las comillas, G_IA2025_1.1) también cuenta
+                if c in "“¨" or (c == '"' and not abierta[0]):
                     salida.append("«")
                     abierta[0] = True
                     cuenta["comillas"] += 1
@@ -1753,7 +1810,17 @@ def disposicion(xml, ancho, alto, dentro, leyenda, medir):
     centrada = len(leyenda) > 3 and leyenda[3]   # ly es entonces el centro (tartas)
     entradas = entradas_leyenda(xml) or [("Serie", False)]
     # Muestra de color, separación y márgenes de la leyenda (pt); la de una línea mide unos 16 pt más
-    clave = CLAVE_LEYENDA + (CLAVE_LINEA_DE_MAS if any(linea for _, linea in entradas) else 0)
+    con_lineas = any(linea for _, linea in entradas)
+    clave = CLAVE_LEYENDA + (CLAVE_LINEA_DE_MAS if con_lineas else 0)
+    if not centrada:
+        # Que la muestra empiece medio milímetro después de la línea de la columna 2 (petición del usuario,
+        # 2026-11-25, G_IA2025_1.1; medido en el PDF de Excel con la leyenda a 3 mm de la columna): si todas las
+        # entradas son líneas, Excel pone muestras anchas que empezaban 1,3 mm antes de la línea; si hay barras
+        # (también con la muestra ancha « »), muestras más estrechas que la rozaban (0,2 mm antes)
+        solo_lineas = all(linea for _, linea in entradas)
+        corrimiento = (MUESTRA_LINEA_ANTES if solo_lineas else MUESTRA_BARRA_ANTES) + 0.5 * MM
+        lx += corrimiento
+        lmax -= corrimiento   # y sigue sin pasar del final de la columna 2
     # Excel centra las entradas en el cuadro: con el ancho justo de la línea más larga (partiendo los nombres
     # que no caben en la columna 2), la muestra queda al principio
     partidos = [partir_lineas(n, lmax - clave - 2, 7, medir) for n, _ in entradas]
@@ -1776,6 +1843,8 @@ def disposicion(xml, ancho, alto, dentro, leyenda, medir):
     return re.sub(r'<c:legend>.*?</c:legend>', cambiar, xml, count=1, flags=re.S)
 
 
+MUESTRA_LINEA_ANTES = 1.3 * MM   # lo que la muestra de línea empezaba antes de la columna 2 con la leyenda a 3 mm
+MUESTRA_BARRA_ANTES = 0.2 * MM   # y la de las leyendas con barras
 CLAVE_LEYENDA = 7 + 4 + 6
 CLAVE_LINEA_DE_MAS = 16
 
@@ -2383,6 +2452,11 @@ def paso2(trabajo, pid=None):
                     if movidos:
                         linea += " se mueven con el trazado: " + ", ".join(f"«{m}»" for m in movidos) + ";"
                 cambios[ruta_formas] = formas.encode("utf-8")
+            # Etiquetas de datos de tamaño fijo en las que ya no cabe su texto (6 pt): crecen (petición del
+            # usuario, 2026-11-25: «no puede desaparecer texto»; G_IA2025_1.1, «Aranceles a …»)
+            xml, crecidas = etiquetas_que_caben(xml, W, H, medir)
+            if crecidas:
+                linea += f" {crecidas} etiqueta(s) de datos agrandada(s) para que se vea todo su texto;"
             cambios[ruta_graf] = xml.encode("utf-8")
             for u in unidades_arriba:
                 formas = colocar_unidades(formas, u, numeros, ini_unidades - arriba_marco, W, H, medir)
@@ -2591,7 +2665,8 @@ def formato_ejes(xml):
         info[valor(hijo(h, "axId"))] = {
             "tipo": e.group(1), "pos": valor(hijo(h, "axPos")), "datos": datos.get(valor(hijo(h, "axId")), []),
             "min": valor(hijo(escala, "min")), "max": valor(hijo(escala, "max")),
-            "orientacion": valor(hijo(escala, "orientation")) or "minMax", "log": hijo(escala, "logBase") is not None}
+            "orientacion": valor(hijo(escala, "orientation")) or "minMax", "log": hijo(escala, "logBase") is not None,
+            "unidad": valor(hijo(h, "majorUnit"))}
 
     def eje(m):
         a, tipo = m.group(0), m.group(1)
@@ -2626,6 +2701,12 @@ def formato_ejes(xml):
         minimo = float(otro["min"]) if otro.get("min") is not None else None
         maximo = float(otro["max"]) if otro.get("max") is not None else None
         negativos = any(v < 0 for v in vals) or (minimo is not None and minimo < 0)
+        # También si el eje llega por debajo de 0 sin datos negativos: con el máximo fijo del autor (130, saltos de
+        # 20) Excel baja el mínimo a −10 para que los saltos casen (G_IA2025_1.1, petición del usuario, 2026-11-25:
+        # el 0 señalado con el eje y marcas en Cruz)
+        if not negativos and vals and otro.get("tipo") == "valAx" and not otro.get("log"):
+            esc = escala_eje(vals, minimo, maximo, float(otro["unidad"]) if otro.get("unidad") else None)
+            negativos = bool(esc) and esc[0] < 0
         # Eje arriba: el otro eje acaba en 0 (todo negativo), y este se cruza en 0
         tope = maximo if maximo is not None else (max(vals) if vals else None)
         arriba = (negativos and tope is not None and tope <= 0 and otro.get("orientacion") == "minMax")
@@ -2843,6 +2924,11 @@ def escala_eje(valores, minimo=None, maximo=None, unidad=None):
         else:
             amin = math.floor((dmin - 0.05 * rango) / u) * u if dmin < 0 else math.floor(dmin / u) * u
         amax = maximo if maximo is not None else math.ceil((dmax + 0.05 * rango) / u - 1e-9) * u
+        if maximo is not None and minimo is None:
+            # Con el máximo fijo y el mínimo automático, Excel baja el mínimo para que los saltos acaben justo en el
+            # máximo (máximo 130 con saltos de 20: de −10 a 130; G_IA2025_1.1)
+            tramos = math.ceil((amax - amin) / u - 1e-9)
+            amin = amax - tramos * u
         if unidad or (amax - amin) / u <= 9 + 1e-9:
             return amin, amax, u
     return None
@@ -3020,6 +3106,20 @@ def textos_especiales(z, xml, idioma, hojas, estilos, trazado, medir):
         poner(h, ORDEN_EJE[m.group(1)], "numFmt", nuevo_nf)
         return f"<c:{m.group(1)}>" + "".join(t for _, t in h) + f"</c:{m.group(1)}>"
     xml = re.sub(r'<c:(catAx|dateAx)>.*?</c:\1>', fecha, xml, flags=re.S)
+    # Septiembre: con el código de la guía, Excel para Mac escribe «sept» (los otros once meses, con 3 letras, y en
+    # inglés todos); no hay código que lo evite, así que se avisa (petición del usuario, 2026-11-25)
+    if idioma != "en" and re.search(r'<c:(?:catAx|dateAx)>(?:(?!</c:(?:catAx|dateAx)>).)*?formatCode="'
+                                    + re.escape(html.escape(FECHA_EJE["es"])) + '"', xml, re.S):
+        cat = re.search(r'<c:cat>.*?</c:cat>', xml, re.S)
+        meses = set()
+        for v in re.findall(r'<c:pt idx="\d+">\s*<c:v>([\d.]+)</c:v>', cat.group(0) if cat else ""):
+            try:
+                meses.add((datetime.date(1899, 12, 30) + datetime.timedelta(days=int(float(v)))).month)
+            except (OverflowError, ValueError):
+                pass
+        if 9 in meses:
+            notas.append("Aviso: el eje de fechas tiene septiembre y Excel para Mac lo escribe «sept» (la guía pide "
+                         "3 letras, mmm-aa): si sale en el eje, hay que corregirlo a mano en el PDF")
 
     # Números de los ejes de valores
     datos = valores_por_eje(xml)
@@ -3102,6 +3202,169 @@ def decimales_etiquetas(valores, pct=False):
     if any(v and round(v, 1) == 0 for v in vs):
         return 2
     return 1
+
+
+RE_FORMA_ETIQUETA = re.compile(r'<(c|c15):spPr\b[^>]*>.*?</\1:spPr>', re.S)
+RE_RELLENO = re.compile(r'<a:(solidFill|gradFill|pattFill|blipFill)\b.*?</a:\1>|<a:(solidFill|gradFill|pattFill|blipFill)\b[^>]*/>', re.S)
+
+
+def etiquetas_sin_marco(xml):
+    """Etiquetas de datos sin borde ni fondo, en todas las publicaciones (petición del usuario, 2026-11-25: en el
+    G_IA2025_1.1 el autor las puso en recuadros blancos con borde gris; en el .ai van sin nada). Se toca la forma
+    de las etiquetas (c:spPr y la c15:spPr de las etiquetas con forma), no sus líneas guía. Devuelve (xml, cuántas
+    formas se han cambiado)."""
+    cuenta = 0
+
+    def forma(m):
+        nonlocal cuenta
+        sppr = m.group(0)
+        cuerpo = sppr[sppr.index(">") + 1:sppr.rindex("<")]
+        sin_ln = re.sub(r'<a:ln\b[^>]*/>|<a:ln\b.*?</a:ln>', "", cuerpo, flags=re.S)
+        rellenos = [f for f in RE_RELLENO.finditer(sin_ln)]
+        borde = re.search(r'<a:ln\b[^>]*/>|<a:ln\b.*?</a:ln>', cuerpo, re.S)
+        if not rellenos and (not borde or "<a:noFill/>" in borde.group(0)):
+            return sppr
+        nuevo = RE_RELLENO.sub("", sin_ln)
+        # El relleno va tras la geometría (xfrm, custGeom/prstGeom) y antes de la línea
+        geo = list(re.finditer(r'<a:xfrm\b.*?</a:xfrm>|<a:(custGeom|prstGeom)\b.*?</a:\1>|<a:prstGeom\b[^>]*/>', nuevo, re.S))
+        corte = geo[-1].end() if geo else 0
+        nuevo = nuevo[:corte] + '<a:noFill/><a:ln><a:noFill/></a:ln>' + nuevo[corte:]
+        cuenta += 1
+        return sppr[:sppr.index(">") + 1] + nuevo + sppr[sppr.rindex("<"):]
+
+    def bloque(m):
+        texto = m.group(0)
+        # Las líneas guía (c:leaderLines, c15:leaderLines) no se tocan
+        guias = []
+
+        def guardar(g):
+            guias.append(g.group(0))
+            return f"\x00{len(guias) - 1}\x00"
+        texto = re.sub(r'<(c|c15):leaderLines\b.*?</\1:leaderLines>', guardar, texto, flags=re.S)
+        texto = RE_FORMA_ETIQUETA.sub(forma, texto)
+        return re.sub(r'\x00(\d+)\x00', lambda g: guias[int(g.group(1))], texto)
+    xml = re.sub(r'<c:dLbls>.*?</c:dLbls>', bloque, xml, flags=re.S)
+    return xml, cuenta
+
+
+def orto_texto(texto, idioma):
+    """Las reglas de FUENTES para un texto suelto (etiquetas de datos, petición del usuario, 2026-11-25): en
+    castellano comillas angulares («¨», «“», «"» de apertura → «; «”», «"» de cierre → ») y espacio de no separación
+    entre cifra y %; en inglés, sin espacio; y sin espacios dobles."""
+    if idioma == "es":
+        salida, abierta = [], False
+        for c in texto:
+            if c in "“¨" or (c == '"' and not abierta):
+                salida.append("«")
+                abierta = True
+            elif c == "”" or c == '"':
+                salida.append("»")
+                abierta = False
+            else:
+                salida.append(c)
+        texto = re.sub(r"(\d)(?:[ \u202f]?)%", "\\1\u00a0%", "".join(salida))
+    else:
+        texto = re.sub(r"(\d)[ \u00a0\u202f]+%", r"\1%", texto)
+    return re.sub(r"(?<=\S) {2,}(?=\S)", " ", texto)
+
+
+def etiquetas_ortotipografia(z, xml, hojas, idioma):
+    """Las reglas de FUENTES (`orto_texto`) en el texto de las etiquetas de datos: el escrito en la etiqueta y el que
+    sale de un rango de celdas («Valor de las celdas»: en la caché y en sus celdas, porque Excel lo repone de ellas).
+    Devuelve (xml, cambios)."""
+    hechos = []
+
+    def t(m):
+        antes = html.unescape(m.group(2))
+        nuevo = orto_texto(antes, idioma)
+        if nuevo != antes:
+            hechos.append(f"«{antes.strip()[:30]}» → «{nuevo.strip()[:30]}»")
+        return m.group(1) + html.escape(nuevo, quote=False) + m.group(3)
+
+    def etiquetas(m):
+        return re.sub(r'(<c:tx>\s*<c:rich>.*?</c:rich>)', lambda r: re.sub(r'(<a:t>)([^<]*)(</a:t>)', t, r.group(1)),
+                      m.group(0), flags=re.S)
+    xml = re.sub(r'<c:dLbls>.*?</c:dLbls>', etiquetas, xml, flags=re.S)
+    # Rangos de celdas de las etiquetas
+    compartidos = None
+    for rango in re.findall(r'<c15:datalabelsRange>.*?</c15:datalabelsRange>', xml, re.S):
+        f = re.search(r'<c15:f>([^<]*)</c15:f>', rango)
+        cambios = {}
+
+        def punto(m):
+            antes = html.unescape(m.group(3))
+            nuevo = orto_texto(antes, idioma)
+            if nuevo != antes:
+                cambios[int(m.group(1))] = (antes, nuevo)
+                hechos.append(f"«{antes.strip()[:30]}» → «{nuevo.strip()[:30]}»")
+            return m.group(2) + html.escape(nuevo, quote=False) + m.group(4)
+        nuevo_rango = re.sub(r'<c:pt idx="(\d+)">(\s*<c:v>)([^<]*)(</c:v>)',
+                             lambda m: f'<c:pt idx="{m.group(1)}">' + punto(m), rango)
+        if not cambios:
+            continue
+        xml = xml.replace(rango, nuevo_rango, 1)
+        if not f:
+            continue
+        if compartidos is None:
+            compartidos = textos_compartidos(z)
+        celdas = list(celdas_de_rango(html.unescape(f.group(1))))
+        for k, (antes, nuevo) in cambios.items():
+            if k >= len(celdas):
+                continue
+            nombre, ref = celdas[k]
+            try:
+                ruta_hoja = hoja_de(z, nombre)
+            except Fallo:
+                continue
+            hoja = hojas.get(ruta_hoja) or z.read(ruta_hoja).decode("utf-8")
+            c = celda(hoja, ref)
+            if c and texto_de_celda(c, compartidos) == antes:
+                hojas[ruta_hoja] = poner_texto_celda(hoja, c, nuevo)
+    return xml, hechos
+
+
+def etiquetas_que_caben(xml, W, H, medir):
+    """Las etiquetas de datos con texto propio y tamaño fijo (c15:layout con w y h) en las que el texto ya no cabe
+    con la letra que tienen (Excel lo corta con «…»): se deja el ancho del autor (o el de la palabra más larga) y
+    crece el alto hasta que caben todas las líneas. W y H: tamaño del gráfico en pt. Devuelve (xml, cuántas)."""
+    cuenta = 0
+
+    def etiqueta(m):
+        nonlocal cuenta
+        e = m.group(0)
+        tam = re.search(r'<c15:layout>\s*<c:manualLayout>(.*?)</c:manualLayout>', e, re.S)
+        rico = re.search(r'<c:tx>\s*<c:rich>.*?</c:rich>', e, re.S)
+        if not tam or not rico or "<c:delete val=\"1\"/>" in e:
+            return e
+        wv, hv = re.search(r'<c:w val="([^"]+)"', tam.group(1)), re.search(r'<c:h val="([^"]+)"', tam.group(1))
+        texto = html.unescape("".join(re.findall(r'<a:t>([^<]*)</a:t>', rico.group(0)))).strip()
+        if not wv or not hv or not texto or "[" in texto:
+            return e
+        szs = re.findall(r'\bsz="(\d+)"', rico.group(0))
+        sz = (int(szs[0]) if szs else 600) / 100
+        cuerpo = re.search(r'<a:bodyPr\b[^>]*>', rico.group(0))
+        cuerpo = cuerpo.group(0) if cuerpo else ""
+
+        def ins(nombre, defecto):
+            v = re.search(rf'\b{nombre}="(\d+)"', cuerpo)
+            return (int(v.group(1)) if v else defecto) / EMU_PT
+        li, ri, ti, bi = ins("lIns", 91440), ins("rIns", 91440), ins("tIns", 45720), ins("bIns", 45720)
+        ancho = float(wv.group(1)) * W
+        alto = float(hv.group(1)) * H
+        util = ancho - li - ri
+        mayor = max(medir(p, sz) for p in texto.split())
+        if mayor > util:
+            util = mayor + 1
+            ancho = util + li + ri
+        lineas = len(partir_lineas(texto, util, sz, medir))
+        necesario = lineas * sz * INTERLINEA + ti + bi + 1
+        if necesario <= alto and ancho == float(wv.group(1)) * W:
+            return e
+        cuenta += 1
+        nuevo = tam.group(1).replace(wv.group(0), f'<c:w val="{ancho / W:.6f}"').replace(
+            hv.group(0), f'<c:h val="{max(alto, necesario) / H:.6f}"')
+        return e.replace(tam.group(1), nuevo, 1)
+    return re.sub(r'<c:dLbl>.*?</c:dLbl>', etiqueta, xml, flags=re.S), cuenta
 
 
 def etiquetas_datos(xml):
@@ -5058,20 +5321,103 @@ def comparar(trabajo):
     actual = copia_actual(trabajo)
     with zipfile.ZipFile(origen) as zo, zipfile.ZipFile(actual) as zf:
         lineas = comparar_libros(zo, zf, estado.get("idioma", "es"))
+        lineas = marcar_comparacion(zf, lineas)
     return {"trabajo": str(trabajo), **estado, "comparacion": lineas, "comparado": str(actual), "original": str(origen)}
 
 
+def formas_del_libro(z):
+    """[(hoja, k, nombre, texto, gráfico)] de las formas de cada hoja con dibujo (k: su número en la hoja, el de
+    «shape k» en Excel). El texto de un gráfico junta el suyo (títulos, ejes, series, etiquetas) y el de su capa de
+    formas; gráfico: la ruta de su chartN.xml."""
+    salida = []
+    for hoja, ruta_hoja in hojas_libro(z):
+        dibujo = next((d for t, d in rels(z, ruta_hoja).values() if t.endswith("/drawing")), None)
+        if not dibujo or dibujo not in z.namelist():
+            continue
+        xml = z.read(dibujo).decode("utf-8")
+        relaciones = rels(z, dibujo)
+        for k, a in enumerate((m.group(0) for m in ANCLA.finditer(xml)), 1):
+            textos = [html.unescape(t) for t in re.findall(r'<a:t>([^<]*)</a:t>', a)]
+            grafico = None
+            rid = re.search(r'<c:chart\b[^>]*\br:id="([^"]+)"', a)
+            if rid and rid.group(1) in relaciones:
+                grafico = relaciones[rid.group(1)][1]
+                if grafico in z.namelist():
+                    gx = z.read(grafico).decode("utf-8")
+                    textos += [html.unescape(t) for t in re.findall(r'<a:t>([^<]*)</a:t>|<c:v>([^<]*)</c:v>', gx) for t in t if t]
+                    for t, f in rels(z, grafico).values():
+                        if t.endswith("/chartUserShapes") and f in z.namelist():
+                            textos += [html.unescape(x) for x in re.findall(r'<a:t>([^<]*)</a:t>', z.read(f).decode("utf-8"))]
+            try:
+                nombre = nombre_forma(a)
+            except AttributeError:
+                nombre = ""
+            salida.append((hoja, k, nombre, re.sub(r"\s+", " ", " ".join(textos)), grafico))
+    return salida
+
+
+def marcar_comparacion(z, lineas):
+    """Marca de cada línea de la comparación con lo que hay que enseñar en Excel (petición del usuario,
+    2026-11-25): celdas de una hoja (datos que faltan o cambian: «⟦celdas:hoja|B9 B10⟧»), el gráfico de un eje o
+    de una serie, o la forma donde está un texto («⟦forma:hoja|k|nombre⟧»)."""
+    hojas = [h for h, _ in hojas_libro(z)]
+    formas = formas_del_libro(z)
+    salida = []
+    for linea in lineas:
+        marca_l = ""
+        citas = re.findall(r'«([^«»]*)»', linea)
+        hoja = next((c for c in citas if c in hojas and re.search(rf'(?:en|de) (?:la hoja )?«{re.escape(c)}»', linea)), None)
+        graf = re.search(r'\(gráfico (\d+) del libro\)', linea)
+        if hoja:
+            # Las referencias de celda fuera de las citas
+            fuera = re.sub(r'«[^«»]*»', " ", linea.split(f"«{hoja}»", 1)[1])
+            refs = []
+            for a, b in re.findall(r'\b([A-Z]{1,3}\d+)(?::([A-Z]{1,3}\d+))?\b', fuera):
+                refs.append(f"{a}:{b}" if b else a)
+            if refs:
+                marca_l = f" ⟦celdas:{hoja}|{' '.join(refs[:30])}⟧"
+        elif graf:
+            f = next((x for x in formas if x[4] == f"xl/charts/chart{graf.group(1)}.xml"), None)
+            if f:
+                marca_l = f" ⟦forma:{f[0]}|{f[1]}|{f[2]}⟧"
+        elif citas:
+            # Texto o serie: la forma (de la hoja o gráfico) que lo contiene; primero lo de después de «→»
+            candidatos = citas[::-1] if "→" in linea else citas
+            # Primero los cuadros de la hoja y después los gráficos; primero el texto suelto (que «1.1» no case con
+            # «1.1.a») y después dentro de otro
+            orden = [x for x in formas if not x[4]] + [x for x in formas if x[4]]
+            for c in candidatos:
+                c = re.sub(r"\s+", " ", c).strip().rstrip("…").strip()
+                if len(c) < 3:
+                    continue
+                suelto = re.compile(r"(?<![\w.])" + re.escape(c.lower()) + r"(?![\w.])")
+                f = next((x for x in orden if suelto.search(x[3].lower())), None) \
+                    or next((x for x in orden if c.lower() in x[3].lower()), None)
+                if f:
+                    marca_l = f" ⟦forma:{f[0]}|{f[1]}|{f[2]}⟧"
+                    break
+        salida.append(linea + marca_l)
+    return salida
+
+
 def nombre_terminado(origen, carpeta):
-    base = re.sub(r'\bORIGINAL\b', "TERMINADO", origen.stem) if re.search(r'\bORIGINAL\b', origen.stem) \
-        else origen.stem + " TERMINADO"
+    """«… EXCEL.xlsx» (como en Cuadros Excel BdE; antes «TERMINADO», petición del usuario, 2026-11-25): «ORIGINALES»
+    u «ORIGINAL» pasan a «EXCEL»; si no, « EXCEL» al final."""
+    base = origen.stem
+    if re.search(r'\bORIGINALES\b', base):
+        base = re.sub(r'\bORIGINALES\b', "EXCEL", base)
+    elif re.search(r'\bORIGINAL\b', base):
+        base = re.sub(r'\bORIGINAL\b', "EXCEL", base)
+    elif not re.search(r'\bEXCEL$', base):
+        base += " EXCEL"
     destino, n = carpeta / f"{base}.xlsx", 2
-    while destino.exists():   # nunca se pisa un TERMINADO que ya exista
+    while destino.exists():   # nunca se pisa un EXCEL que ya exista
         destino, n = carpeta / f"{base} ({n}).xlsx", n + 1
     return destino
 
 
 def terminar(trabajo):
-    """Guarda la copia de trabajo como «… TERMINADO.xlsx» junto al original y borra todo lo generado: las dos
+    """Guarda la copia de trabajo como «… EXCEL.xlsx» junto al original y borra todo lo generado: las dos
     copias de trabajo y la carpeta de pasos. El original del autor no se toca."""
     trabajo, pasos = nombres(trabajo)
     estado = leer_estado(trabajo)
@@ -5088,7 +5434,7 @@ def terminar(trabajo):
     if pasos.is_dir() and pasos.name.endswith(" (pasos)"):
         shutil.rmtree(pasos)
         borrados.append(pasos.name)
-    return {"terminado": str(destino), "borrados": borrados}
+    return {"terminado": str(destino), "borrados": borrados, "original": str(origen) if origen.is_file() else None}
 
 
 # ---------------------------------------------------------------- medir textos
