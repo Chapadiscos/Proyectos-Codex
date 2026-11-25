@@ -393,6 +393,11 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      sobrantes), sin cursivas («ARA metrics», «Tier 1», «Sovereign rating», «Return on assets» en redonda), comillas
      inglesas, «SOURCE:» en singular para la referencia. Los separadores decimales los pone la configuración regional
      del ordenador (decisión del usuario: no se fuerzan formatos).
+   - **Traducción igualada a la versión retocada a mano** (flujo del usuario, 2026-11-25: la app formatea, se retoca
+     a mano fuera de la app, llega la traducción y tiene que quedar como la versión retocada): la pareja en el otro
+     idioma se busca en la carpeta del original, «Cuadros ORIGINALES», «Cuadros TERMINADOS» y Modelos, con cualquier
+     nombre que empiece por el del cuadro (no ORIGINAL ni maquetado), y se toma la más reciente; el aviso dice cuál y
+     su fecha. Botón **«Igualar a otro EXCEL…»**: el modelo, elegido a mano (orden `modelo <trabajo> <pub> <ruta>`).
    - **Aviso de modelo** (petición del usuario, 2026-11-24): al empezar (y al terminar «Líneas y fondos») el motor
      busca si el cuadro tiene modelo (`estado["modelo"]`). La app resalta en naranja «Igualar al modelo · hay
      modelo», avisa al acabar «Líneas y fondos» y, al «Guardar como EXCEL» sin igualar, pregunta antes.

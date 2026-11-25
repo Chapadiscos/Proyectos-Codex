@@ -660,11 +660,22 @@ final class Taller: ObservableObject {
 
     // MARK: Pasos y versiones
 
-    func hacer(_ paso: PasoMaquetacion) {
+    /// «Igualar a otro EXCEL…»: el modelo, elegido a mano (la versión retocada fuera de la app, esté donde esté;
+    /// petición del usuario, 2026-11-25)
+    func igualarAOtro() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [UTType(filenameExtension: "xlsx")!]
+        panel.message = "El EXCEL al que igualar este cuadro (por ejemplo, el mismo cuadro en el otro idioma, retocado a mano)"
+        if let origen = origenTrabajo { panel.directoryURL = origen.deletingLastPathComponent() }
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        hacer(herramientaModelo, extra: [url.path])
+    }
+
+    func hacer(_ paso: PasoMaquetacion, extra: [String] = []) {
         guard let trabajo else { return }
         let lanzar = {
             self.tarea(paso.id > 0 ? "\(paso.id). \(paso.titulo)" : paso.titulo) { id in
-                guard let r = await self.llamarMotor([paso.orden, trabajo.path, self.publicacion], registro: id) else { return false }
+                guard let r = await self.llamarMotor([paso.orden, trabajo.path, self.publicacion] + extra, registro: id) else { return false }
                 self.aplicar(r)
                 // Con la marca: en la actividad también se pulsan los avisos para verlos en Excel
                 self.pasoActual?.detalle.forEach { self.anotar(id, "• " + $0) }
@@ -1740,6 +1751,10 @@ struct TarjetaMaquetar: View {
                                       : herramientaModelo.detalle,
                    color: pendiente ? .orange : colorApp, principal: pendiente,
                    marca: igualado ? "checkmark.circle.fill" : pendiente ? "exclamationmark.circle.fill" : nil) { taller.hacer(herramientaModelo) }
+                .disabled(taller.trabajo == nil || taller.publicacionActual == nil || taller.enCurso != nil || !fondosListos)
+            Accion(icono: "doc.badge.ellipsis", titulo: "Igualar a otro EXCEL…",
+                   detalle: "Como «Igualar al modelo», pero eliges tú el EXCEL modelo: por ejemplo, el mismo cuadro en el otro idioma retocado a mano fuera de la app y guardado en otro sitio o con otro nombre. Copia su aspecto; los textos son los de este cuadro",
+                   color: colorApp, principal: false, marca: nil) { taller.igualarAOtro() }
                 .disabled(taller.trabajo == nil || taller.publicacionActual == nil || taller.enCurso != nil || !fondosListos)
             let actualizado = taller.pasos.contains { $0.titulo == "Actualizado desde el otro idioma" && $0.n <= taller.actual }
             Accion(icono: herramientaActualizar.icono, titulo: herramientaActualizar.titulo, detalle: herramientaActualizar.detalle,

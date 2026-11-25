@@ -5859,14 +5859,22 @@ def pareja_otro_idioma(origen, idioma_):
         clave, quiere = re.sub(r"^([A-Z])_", r"\1Ing_", base), "en"
     if clave == base:
         return None
-    for carpeta in [origen.parent, origen.parent / "Modelos", PROYECTO / "Cuadros ORIGINALES", PROYECTO / "Modelos"]:
-        if carpeta.is_dir():
-            pareja = sorted((f for f in carpeta.glob(clave + "*.xlsx") if " EXCEL" in f.stem and not f.name.startswith("~$")
-                             and idioma(f.name) == quiere and re.match(re.escape(clave) + r"(\s|$)", f.stem)
-                             and f.resolve() != origen.resolve()), key=lambda f: f.stat().st_mtime)
-            if pareja:
-                return pareja[-1]
-    return None
+    # En todas las carpetas donde puede estar (también la versión retocada a mano después de la app, guardada con
+    # otro nombre o en TERMINADOS): la más reciente (usuario, 2026-11-25: «depende del cuadro»)
+    vistas, candidatas = set(), []
+    for carpeta in [origen.parent, origen.parent / "Modelos", PROYECTO / "Cuadros ORIGINALES", PROYECTO / "Cuadros TERMINADOS",
+                    PROYECTO / "Modelos"]:
+        if not carpeta.is_dir():
+            continue
+        for f in carpeta.glob(clave + "*.xlsx"):
+            r_ = f.resolve()
+            if r_ in vistas or r_ == origen.resolve() or f.name.startswith("~$") or idioma(f.name) != quiere:
+                continue
+            if not re.match(re.escape(clave) + r"([\s_.(]|$)", f.stem) or re.search(r"\b(ORIGINALES|ORIGINAL|maquetado)\b", f.stem):
+                continue
+            vistas.add(r_)
+            candidatas.append(f)
+    return max(candidatas, key=lambda f: f.stat().st_mtime) if candidatas else None
 
 
 def huella_textos(zona_celdas, formas):
@@ -6015,7 +6023,7 @@ def estructura(z, hoja, cuadro):
             "cuerpo": cuerpo, "bloque": bloque, "bloque_grupos": cuadro.get("bloque_grupos", [])}
 
 
-def igualar_modelo(trabajo, pid=None):
+def igualar_modelo(trabajo, pid=None, ruta_modelo=None):
     """Copia del EXCEL terminado del mismo cuadro (otro país u otro semestre, con sus retoques a mano) los anchos, los
     altos y el formato de cada celda, emparejando filas por concepto y columnas por su papel; los textos y los
     datos son los del cuadro (petición del usuario, 2026-11-21)."""
@@ -6023,7 +6031,13 @@ def igualar_modelo(trabajo, pid=None):
     hechos = [p["titulo"] for p in estado["pasos"][:estado["actual"] + 1]]
     if LINEAS_Y_FONDOS not in hechos:
         raise Fallo("Antes hay que hacer los cuatro pasos: el modelo se copia sobre el cuadro ya maquetado")
-    modelo, parecido = buscar_modelo(trabajo, estado)
+    if ruta_modelo:
+        # Elegido a mano («Igualar a otro EXCEL…»: la versión retocada fuera de la app, esté donde esté)
+        modelo, parecido = Path(ruta_modelo), 1.0
+        if not modelo.exists():
+            raise Fallo(f"No existe {modelo}")
+    else:
+        modelo, parecido = buscar_modelo(trabajo, estado)
     if not modelo:
         raise Fallo("No encuentro un EXCEL terminado del mismo cuadro (en la carpeta del original o en «Modelos»)"
                     + (f": el más parecido lo es solo en un {parecido:.0%}" if parecido else ""))
@@ -6306,8 +6320,9 @@ def igualar_celda_a_celda(trabajo, estado, base, hoja, ruta_hoja, hoja_xml, est,
     columnas ocultas) y el formato de cada celda, copiados en su misma celda; los textos son los de este cuadro.
     Avisa de las cifras distintas, de los textos que están en un idioma y no en el otro y de los que piden más
     líneas que en el modelo (petición del usuario, 2026-11-25)."""
-    detalle = [f"Modelo: «{modelo.name}», el mismo cuadro en el otro idioma ({iguales} de {n_cifras} cifras iguales en "
-               "las mismas celdas): se copia todo celda a celda"]
+    detalle = [f"Modelo: «{modelo.name}» (en «{modelo.parent.name}», guardado el "
+               f"{time.strftime('%d/%m/%Y a las %H:%M', time.localtime(modelo.stat().st_mtime))}), el mismo cuadro en el otro "
+               f"idioma ({iguales} de {n_cifras} cifras iguales en las mismas celdas): se copia todo celda a celda"]
     c_fin = max(cuadro_t["c2"], cuadro_m["c2"])
     f_fin = max(cuadro_t["f2"], cuadro_m["f2"])
     # Anchos: los de todas las columnas hasta el final del cuadro (las ocultas, ocultas)
