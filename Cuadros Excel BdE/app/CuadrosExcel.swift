@@ -125,6 +125,12 @@ let herramientaModelo = PasoMaquetacion(id: 0, titulo: "Igualar al modelo",
     detalle: "Busca en la carpeta del original (y en «Modelos») el EXCEL terminado del mismo cuadro —de otro país o del semestre anterior, con tus retoques a mano— y copia sus anchos, altos y el formato de cada celda (letra, alineación, fondos y líneas). Los textos y las cifras son los de este cuadro; avisa de lo que no casa. Deja una versión nueva (⌘← para quitarla)",
     icono: "square.on.square", orden: "modelo")
 
+/// Herramienta: sobre un EXCEL ya terminado, vuelve a copiar del mismo cuadro en el otro idioma (español ↔ inglés)
+/// formato y cifras, y avisa de los textos de allí que han cambiado (petición del usuario, 2026-11-25)
+let herramientaActualizar = PasoMaquetacion(id: 0, titulo: "Actualizar desde el otro idioma",
+    detalle: "Para un EXCEL ya terminado (abre el «… EXCEL»): copia del mismo cuadro en el otro idioma (español ↔ inglés) anchos, altos y formato, y las cifras corregidas allí; avisa de los textos de allí que han cambiado desde la última vez, para revisar su traducción. Al guardar, el anterior queda en «Anteriores»",
+    icono: "arrow.triangle.2.circlepath", orden: "actualizar")
+
 /// Herramienta: línea oscura encima de las filas seleccionadas en Excel, para separar conceptos
 let herramientaLineaOscura = PasoMaquetacion(id: 0, titulo: "Línea oscura sobre la selección",
     detalle: "Para separar conceptos: selecciona en Excel una celda de cada fila que empieza un concepto nuevo (varias con ⌘) y pulsa aquí; la línea oscura (blanco matiz 5) va encima de esas filas, en todo el ancho del cuadro. Deja una versión nueva (⌘← para quitarla)",
@@ -1735,6 +1741,10 @@ struct TarjetaMaquetar: View {
                    color: pendiente ? .orange : colorApp, principal: pendiente,
                    marca: igualado ? "checkmark.circle.fill" : pendiente ? "exclamationmark.circle.fill" : nil) { taller.hacer(herramientaModelo) }
                 .disabled(taller.trabajo == nil || taller.publicacionActual == nil || taller.enCurso != nil || !fondosListos)
+            let actualizado = taller.pasos.contains { $0.titulo == "Actualizado desde el otro idioma" && $0.n <= taller.actual }
+            Accion(icono: herramientaActualizar.icono, titulo: herramientaActualizar.titulo, detalle: herramientaActualizar.detalle,
+                   color: colorApp, principal: false, marca: actualizado ? "checkmark.circle.fill" : nil) { taller.hacer(herramientaActualizar) }
+                .disabled(taller.trabajo == nil || taller.publicacionActual == nil || taller.enCurso != nil)
             let fondosHechos = taller.pasos.contains { $0.titulo == "Líneas y fondos" && $0.n <= taller.actual }
             Accion(icono: herramientaLineaOscura.icono, titulo: herramientaLineaOscura.titulo, detalle: herramientaLineaOscura.detalle,
                    color: colorApp, principal: false, marca: nil) { taller.lineaOscura() }

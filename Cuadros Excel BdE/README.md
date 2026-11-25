@@ -381,6 +381,13 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      celda a celda anchos, altos (también ocultas) y formatos: el aspecto es el del español y los textos, los ingleses.
      Avisa de cifras distintas, de celdas con texto en un idioma y vacías en el otro, de textos iguales que en el
      español (¿sin traducir?) y de los que piden más líneas (su fila, más alta). Probado con Arg_03 (79/79 cifras).
+   - **Español ↔ inglés en los dos sentidos** (2026-11-25): el modelo de cualquier cuadro es primero el mismo cuadro
+     en el otro idioma (`pareja_otro_idioma`: «C_… EXCEL» ↔ «CIng_… EXCEL»), se haya traducido en un sentido u otro.
+     Al igualarlo se guarda la «huella» de los textos de la pareja (`.parejas/<EXCEL>.json`, junto al EXCEL).
+     Herramienta **«Actualizar desde el otro idioma»** (orden `actualizar`): sobre un EXCEL ya terminado, si la pareja
+     se corrigió después, vuelve a copiar anchos, altos y formatos, copia sus cifras (no en celdas con fórmula: aviso)
+     y avisa de los textos de la pareja cambiados desde la huella; si ya no comparten rejilla, no copia nada. Al
+     guardar, sustituye al EXCEL y el anterior queda en «Anteriores» con la fecha.
    - **Aviso de modelo** (petición del usuario, 2026-11-24): al empezar (y al terminar «Líneas y fondos») el motor
      busca si el cuadro tiene modelo (`estado["modelo"]`). La app resalta en naranja «Igualar al modelo · hay
      modelo», avisa al acabar «Líneas y fondos» y, al «Guardar como EXCEL» sin igualar, pregunta antes.

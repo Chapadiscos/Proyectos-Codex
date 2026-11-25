@@ -31,6 +31,7 @@ import re
 import shutil
 import struct
 import sys
+import time
 import uuid
 import zipfile
 from pathlib import Path, PurePosixPath
@@ -5618,9 +5619,21 @@ def terminar(trabajo):
     estado = leer_estado(trabajo)
     origen = Path(estado.get("origen", ""))
     carpeta = origen.parent if origen.parent.is_dir() else trabajo.parent
-    destino = nombre_terminado(origen if origen.name else trabajo, carpeta)
+    if origen.name and re.search(r"\bEXCEL$", origen.stem) and origen.exists():
+        # Un EXCEL terminado que se reabrió para actualizarlo desde el otro idioma: se guarda en su sitio y el de antes,
+        # en «Anteriores» con la fecha (nunca se pierde)
+        anteriores = carpeta / "Anteriores"
+        anteriores.mkdir(exist_ok=True)
+        shutil.copy2(origen, anteriores / f"{origen.stem} {time.strftime('%Y-%m-%d %H.%M')}.xlsx")
+        destino = origen
+    else:
+        destino = nombre_terminado(origen if origen.name else trabajo, carpeta)
     shutil.copyfile(copia_actual(trabajo), destino)
     os.chmod(destino, 0o644)
+    # La huella de los textos del mismo cuadro en el otro idioma, junto al EXCEL (para «Actualizar desde el otro idioma»)
+    if estado.get("huella_pareja"):
+        ruta_huella(destino).parent.mkdir(exist_ok=True)
+        ruta_huella(destino).write_text(json.dumps(estado["huella_pareja"], ensure_ascii=False), encoding="utf-8")
     return {"terminado": str(destino), "original": str(origen) if origen.name else None,
             "ancla_original": ancla_reticula_original(origen, estado.get("hoja")),
             "encuadre_pt": encuadre_cuadro(destino, estado.get("hoja")), "borrados": borrar_generados(trabajo)}
@@ -5829,6 +5842,46 @@ def palabras_libro(z, hoja):
     return {w for t in textos for w in re.findall(r"[a-záéíóúñü]{3,}", norm_texto(t))}
 
 
+def pareja_otro_idioma(origen, idioma_):
+    """El EXCEL del mismo cuadro en el otro idioma («C_…_Arg_03 … EXCEL» ↔ «CIng_…_Arg_03 … EXCEL»), o None. Sirve en
+    los dos sentidos: no se sabe si se traduce primero del español al inglés o al revés (usuario, 2026-11-25)."""
+    origen = Path(origen)
+    base = re.sub(r"\s+(ORIGINALES|ORIGINAL|LATAM|EXCEL)\b.*$", "", origen.stem)
+    if idioma_ == "en":
+        clave, quiere = re.sub(r"^([A-Z])_?Ing_", r"\1_", base), "es"
+    else:
+        clave, quiere = re.sub(r"^([A-Z])_", r"\1Ing_", base), "en"
+    if clave == base:
+        return None
+    for carpeta in [origen.parent, origen.parent / "Modelos", PROYECTO / "Cuadros ORIGINALES", PROYECTO / "Modelos"]:
+        if carpeta.is_dir():
+            pareja = sorted((f for f in carpeta.glob(clave + "*.xlsx") if " EXCEL" in f.stem and not f.name.startswith("~$")
+                             and idioma(f.name) == quiere and re.match(re.escape(clave) + r"(\s|$)", f.stem)
+                             and f.resolve() != origen.resolve()), key=lambda f: f.stat().st_mtime)
+            if pareja:
+                return pareja[-1]
+    return None
+
+
+def huella_textos(zona_celdas, formas):
+    """La «huella» de los textos de un cuadro: un resumen corto de cada texto (celda → huella) y de su rótulo, título
+    y notas, para saber luego cuáles han cambiado."""
+    import hashlib
+    h = lambda t: hashlib.sha1(t.strip().encode("utf-8")).hexdigest()[:12]
+    res = {r: h(t) for r, t in zona_celdas.items() if t.strip()}
+    for k in ("rotulo", "titulo"):
+        if formas.get(k):
+            res["@" + k] = h(formas[k])
+    for i, p_ in enumerate(formas.get("fuentes", [])):
+        res[f"@fuentes{i}"] = h(p_)
+    return res
+
+
+def ruta_huella(excel):
+    excel = Path(excel)
+    return excel.parent / ".parejas" / (excel.name + ".json")
+
+
 def buscar_modelo(trabajo, estado):
     """El EXCEL terminado más parecido (mismo cuadro de otro país u otro semestre): en la carpeta del original y en
     «Modelos» (junto a ella o en el proyecto). (ruta, parecido) o (None, 0)."""
@@ -5836,15 +5889,10 @@ def buscar_modelo(trabajo, estado):
     base = re.sub(r"\s+(ORIGINALES|ORIGINAL)\b.*$", "", origen.stem)
     # Un cuadro en inglés («CIng_…_Br_01»): su modelo es el EXCEL español del mismo cuadro («C_…_Br_01 … EXCEL»),
     # con el que comparte rejilla y cifras (petición del usuario, 2026-11-25: los dos PDF, iguales salvo los textos)
-    if estado.get("idioma") == "en":
-        clave = re.sub(r"^([A-Z])_?Ing_", r"\1_", re.sub(r"\s+(LATAM|EXCEL)\b.*$", "", base))
-        for carpeta in [origen.parent, origen.parent / "Modelos", PROYECTO / "Cuadros ORIGINALES", PROYECTO / "Modelos"]:
-            if carpeta.is_dir():
-                pareja = sorted((f for f in carpeta.glob(clave + "*.xlsx") if " EXCEL" in f.stem and not f.name.startswith("~$")
-                                 and idioma(f.name) == "es" and re.match(re.escape(clave) + r"(\s|$)", f.stem)),
-                                key=lambda f: f.stat().st_mtime)
-                if pareja:
-                    return pareja[-1], 1.0
+    # (en los dos sentidos: si el inglés se hizo primero, el español toma el inglés)
+    pareja = pareja_otro_idioma(origen, estado.get("idioma", "es"))
+    if pareja:
+        return pareja, 1.0
     carpetas = [origen.parent, origen.parent / "Modelos", PROYECTO / "Modelos"]
     candidatos = []
     for carpeta in carpetas:
@@ -6247,7 +6295,7 @@ def comparar_formas(t, m_, idioma_t):
 
 def igualar_celda_a_celda(trabajo, estado, base, hoja, ruta_hoja, hoja_xml, est, mdw, todas_t, ancho_t, dibujo, altos_v,
                           caja, cuadro_t, modelo, ancho_m, mdw_m, altos_m, defecto_m, celdas_m, est_m, tema_m, cuadro_m,
-                          iguales, n_cifras):
+                          iguales, n_cifras, titulo=None, copiar_cifras=False, huella_antes=None):
     """El mismo cuadro en el otro idioma (CIng_ frente a su EXCEL español): anchos, altos (también las filas y
     columnas ocultas) y el formato de cada celda, copiados en su misma celda; los textos son los de este cuadro.
     Avisa de las cifras distintas, de los textos que están en un idioma y no en el otro y de los que piden más
@@ -6328,6 +6376,24 @@ def igualar_celda_a_celda(trabajo, estado, base, hoja, ruta_hoja, hoja_xml, est,
                 formatos[(c, f)] = con_formato_de(est, todas_t.get((c, f), {}).get("s", 0),
                                                   formato_de(est_m, tema_m, celdas_m.get((c, f), {}).get("s", 0)))
     hoja_xml = con_estilo(hoja_xml, formatos)
+    # Cifras corregidas en el otro idioma: se copian (las cifras no dependen del idioma); en celdas con fórmula, aviso
+    cifras_copiadas, cifras_formula = [], []
+    if copiar_cifras:
+        for (c, f), b_ in celdas_m.items():
+            if not b_.get("numero") or f > f_fin or c > c_fin:
+                continue
+            a_ = todas_t.get((c, f), {})
+            if a_.get("numero") and abs(float(a_["texto"]) - float(b_["texto"])) < 1e-9:
+                continue
+            r_ = ref(c, f)
+            celda = re.search(rf'<c\b(?=[^>]*\br="{r_}")[^>]*?(?:/>|>.*?</c>)', hoja_xml, re.S)
+            if celda and "<f" in celda.group(0):
+                cifras_formula.append(r_)
+                continue
+            if celda:
+                apertura = re.sub(r'\st="\w+"', "", celda.group(0)[:celda.group(0).find(">") + 1]).rstrip("/>").rstrip(">")
+                hoja_xml = hoja_xml[:celda.start()] + f"{apertura}><v>{b_['texto']}</v></c>" + hoja_xml[celda.end():]
+                cifras_copiadas.append(r_)
     cambios = {ruta_hoja: hoja_xml.encode("utf-8"), "xl/styles.xml": est.resultado().encode("utf-8")}
     if dibujo and caja:
         f_ini = min(cuadro_t.get("bloque_arriba") or [cuadro_t["f1"]])
@@ -6357,6 +6423,7 @@ def igualar_celda_a_celda(trabajo, estado, base, hoja, ruta_hoja, hoja_xml, est,
         detalle.append(f"Aviso: celdas con texto en un idioma y vacías en el otro ({len(solo_uno)}): " + ", ".join(solo_uno[:10])
                        + ("…" if len(solo_uno) > 10 else "") + marca(solo_uno))
     # Rótulo, título y notas, frente a los del modelo (Arg_03 inglés: el título del autor no lleva «(2025, …)»)
+    formas_m = {}
     try:
         with zipfile.ZipFile(modelo) as zm:
             hm = hoja_cuadro(zm)[0]
@@ -6364,10 +6431,38 @@ def igualar_celda_a_celda(trabajo, estado, base, hoja, ruta_hoja, hoja_xml, est,
         dib_t = cambios.get(dibujo_de_hoja_ruta(z_ruta=base, hoja=hoja), b"").decode("utf-8") or dibujo
         fila_t = min(cuadro_t.get("bloque_arriba") or [cuadro_t["f1"]])
         fila_m = min(cuadro_m.get("bloque_arriba") or [cuadro_m["f1"]])
-        for a_ in comparar_formas(textos_formas(dib_t, fila_t), textos_formas(dib_m, fila_m), estado.get("idioma", "es")):
+        formas_m = textos_formas(dib_m, fila_m)
+        for a_ in comparar_formas(textos_formas(dib_t, fila_t), formas_m, estado.get("idioma", "es")):
             detalle.append("Aviso: " + a_)
     except (KeyError, zipfile.BadZipFile):
         pass
+    # Huella de los textos del modelo (el otro idioma) de ahora: se guarda con el EXCEL al terminar; al actualizar,
+    # dice qué textos del otro idioma han cambiado desde la vez anterior
+    textos_m = {ref(*k): v.get("texto", "") for k, v in celdas_m.items()
+                if k[1] <= f_fin and k[0] <= c_fin and not v.get("numero") and v.get("texto", "").strip()}
+    huella = huella_textos(textos_m, formas_m)
+    cambiados = []
+    if huella_antes:
+        cambiados = sorted((k for k in set(huella) | set(huella_antes) if huella.get(k) != huella_antes.get(k)),
+                           key=lambda k: (k.startswith("@"), k))
+    if cifras_copiadas:
+        detalle.append(f"Cifras copiadas del otro idioma ({len(cifras_copiadas)}): " + ", ".join(cifras_copiadas[:10])
+                       + ("…" if len(cifras_copiadas) > 10 else "") + marca(cifras_copiadas))
+    if cifras_formula:
+        detalle.append(f"Aviso: cifras distintas del otro idioma en celdas con fórmula, sin tocar ({len(cifras_formula)}): "
+                       + ", ".join(cifras_formula[:10]) + marca(cifras_formula))
+    if huella_antes is not None:
+        if cambiados:
+            nombres_ = {"@rotulo": "rótulo", "@titulo": "título"}
+            detalle.append(f"Aviso: textos del otro idioma cambiados desde la última vez ({len(cambiados)}), revisa su traducción: "
+                           + ", ".join(nombres_.get(k, "nota/fuente " + k[8:] if k.startswith("@fuentes") else
+                                                    f"{k} «{textos_m.get(k, '(borrado)').strip()[:30]}»") for k in cambiados[:10])
+                           + ("…" if len(cambiados) > 10 else "") + marca([k for k in cambiados if not k.startswith("@")]))
+        else:
+            detalle.append("Ningún texto del otro idioma ha cambiado desde la última vez")
+    elif titulo == ACTUALIZADO_OTRO_IDIOMA:
+        detalle.append("Aviso: no hay huella de la vez anterior: no puedo decir qué textos del otro idioma han cambiado "
+                       "(desde ahora, sí)")
     if sin_traducir:
         detalle.append(f"Aviso: textos iguales que en el modelo, ¿sin traducir? ({len(sin_traducir)}): "
                        + ", ".join(f"{r} «{todas_t[(col_num(RE_REF.match(r).group(1)), int(RE_REF.match(r).group(2)))]['texto'].strip()[:20]}»"
@@ -6378,7 +6473,68 @@ def igualar_celda_a_celda(trabajo, estado, base, hoja, ruta_hoja, hoja_xml, est,
     if menos_lineas:
         detalle.append("Textos con menos líneas que en el modelo (su fila, más baja, con el alto del modelo para esas líneas): "
                        + ", ".join(menos_lineas[:10]) + marca(menos_lineas))
-    return nuevo_paso(trabajo, IGUAL_AL_MODELO, cambios, detalle, cuadro_t)
+    nuevo_paso(trabajo, titulo or IGUAL_AL_MODELO, cambios, detalle, cuadro_t)
+    estado = leer_estado(trabajo)
+    estado["huella_pareja"] = {"pareja": modelo.name, "textos": huella}
+    guardar_estado(trabajo, estado)
+    return {"trabajo": str(trabajo), **estado}
+
+
+ACTUALIZADO_OTRO_IDIOMA = "Actualizado desde el otro idioma"
+
+
+def actualizar_idioma(trabajo, pid=None):
+    """Sobre un EXCEL ya terminado (en español o en inglés): vuelve a copiar del mismo cuadro en el otro idioma anchos,
+    altos y formatos, copia las cifras corregidas allí y avisa de los textos de allí que han cambiado desde la última
+    vez (petición del usuario, 2026-11-25: el TERMINADO del primer idioma puede corregirse después)."""
+    estado = leer_estado(trabajo)
+    origen = Path(estado["origen"])
+    modelo = pareja_otro_idioma(origen, estado.get("idioma", "es"))
+    if not modelo:
+        raise Fallo("No encuentro el mismo cuadro en el otro idioma («C_… EXCEL» ↔ «CIng_… EXCEL»)")
+    _, pasos = nombres(trabajo)
+    base = pasos / estado["pasos"][estado["actual"]]["archivo"]
+    pub = pub_de(pid)
+    with zipfile.ZipFile(modelo) as zm:
+        hoja_m = hoja_cuadro(zm)[0]
+        _, _, cuadro_m = celdas(zm, hoja_m, idioma(modelo.name), [], pub)
+        est_m = Estilos(zm.read("xl/styles.xml").decode("utf-8"))
+        tema_m = colores_tema(zm)
+        xm = zm.read(hoja_de(zm, hoja_m)).decode("utf-8")
+        ancho_m, mdw_m = anchos_columnas(xm), digito_maximo(est_m.xml)
+        altos_m, defecto_m = altos_filas(zm, hoja_m)
+        celdas_m = celdas_hoja(xm, leer_compartidos(zm)[1])
+    with zipfile.ZipFile(base) as z:
+        hoja = estado.get("hoja") or hoja_cuadro(z)[0]
+        _, _, cuadro_t = celdas(z, hoja, estado.get("idioma", "es"), [], pub)
+        ruta_hoja = hoja_de(z, hoja)
+        hoja_xml = z.read(ruta_hoja).decode("utf-8")
+        est = Estilos(z.read("xl/styles.xml").decode("utf-8"))
+        mdw = digito_maximo(est.xml)
+        todas_t = celdas_hoja(hoja_xml, leer_compartidos(z)[1])
+        ancho_t = anchos_columnas(hoja_xml)
+        dibujo = z.read(dibujo_de_hoja(z, hoja)).decode("utf-8") if dibujo_de_hoja(z, hoja) else ""
+        altos_v = altos_filas(z, hoja)
+        caja = medidas_hoja(z, hoja, dibujo) if dibujo else None
+    # ¿Siguen con la misma rejilla? (si se añadió, quitó o movió una fila o columna, no se copia nada)
+    f_ini_t = min(cuadro_t.get("bloque_arriba") or [cuadro_t["f1"]])
+    zona = [(c, f) for f in range(f_ini_t, cuadro_t["f2"] + 1) for c in range(cuadro_t["c1"], cuadro_t["c2"] + 1)]
+    num_t = [k for k in zona if todas_t.get(k, {}).get("numero")]
+    misma_celda = sum(1 for k in num_t if celdas_m.get(k, {}).get("numero"))
+    if not num_t or misma_celda < 0.9 * len(num_t) or (cuadro_t["f2"], cuadro_t["c2"]) != (cuadro_m["f2"], cuadro_m["c2"]):
+        raise Fallo(f"El cuadro en el otro idioma («{modelo.name}») ya no tiene la misma rejilla (filas o columnas añadidas, "
+                    "quitadas o movidas): no copio nada para no estropear este. Hay que rehacerlo")
+    iguales = sum(1 for k in num_t if celdas_m.get(k, {}).get("numero")
+                  and abs(float(todas_t[k]["texto"]) - float(celdas_m[k]["texto"])) < 1e-9)
+    antes = None
+    try:
+        antes = json.loads(ruta_huella(origen).read_text(encoding="utf-8")).get("textos")
+    except (OSError, ValueError):
+        pass
+    return igualar_celda_a_celda(trabajo, estado, base, hoja, ruta_hoja, hoja_xml, est, mdw, todas_t, ancho_t, dibujo,
+                                 altos_v, caja, cuadro_t, modelo, ancho_m, mdw_m, altos_m, defecto_m, celdas_m, est_m,
+                                 tema_m, cuadro_m, iguales, len(num_t), titulo=ACTUALIZADO_OTRO_IDIOMA,
+                                 copiar_cifras=True, huella_antes=antes if antes is not None else None)
 
 
 def dibujo_de_hoja_ruta(z_ruta, hoja):
@@ -6388,7 +6544,7 @@ def dibujo_de_hoja_ruta(z_ruta, hoja):
 
 ORDENES = {"empezar": empezar, "estado": estado_con_modelo, "ir": ir, "reiniciar": reiniciar,
            "paso1": paso1, "paso2": paso2,
-           "paso3": paso3, "paso4": paso4, "letra7": letra7, "letra65": letra65, "letra6": letra6, "modelo": igualar_modelo, "linea_oscura": linea_oscura, "aplicar": aplicar,
+           "paso3": paso3, "paso4": paso4, "letra7": letra7, "letra65": letra65, "letra6": letra6, "modelo": igualar_modelo, "actualizar": actualizar_idioma, "linea_oscura": linea_oscura, "aplicar": aplicar,
            "comparar": comparar, "terminar": terminar, "info": info, "publicaciones": lambda: {},
            "guardar_publicacion": guardar_publicacion, "borrar_publicacion": borrar_publicacion, "paletas": paletas}
 
