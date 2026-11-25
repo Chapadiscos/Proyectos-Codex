@@ -125,11 +125,12 @@ let herramientaModelo = PasoMaquetacion(id: 0, titulo: "Igualar al modelo",
     detalle: "Busca en la carpeta del original (y en «Modelos») el EXCEL terminado del mismo cuadro —de otro país o del semestre anterior, con tus retoques a mano— y copia sus anchos, altos y el formato de cada celda (letra, alineación, fondos y líneas). Los textos y las cifras son los de este cuadro; avisa de lo que no casa. Deja una versión nueva (⌘← para quitarla)",
     icono: "square.on.square", orden: "modelo")
 
-/// Herramienta: sobre un EXCEL ya terminado, vuelve a copiar del mismo cuadro en el otro idioma (español ↔ inglés)
-/// formato y cifras, y avisa de los textos de allí que han cambiado (petición del usuario, 2026-11-25)
-let herramientaActualizar = PasoMaquetacion(id: 0, titulo: "Actualizar desde el otro idioma",
-    detalle: "Para un EXCEL ya terminado (abre el «… EXCEL»): copia del mismo cuadro en el otro idioma (español ↔ inglés) anchos, altos y formato, y las cifras corregidas allí; avisa de los textos de allí que han cambiado desde la última vez, para revisar su traducción. Al guardar, el anterior queda en «Anteriores»",
-    icono: "arrow.triangle.2.circlepath", orden: "actualizar")
+/// Herramienta: la traducción que devuelve el autor (copia de nuestro EXCEL con los textos en el otro idioma), sin
+/// rehacer los pasos: reglas de texto de su idioma y, celda a celda, el aspecto del mismo cuadro en el otro idioma
+/// (petición del usuario, 2026-11-25)
+let herramientaTraduccion = PasoMaquetacion(id: 0, titulo: "Igualar traducción",
+    detalle: "Para la traducción que devuelve el autor (copia de nuestro EXCEL con los textos en el otro idioma), sin hacer los pasos: aplica las reglas de texto de su idioma y le copia celda a celda el aspecto del mismo cuadro en el otro idioma (la versión más reciente, que será la retocada a mano). Avisa de cifras distintas, textos sin traducir y filas con más o menos líneas",
+    icono: "character.bubble", orden: "traduccion")
 
 /// Herramienta: línea oscura encima de las filas seleccionadas en Excel, para separar conceptos
 let herramientaLineaOscura = PasoMaquetacion(id: 0, titulo: "Línea oscura sobre la selección",
@@ -662,13 +663,13 @@ final class Taller: ObservableObject {
 
     /// «Igualar a otro EXCEL…»: el modelo, elegido a mano (la versión retocada fuera de la app, esté donde esté;
     /// petición del usuario, 2026-11-25)
-    func igualarAOtro() {
+    func igualarAOtro(_ paso: PasoMaquetacion = herramientaModelo) {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [UTType(filenameExtension: "xlsx")!]
         panel.message = "El EXCEL al que igualar este cuadro (por ejemplo, el mismo cuadro en el otro idioma, retocado a mano)"
         if let origen = origenTrabajo { panel.directoryURL = origen.deletingLastPathComponent() }
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        hacer(herramientaModelo, extra: [url.path])
+        hacer(paso, extra: [url.path])
     }
 
     func hacer(_ paso: PasoMaquetacion, extra: [String] = []) {
@@ -1756,9 +1757,14 @@ struct TarjetaMaquetar: View {
                    detalle: "Como «Igualar al modelo», pero eliges tú el EXCEL modelo: por ejemplo, el mismo cuadro en el otro idioma retocado a mano fuera de la app y guardado en otro sitio o con otro nombre. Copia su aspecto; los textos son los de este cuadro",
                    color: colorApp, principal: false, marca: nil) { taller.igualarAOtro() }
                 .disabled(taller.trabajo == nil || taller.publicacionActual == nil || taller.enCurso != nil || !fondosListos)
-            let actualizado = taller.pasos.contains { $0.titulo == "Actualizado desde el otro idioma" && $0.n <= taller.actual }
-            Accion(icono: herramientaActualizar.icono, titulo: herramientaActualizar.titulo, detalle: herramientaActualizar.detalle,
-                   color: colorApp, principal: false, marca: actualizado ? "checkmark.circle.fill" : nil) { taller.hacer(herramientaActualizar) }
+            // Traducción del autor: sin pasos (petición del usuario, 2026-11-25; sustituye a «Actualizar desde el otro idioma»)
+            let traducida = taller.pasos.contains { $0.titulo == "Traducción igualada" && $0.n <= taller.actual }
+            Accion(icono: herramientaTraduccion.icono, titulo: herramientaTraduccion.titulo, detalle: herramientaTraduccion.detalle,
+                   color: colorApp, principal: false, marca: traducida ? "checkmark.circle.fill" : nil) { taller.hacer(herramientaTraduccion) }
+                .disabled(taller.trabajo == nil || taller.publicacionActual == nil || taller.enCurso != nil)
+            Accion(icono: "doc.badge.ellipsis", titulo: "Igualar traducción a otro EXCEL…",
+                   detalle: "Como «Igualar traducción», pero eliges tú el EXCEL al que igualarla: por ejemplo, el cuadro en el otro idioma retocado a mano y guardado en otro sitio o con otro nombre",
+                   color: colorApp, principal: false, marca: nil) { taller.igualarAOtro(herramientaTraduccion) }
                 .disabled(taller.trabajo == nil || taller.publicacionActual == nil || taller.enCurso != nil)
             // (sin «Línea oscura sobre la selección»: retirada a petición del usuario, 2026-11-25)
         }

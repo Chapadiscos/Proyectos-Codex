@@ -6558,6 +6558,103 @@ def actualizar_idioma(trabajo, pid=None):
                                  copiar_cifras=True, huella_antes=antes if antes is not None else None)
 
 
+TEXTOS_DEL_IDIOMA = "Textos del idioma"
+TRADUCCION_IGUALADA = "Traducción igualada"
+
+
+def reglas_texto(t, idioma_, pub):
+    """Las reglas de texto del idioma en una celda: en castellano, espacio que no parte línea antes de «%», «% (» y
+    `textos_es`; en inglés (u otro), «%» pegado y `textos_<idioma>`."""
+    if idioma_ == "es":
+        nuevo = re.sub(r'(\d)[ \u202f]?%', '\\1\u00a0%', t)
+        nuevo = re.sub(r'%\(', '% (', nuevo)
+    else:
+        nuevo = re.sub(r'(\d)[ \u00a0\u202f]+%', r'\1%', t)
+    for buscar, poner in pub.get("textos_" + idioma_, []):
+        nuevo = re.sub(buscar, poner, nuevo)
+    return nuevo
+
+
+def traduccion(trabajo, pid=None, ruta_modelo=None):
+    """La traducción que devuelve el autor (una copia de nuestro EXCEL con los textos en el otro idioma), sin rehacer
+    los pasos: reglas de texto de su idioma y, celda a celda, el aspecto del mismo cuadro en el otro idioma (la versión
+    más reciente, que será la retocada a mano, o la elegida); los textos, los del autor (petición del usuario,
+    2026-11-25)."""
+    estado = leer_estado(trabajo)
+    origen = Path(estado["origen"])
+    lengua = estado.get("idioma", "es")
+    modelo = Path(ruta_modelo) if ruta_modelo else pareja_otro_idioma(origen, lengua)
+    if not modelo or not modelo.exists():
+        raise Fallo("No encuentro el mismo cuadro en el otro idioma («C_…» ↔ «CIng_…»): elígelo con «Igualar traducción a otro EXCEL…»")
+    pub = pub_de(pid)
+    _, pasos = nombres(trabajo)
+    # 1. Reglas de texto del idioma en las celdas (sin tocar las que llevan formato dentro del texto)
+    base = pasos / estado["pasos"][estado["actual"]]["archivo"]
+    with zipfile.ZipFile(base) as z:
+        hoja = estado.get("hoja") or hoja_cuadro(z)[0]
+        ruta_hoja = hoja_de(z, hoja)
+        hoja_xml = z.read(ruta_hoja).decode("utf-8")
+        _, compartidos = leer_compartidos(z)
+        sst = z.read("xl/sharedStrings.xml").decode("utf-8") if "xl/sharedStrings.xml" in z.namelist() else ""
+        _, _, cuadro_t = celdas(z, hoja, lengua, [], pub)
+    todas = celdas_hoja(hoja_xml, compartidos)
+    sis = re.findall(r'<si>.*?</si>|<si/>', sst, re.S)
+    cambiadas = []
+    for (c, f), v in sorted(todas.items(), key=lambda t: (t[0][1], t[0][0])):
+        if f > cuadro_t["f2"] or c > cuadro_t["c2"] or v.get("numero") or not v.get("texto", "").strip() or indice_rico(v, compartidos) is not None:
+            continue
+        nuevo = reglas_texto(v["texto"], lengua, pub)
+        if nuevo == v["texto"] or not sst:
+            continue
+        r_ = ref(c, f)
+        celda = re.search(rf'<c\b(?=[^>]*\br="{r_}")[^>]*?(?:/>|>.*?</c>)', hoja_xml, re.S)
+        if not celda:
+            continue
+        s_ = re.search(r'\bs="(\d+)"', celda.group(0))
+        sis.append(f'<si><t xml:space="preserve">{html.escape(nuevo, quote=False)}</t></si>')
+        hoja_xml = (hoja_xml[:celda.start()] + f'<c r="{r_}"{" s=" + chr(34) + s_.group(1) + chr(34) if s_ else ""} t="s"><v>{len(sis) - 1}</v></c>'
+                    + hoja_xml[celda.end():])
+        cambiadas.append(f"{r_} «{v['texto'].strip()[:25]}» → «{nuevo.strip()[:25]}»".replace("\n", " / ").replace("\r", ""))
+    if cambiadas:
+        sst = re.sub(r'(<sst\b[^>]*>).*(</sst>)', lambda q: q.group(1) + "".join(sis) + q.group(2), sst, count=1, flags=re.S)
+        sst = re.sub(r'\buniqueCount="\d+"', f'uniqueCount="{len(sis)}"', sst, count=1)
+        nuevo_paso(trabajo, TEXTOS_DEL_IDIOMA, {ruta_hoja: hoja_xml.encode("utf-8"), "xl/sharedStrings.xml": sst.encode("utf-8")},
+                   [f"Reglas de texto del {'castellano' if lengua == 'es' else 'inglés'} ({len(cambiadas)}): " + "; ".join(cambiadas[:8])
+                    + ("…" if len(cambiadas) > 8 else "")], cuadro_t)
+        estado = leer_estado(trabajo)
+    # 2. Celda a celda, el aspecto del modelo
+    base = pasos / estado["pasos"][estado["actual"]]["archivo"]
+    with zipfile.ZipFile(modelo) as zm:
+        hoja_m = hoja_cuadro(zm)[0]
+        _, _, cuadro_m = celdas(zm, hoja_m, idioma(modelo.name), [], pub)
+        est_m = Estilos(zm.read("xl/styles.xml").decode("utf-8"))
+        tema_m = colores_tema(zm)
+        xm = zm.read(hoja_de(zm, hoja_m)).decode("utf-8")
+        ancho_m, mdw_m = anchos_columnas(xm), digito_maximo(est_m.xml)
+        altos_m, defecto_m = altos_filas(zm, hoja_m)
+        celdas_m = celdas_hoja(xm, leer_compartidos(zm)[1])
+    with zipfile.ZipFile(base) as z:
+        hoja_xml = z.read(ruta_hoja).decode("utf-8")
+        est = Estilos(z.read("xl/styles.xml").decode("utf-8"))
+        mdw = digito_maximo(est.xml)
+        todas_t = celdas_hoja(hoja_xml, leer_compartidos(z)[1])
+        ancho_t = anchos_columnas(hoja_xml)
+        dibujo = z.read(dibujo_de_hoja(z, hoja)).decode("utf-8") if dibujo_de_hoja(z, hoja) else ""
+        altos_v = altos_filas(z, hoja)
+        caja = medidas_hoja(z, hoja, dibujo) if dibujo else None
+    f_ini_t = min(cuadro_t.get("bloque_arriba") or [cuadro_t["f1"]])
+    zona = [(c, f) for f in range(f_ini_t, cuadro_t["f2"] + 1) for c in range(cuadro_t["c1"], cuadro_t["c2"] + 1)]
+    num_t = [k for k in zona if todas_t.get(k, {}).get("numero")]
+    iguales = sum(1 for k in num_t if celdas_m.get(k, {}).get("numero")
+                  and abs(float(todas_t[k]["texto"]) - float(celdas_m[k]["texto"])) < 1e-9)
+    if not num_t or sum(1 for k in num_t if celdas_m.get(k, {}).get("numero")) < 0.9 * len(num_t):
+        raise Fallo(f"«{modelo.name}» no tiene la misma rejilla que esta traducción (las cifras no están en las mismas celdas): "
+                    "¿es el mismo cuadro? Si el autor tradujo otra versión, hay que maquetarla con los pasos")
+    return igualar_celda_a_celda(trabajo, estado, base, hoja, ruta_hoja, hoja_xml, est, mdw, todas_t, ancho_t, dibujo,
+                                 altos_v, caja, cuadro_t, modelo, ancho_m, mdw_m, altos_m, defecto_m, celdas_m, est_m,
+                                 tema_m, cuadro_m, iguales, len(num_t), titulo=TRADUCCION_IGUALADA)
+
+
 def dibujo_de_hoja_ruta(z_ruta, hoja):
     with zipfile.ZipFile(z_ruta) as z:
         return dibujo_de_hoja(z, hoja)
@@ -6565,7 +6662,7 @@ def dibujo_de_hoja_ruta(z_ruta, hoja):
 
 ORDENES = {"empezar": empezar, "estado": estado_con_modelo, "ir": ir, "reiniciar": reiniciar,
            "paso1": paso1, "paso2": paso2,
-           "paso3": paso3, "paso4": paso4, "letra7": letra7, "letra65": letra65, "letra6": letra6, "modelo": igualar_modelo, "actualizar": actualizar_idioma, "linea_oscura": linea_oscura, "aplicar": aplicar,
+           "paso3": paso3, "paso4": paso4, "letra7": letra7, "letra65": letra65, "letra6": letra6, "modelo": igualar_modelo, "actualizar": actualizar_idioma, "traduccion": traduccion, "linea_oscura": linea_oscura, "aplicar": aplicar,
            "comparar": comparar, "terminar": terminar, "info": info, "publicaciones": lambda: {},
            "guardar_publicacion": guardar_publicacion, "borrar_publicacion": borrar_publicacion, "paletas": paletas}
 

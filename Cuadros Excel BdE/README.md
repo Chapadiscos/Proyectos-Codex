@@ -398,6 +398,11 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      idioma se busca en la carpeta del original, «Cuadros ORIGINALES», «Cuadros TERMINADOS» y Modelos, con cualquier
      nombre que empiece por el del cuadro (no ORIGINAL ni maquetado), y se toma la más reciente; el aviso dice cuál y
      su fecha. Botón **«Igualar a otro EXCEL…»**: el modelo, elegido a mano (orden `modelo <trabajo> <pub> <ruta>`).
+   - **«Igualar traducción»** (orden `traduccion`, 2026-11-25; sustituye en la app a «Actualizar desde el otro idioma»):
+     la traducción del autor es una copia de nuestro EXCEL con los textos en el otro idioma, así que no se rehacen los
+     pasos: se abre en la app y, en una versión, las reglas de texto de su idioma (`reglas_texto`: «%», `textos_<idioma>`)
+     y, en otra, celda a celda el aspecto de su pareja (la más reciente, la retocada a mano) o del EXCEL elegido con
+     «Igualar traducción a otro EXCEL…». Si las cifras no están en las mismas celdas, avisa y no hace nada.
    - **Aviso de modelo** (petición del usuario, 2026-11-24): al empezar (y al terminar «Líneas y fondos») el motor
      busca si el cuadro tiene modelo (`estado["modelo"]`). La app resalta en naranja «Igualar al modelo · hay
      modelo», avisa al acabar «Líneas y fondos» y, al «Guardar como EXCEL» sin igualar, pregunta antes.
