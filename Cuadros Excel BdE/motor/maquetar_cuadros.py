@@ -3594,10 +3594,16 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
     cambios_pub, cursivas, sin_p = [], {}, []
 
     def textos_es(t):
-        """Reglas de texto en castellano: «3%(± 1 pp)» → «3 % (± 1 pp)» y las sustituciones de la publicación
-        (LATAM/Indicadores: «Average» → «Promedio», «PIB (m. USD)» → «PIB (mm de dólares)»…, como los PDF)."""
+        """Reglas de texto del idioma del cuadro. En castellano, «3%(± 1 pp)» → «3 % (± 1 pp)» y las sustituciones de
+        la publicación (LATAM/Indicadores: «Average» → «Promedio», «PIB (m. USD)» → «PIB (mm de dólares)»…); en
+        inglés, «%» pegado a la cifra y las de `textos_en` («Average⏎2000-2009»), como los PDF en inglés."""
         if idioma != "es":
-            return t
+            nuevo = re.sub(r'(\d)[ \u00a0\u202f]+%', r'\1%', t)
+            for buscar, poner in pub.get("textos_" + idioma, []):
+                nuevo = re.sub(buscar, poner, nuevo)
+            if nuevo != t:
+                cambios_pub.append(f"«{t.strip()[:30]}» → «{nuevo.strip()[:30]}»".replace("\n", " / ").replace("\r", ""))
+            return nuevo
         nuevo = re.sub(r'%\(', '% (', t)
         for buscar, poner in pub.get("textos_es", []):
             nuevo = re.sub(buscar, poner, nuevo)
@@ -3651,12 +3657,12 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
             con_espacio = re.sub(r'(?<=[\w)])([<>≤≥])', r' \1', con_espacio)
             if con_espacio != t:
                 cambios_txt.append(f"«{t.strip()[:20]}» → «{con_espacio.strip()[:20]}»")
-            con_por = textos_es(re.sub(r'(\d)[ \u202f]?%', '\\1\u00a0%', con_espacio))
+            con_por = textos_es(re.sub(r'(\d)[ \u202f]?%', '\\1\u00a0%', con_espacio) if idioma == "es" else con_espacio)
             corregido, tipos_c = corregir_texto(con_por, idioma, cabecera=f <= fin_cab, provincias=f > fin_cab)
             if tipos_c:
                 correcciones.append(f"{ref(c, f)} «{con_por.strip()[:35]}» → «{corregido.strip()[:35]}» ({', '.join(tipos_c)})")
                 con_por = corregido
-            if con_por != con_espacio:
+            if con_por != con_espacio and idioma == "es":
                 porcentajes.append(ref(c, f))
             if con_por != t:
                 nuevo = t = con_por
@@ -3750,7 +3756,7 @@ def celdas(z, hoja, idioma="es", propuestas_salida=None, pub=None, fin_autor=Non
             t = x["texto"]
             if not t.strip() or ancho_col(c) == 0 or x["numero"] or indice_rico(x, compartidos) is not None:
                 continue
-            nuevo = textos_es(re.sub(r'(\d)[ \u202f]?%', '\\1\u00a0%', t))
+            nuevo = textos_es(re.sub(r'(\d)[ \u202f]?%', '\\1\u00a0%', t) if idioma == "es" else t)
             cp = RE_CIFRA_P.fullmatch(nuevo) if pub.get("quitar_p") else None
             if cp:
                 # «25784 (p)» → «25.784» y la cabecera de su tablita, «2026 (p)» (PDF de CARD)

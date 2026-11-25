@@ -388,6 +388,11 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      se corrigió después, vuelve a copiar anchos, altos y formatos, copia sus cifras (no en celdas con fórmula: aviso)
      y avisa de los textos de la pareja cambiados desde la huella; si ya no comparten rejilla, no copia nada. Al
      guardar, sustituye al EXCEL y el anterior queda en «Anteriores» con la fecha.
+   - **Reglas del inglés** (de los PDF ingleses publicados, 2026-11-25): «%» pegado a la cifra («3% (± 1 pp)»; el
+     espacio que no parte línea es solo del castellano), `textos_en` («Average⏎2000-2009» en dos líneas, sin espacios
+     sobrantes), sin cursivas («ARA metrics», «Tier 1», «Sovereign rating», «Return on assets» en redonda), comillas
+     inglesas, «SOURCE:» en singular para la referencia. Los separadores decimales los pone la configuración regional
+     del ordenador (decisión del usuario: no se fuerzan formatos).
    - **Aviso de modelo** (petición del usuario, 2026-11-24): al empezar (y al terminar «Líneas y fondos») el motor
      busca si el cuadro tiene modelo (`estado["modelo"]`). La app resalta en naranja «Igualar al modelo · hay
      modelo», avisa al acabar «Líneas y fondos» y, al «Guardar como EXCEL» sin igualar, pregunta antes.
