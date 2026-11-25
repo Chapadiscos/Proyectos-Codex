@@ -157,6 +157,34 @@ enum PasoCapitulo: String, CaseIterable, Identifiable {
 }
 
 /// Marcador y prefijo de la primera sección de un documento (la cornisa suele tomarlos)
+/// Partes del libro ([partes] del .toml de la publicación): el marcador de sección es el número
+/// de la parte y la variable de texto lleva su título
+struct Partes: Decodable {
+    let variable: String
+    let titulos: [String]
+    let capitulos: [[Int]]?
+
+    /// Lee [partes] del .toml (con el Python del motor, que trae tomllib); nil si no tiene
+    static func leer(_ toml: String) -> Partes? {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: python)
+        p.arguments = ["-I", "-c", "import tomllib,json,sys; print(json.dumps(tomllib.load(open(sys.argv[1],'rb')).get('partes')))", toml]
+        let salida = Pipe()
+        p.standardOutput = salida
+        p.standardError = FileHandle.nullDevice
+        guard (try? p.run()) != nil else { return nil }
+        let datos = salida.fileHandleForReading.readDataToEndOfFile()
+        p.waitUntilExit()
+        guard p.terminationStatus == 0, let partes = try? JSONDecoder().decode(Partes.self, from: datos) else { return nil }
+        return partes.titulos.isEmpty ? nil : partes
+    }
+
+    /// Índice de la parte del capítulo n según «capitulos»
+    func parte(delCapitulo n: Int) -> Int? {
+        capitulos?.firstIndex { $0.contains(n) }
+    }
+}
+
 struct SeccionDoc: Identifiable {
     let id = UUID()
     let documento: String
@@ -164,10 +192,22 @@ struct SeccionDoc: Identifiable {
     let prefijo: String
     let incluyePrefijo: Bool
     let trasImportar: Bool
+    var partes: Partes? = nil
+    /// Texto actual de la variable de la parte y su estado («ok», «falta», «otra»)
+    var tituloParte = ""
+    var estadoVariable = ""
 
     /// Número del capítulo según el nombre del documento: «2.9 Lipofilling.indd» → «2.9»
     var numeroCapitulo: String? {
         documento.range(of: #"^\d+(\.\d+)*"#, options: .regularExpression).map { String(documento[$0]) }
+    }
+
+    /// Número entero del capítulo: «04 SEG 2027.indd» → 4, «Capitulo 4.indd» → 4
+    var capituloEntero: Int? {
+        if let n = numeroCapitulo, let i = Int(n) { return i }
+        guard let r = documento.range(of: #"(?i)cap[ií]tulo\s*\d+"#, options: .regularExpression),
+              let d = documento[r].range(of: #"\d+"#, options: .regularExpression) else { return nil }
+        return Int(documento[d])
     }
 }
 
@@ -847,17 +887,22 @@ final class Taller: ObservableObject {
         """
     }
 
-    /// Lee el marcador y el prefijo de sección del documento y abre la hoja para cambiarlos
+    /// Lee el marcador y el prefijo de sección del documento (y, si la publicación tiene partes,
+    /// el título de la parte) y abre la hoja para cambiarlos
     func pedirSeccion(_ documento: String, trasImportar: Bool) {
+        let toml = publicacion
         Task {
-            let r = await osascript(guionSeccion(documento, ["leer"]), espera: 60)
-            let partes = r.texto.components(separatedBy: "\t")
-            guard r.ok, partes.count >= 2, !r.texto.hasPrefix("ERROR") else {
+            let partes = await Task.detached { Partes.leer(toml) }.value
+            let r = await osascript(guionSeccion(documento, ["leer"] + (partes.map { [$0.variable] } ?? [])), espera: 60)
+            guard r.ok, r.texto.components(separatedBy: "\t").count >= 2, !r.texto.hasPrefix("ERROR") else {
                 if !trasImportar { aviso = Aviso(titulo: "No se puede leer la sección", texto: r.texto.isEmpty ? "InDesign no responde." : r.texto) }
                 return
             }
-            seccion = SeccionDoc(documento: documento, marcador: partes[0], prefijo: partes[1],
-                                 incluyePrefijo: partes.count > 2 && partes[2] == "true", trasImportar: trasImportar)
+            let campos = r.texto.trimmingCharacters(in: CharacterSet(charactersIn: "|")).components(separatedBy: "\t")
+            seccion = SeccionDoc(documento: documento, marcador: campos[0], prefijo: campos[1],
+                                 incluyePrefijo: campos.count > 2 && campos[2] == "true", trasImportar: trasImportar,
+                                 partes: partes, tituloParte: campos.count > 3 ? campos[3] : "",
+                                 estadoVariable: campos.count > 4 ? campos[4] : "")
         }
     }
 
@@ -866,12 +911,14 @@ final class Taller: ObservableObject {
         pedirSeccion(a[1], trasImportar: false)
     }
 
-    func ponerSeccion(_ s: SeccionDoc, marcador: String, prefijo: String) {
+    func ponerSeccion(_ s: SeccionDoc, marcador: String, prefijo: String, tituloParte: String? = nil) {
+        let variable = tituloParte != nil ? s.partes?.variable : nil
         Task {
-            let r = await osascript(guionSeccion(s.documento, ["poner", marcador, prefijo]), espera: 60)
+            let r = await osascript(guionSeccion(s.documento, ["poner", marcador, prefijo] + (variable.map { [$0, tituloParte!] } ?? [])), espera: 60)
             var e = Ejecucion(seccion: .galerada, titulo: "Sección de «\(s.documento)»", accion: "Sección cambiada", documento: s.documento)
             e.ok = r.ok && !r.texto.hasPrefix("ERROR")
-            e.texto = e.ok == true ? "Marcador de sección: «\(marcador)»\nPrefijo de sección: «\(prefijo)»\nLa numeración de páginas no cambia."
+            e.texto = e.ok == true ? "Marcador de sección: «\(marcador)»\nPrefijo de sección: «\(prefijo)»" +
+                                     (variable.map { "\nVariable «\($0)»: «\(tituloParte!)»" } ?? "") + "\nLa numeración de páginas no cambia."
                                    : (r.texto.isEmpty ? "InDesign no responde." : r.texto)
             e.fin = Date()
             ejecuciones.append(e)
@@ -1730,7 +1777,19 @@ struct HojaSeccion: View {
     let seccion: SeccionDoc
     @State private var marcador = ""
     @State private var prefijo = ""
+    @State private var tituloParte = ""
     @Environment(\.dismiss) private var cerrar
+
+    /// La parte elegida (índice en «titulos»): pone el marcador con su número y el título
+    private var parte: Binding<Int> {
+        Binding(get: { seccion.partes?.titulos.firstIndex(of: tituloParte) ?? -1 },
+                set: { i in
+                    guard let p = seccion.partes, p.titulos.indices.contains(i) else { return }
+                    marcador = String(i + 1)
+                    tituloParte = p.titulos[i]
+                })
+    }
+    private var cambiaTitulo: Bool { seccion.partes != nil && seccion.estadoVariable == "ok" && tituloParte != seccion.tituloParte }
 
     var body: some View {
         let color = Seccion.galerada.color
@@ -1747,6 +1806,24 @@ struct HojaSeccion: View {
                 }
             }
             Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 10) {
+                if let p = seccion.partes {
+                    GridRow {
+                        Text("Parte").foregroundStyle(.secondary)
+                        Picker("", selection: parte) {
+                            if parte.wrappedValue < 0 { Text("—").tag(-1) }
+                            ForEach(p.titulos.indices, id: \.self) { i in Text("\(i + 1) · \(p.titulos[i])").tag(i) }
+                        }
+                        .labelsHidden().frame(width: 320)
+                    }
+                    GridRow {
+                        Text(p.variable).foregroundStyle(.secondary)
+                        switch seccion.estadoVariable {
+                        case "ok": Text(tituloParte.isEmpty ? "(vacía)" : "«\(tituloParte)»")
+                        case "otra": Text("No es de texto personalizado: no se cambia").foregroundStyle(.orange)
+                        default: Text("El documento no tiene esta variable de texto").foregroundStyle(.orange)
+                        }
+                    }
+                }
                 GridRow {
                     Text("Marcador de sección").foregroundStyle(.secondary)
                     TextField("", text: $marcador).textFieldStyle(.roundedBorder).frame(width: 240)
@@ -1756,7 +1833,7 @@ struct HojaSeccion: View {
                     TextField("", text: $prefijo).textFieldStyle(.roundedBorder).frame(width: 240)
                 }
             }
-            if let n = seccion.numeroCapitulo, n != marcador {
+            if seccion.partes == nil, let n = seccion.numeroCapitulo, n != marcador {
                 Button {
                     // El número de la maqueta («1», «Capítulo 1», «1-») cambia por el del capítulo
                     func cambiar(_ s: String) -> String {
@@ -1768,7 +1845,7 @@ struct HojaSeccion: View {
                 } label: { Label("Usar el número del capítulo: \(n)", systemImage: "wand.and.stars") }
                 .controlSize(.small)
             }
-            Text("Antes: marcador «\(seccion.marcador)», prefijo «\(seccion.prefijo)»\(seccion.incluyePrefijo ? " (se incluye en el número de página)" : ""). La numeración de páginas no cambia.")
+            Text("Antes: marcador «\(seccion.marcador)», prefijo «\(seccion.prefijo)»\(seccion.incluyePrefijo ? " (se incluye en el número de página)" : "")\(seccion.estadoVariable == "ok" ? ", parte «\(seccion.tituloParte)»" : ""). La numeración de páginas no cambia.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             HStack {
                 Spacer()
@@ -1777,11 +1854,12 @@ struct HojaSeccion: View {
                     cerrar()
                 }.keyboardShortcut(.cancelAction)
                 Button("Aplicar") {
-                    taller.ponerSeccion(seccion, marcador: marcador, prefijo: prefijo)
+                    taller.ponerSeccion(seccion, marcador: marcador, prefijo: prefijo,
+                                        tituloParte: seccion.partes != nil && seccion.estadoVariable == "ok" ? tituloParte : nil)
                     cerrar()
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(marcador == seccion.marcador && prefijo == seccion.prefijo)
+                .disabled(marcador == seccion.marcador && prefijo == seccion.prefijo && !cambiaTitulo)
             }
         }
         .padding(22)
@@ -1789,6 +1867,13 @@ struct HojaSeccion: View {
         .onAppear {
             marcador = seccion.marcador
             prefijo = seccion.prefijo
+            tituloParte = seccion.tituloParte
+            // Con partes: la del capítulo (por su número) o, si no se sabe, la del marcador actual
+            if let p = seccion.partes {
+                let i = seccion.capituloEntero.flatMap { p.parte(delCapitulo: $0) }
+                    ?? Int(seccion.marcador).map { $0 - 1 }
+                if let i { parte.wrappedValue = i }
+            }
         }
     }
 }
