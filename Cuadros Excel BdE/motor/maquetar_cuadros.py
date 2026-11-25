@@ -246,6 +246,11 @@ def cifras_a_la_derecha(archivo, hoja, cuadro):
     c1, f1, c2, f2 = cuadro["c1"], cuadro["f1"], cuadro["c2"], cuadro["f2"]
     primera, fin_cab = cuadro["primera"], cuadro["fin_cabecera"]
     filas = [f for f in cuadro.get("bloque_arriba", []) if f != cuadro.get("bloque_cabecera")] + list(range(fin_cab + 1, f2 + 1))
+    # (sin las filas ocultas del autor: Gua_01, cifras a 11 pt en filas ocultas hacían «más ancha» toda la columna y
+    # las demás quedaban pegadas al borde)
+    with zipfile.ZipFile(archivo) as z:
+        altos_h, defecto_h = altos_filas(z, hoja)
+    filas = [f for f in filas if altos_h.get(f - 1, defecto_h) > 0]
     cuerpo_de = lambda s_: float(re.search(r'<sz val="([\d.]+)"', est.fuente_de(s_)).group(1)) if re.search(r'<sz val="([\d.]+)"', est.fuente_de(s_)) else CUERPO_CELDA
     por_col, textos = {}, []
     for c in range(c1, c2 + 1):
