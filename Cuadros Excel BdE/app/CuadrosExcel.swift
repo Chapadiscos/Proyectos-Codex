@@ -1745,10 +1745,7 @@ struct TarjetaMaquetar: View {
             Accion(icono: herramientaActualizar.icono, titulo: herramientaActualizar.titulo, detalle: herramientaActualizar.detalle,
                    color: colorApp, principal: false, marca: actualizado ? "checkmark.circle.fill" : nil) { taller.hacer(herramientaActualizar) }
                 .disabled(taller.trabajo == nil || taller.publicacionActual == nil || taller.enCurso != nil)
-            let fondosHechos = taller.pasos.contains { $0.titulo == "Líneas y fondos" && $0.n <= taller.actual }
-            Accion(icono: herramientaLineaOscura.icono, titulo: herramientaLineaOscura.titulo, detalle: herramientaLineaOscura.detalle,
-                   color: colorApp, principal: false, marca: nil) { taller.lineaOscura() }
-                .disabled(taller.trabajo == nil || taller.publicacionActual == nil || taller.enCurso != nil || !fondosHechos)
+            // (sin «Línea oscura sobre la selección»: retirada a petición del usuario, 2026-11-25)
         }
     }
 }
