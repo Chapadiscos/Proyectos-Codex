@@ -6351,6 +6351,11 @@ def igualar_celda_a_celda(trabajo, estado, base, hoja, ruta_hoja, hoja_xml, est,
                             lambda t, _p, _pt=pt_: medir_l(t, _pt) * ESCALA_TEXTO_EXCEL))
             alto_por_lineas.setdefault(n_, []).append(round(h_m, 2))
         alto_por_lineas = {n_: max(set(l_), key=l_.count) for n_, l_ in alto_por_lineas.items()}
+        # Un alto retocado a mano a propósito (prueba del usuario, 2026-11-25: Arg_03 MODIFICADO, fila 25 de 2 líneas a
+        # 64 pt) no es «el alto de 2 líneas»: solo vale si no pasa de 1,5 veces n líneas de las de 1 línea
+        if 1 in alto_por_lineas:
+            alto_por_lineas = {n_: h_ for n_, h_ in alto_por_lineas.items()
+                               if n_ == 1 or h_ <= alto_por_lineas[1] * n_ * 1.5}
     if medir_l:
         for (c, f), v in todas_t.items():
             if not (cuadro_t["f1"] <= f <= f_fin and c <= c_fin) or v.get("numero") or not v.get("texto", "").strip():
