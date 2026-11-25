@@ -407,6 +407,9 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      «Traducción igualada» o «Traducción igualada a otro EXCEL». Al acabar, la app abre en Excel el EXCEL usado
      (`modelo_usado` en la respuesta del motor) en el mismo sitio, zoom y desplazamiento que la traducción, y deja la
      traducción delante: uno encima de otro para compararlos.
+     Al «Guardar como EXCEL» una traducción igualada, el EXCEL nuevo se abre delante y, detrás y con el mismo zoom, el
+     EXCEL con el que se igualó (no la traducción del autor); se cierran solo las copias de trabajo. El archivo del autor
+     nunca se pisa, aunque se llame «… EXCEL» (es copia de nuestro EXCEL): se guarda «… EXCEL (2)».
    - **Aviso de modelo** (petición del usuario, 2026-11-24): al empezar (y al terminar «Líneas y fondos») el motor
      busca si el cuadro tiene modelo (`estado["modelo"]`). La app resalta en naranja «Igualar al modelo · hay
      modelo», avisa al acabar «Líneas y fondos» y, al «Guardar como EXCEL» sin igualar, pregunta antes.

@@ -5615,7 +5615,9 @@ def nombre_terminado(origen, carpeta):
     elif re.search(r'\bORIGINAL\b', stem):
         base = re.sub(r'\bORIGINAL\b', "EXCEL", stem)
     else:
-        base = stem + " EXCEL"   # «… EXCEL.xlsx» (petición del usuario, 2026-11-18; antes «TERMINADO(S)»)
+        # «… EXCEL.xlsx» (petición del usuario, 2026-11-18; antes «TERMINADO(S)»); si ya acaba en EXCEL (una traducción
+        # que el autor devuelve con el nombre de nuestro EXCEL), «… EXCEL (2)», no «… EXCEL EXCEL»
+        base = stem if re.search(r"\bEXCEL$", stem) else stem + " EXCEL"
     destino, n = carpeta / f"{base}.xlsx", 2
     while destino.exists():   # nunca se pisa un TERMINADO que ya exista
         destino, n = carpeta / f"{base} ({n}).xlsx", n + 1
@@ -5636,7 +5638,15 @@ def terminar(trabajo):
     estado = leer_estado(trabajo)
     origen = Path(estado.get("origen", ""))
     carpeta = origen.parent if origen.parent.is_dir() else trabajo.parent
-    if origen.name and re.search(r"\bEXCEL$", origen.stem) and origen.exists():
+    # Traducción igualada (en la versión elegida): el EXCEL, con el modelo usado detrás en Excel para compararlos, y
+    # nunca encima del archivo del autor aunque se llame «… EXCEL» (es copia de nuestro EXCEL; petición del usuario,
+    # 2026-11-25)
+    vigentes = [p_.get("titulo") for p_ in estado["pasos"][:estado["actual"] + 1]]
+    traducida = any(t_ in (TRADUCCION_IGUALADA, TRADUCCION_IGUALADA_OTRO) for t_ in vigentes)
+    modelo_usado = estado.get("modelo_usado") if traducida else None
+    if modelo_usado and not Path(modelo_usado).exists():
+        modelo_usado = None
+    if origen.name and re.search(r"\bEXCEL$", origen.stem) and origen.exists() and not traducida:
         # Un EXCEL terminado que se reabrió para actualizarlo desde el otro idioma: se guarda en su sitio y el de antes,
         # en «Anteriores» con la fecha (nunca se pierde)
         anteriores = carpeta / "Anteriores"
@@ -5652,7 +5662,9 @@ def terminar(trabajo):
         ruta_huella(destino).parent.mkdir(exist_ok=True)
         ruta_huella(destino).write_text(json.dumps(estado["huella_pareja"], ensure_ascii=False), encoding="utf-8")
     return {"terminado": str(destino), "original": str(origen) if origen.name else None,
-            "ancla_original": ancla_reticula_original(origen, estado.get("hoja")),
+            "modelo_usado": modelo_usado,
+            "ancla_original": ancla_reticula_original(Path(modelo_usado) if modelo_usado else origen,
+                                                      None if modelo_usado else estado.get("hoja")),
             "encuadre_pt": encuadre_cuadro(destino, estado.get("hoja")), "borrados": borrar_generados(trabajo)}
 
 

@@ -930,6 +930,10 @@ final class Taller: ObservableObject {
                     guard let r = await self.llamarMotor(["terminar", trabajo.path], registro: id),
                           let hecho = r.terminado else { return false }
                     let url = URL(fileURLWithPath: hecho)
+                    // Traducción: detrás, el modelo con el que se igualó (ya abierto para comparar), no el original del
+                    // autor (petición del usuario, 2026-11-25)
+                    let detras = r.modelo_usado.map { URL(fileURLWithPath: $0) } ?? original
+                    let queDetras = r.modelo_usado != nil ? "el EXCEL con el que se igualó" : "el original del autor"
                     self.anotar(id, "Guardado: \(url.lastPathComponent)")
                     (r.borrados ?? []).forEach { self.anotar(id, "Borrado: \($0)") }
                     self.trabajo = nil
@@ -1022,13 +1026,13 @@ final class Taller: ObservableObject {
                         """
                         let vinculos = AXIsProcessTrusted() ? Task.detached { await noActualizarVinculos() } : nil
                         let ancla = (r.ancla_original?.count == 2 ? r.ancla_original! : [1, 1]).map(String.init)
-                        let argumentos = [url.path, hojaCuadro, original?.path ?? ""]
+                        let argumentos = [url.path, hojaCuadro, detras?.path ?? ""]
                             + (sitio.count == 4 ? (sitio + medidas).map(String.init) : ["", "", "", "", "", ""]) + ancla
                         let abierto = await osascript(guion, argumentos, espera: 120)
                         try? await Task.sleep(nanoseconds: 500_000_000)
                         vinculos?.cancel()
                         if organizadorVisual && sitio.count == 4 { _ = await self.juntarConExcel(sitio) }
-                        self.anotar(id, abierto.ok ? "Abierto en Excel: \(url.lastPathComponent), en el sitio de la copia de trabajo y encuadrado" + (original != nil ? ", encima del original del autor (\(original!.lastPathComponent)), con el mismo zoom" : "") : "⚠ No he podido abrirlo en Excel (\(abierto.texto))")
+                        self.anotar(id, abierto.ok ? "Abierto en Excel: \(url.lastPathComponent), en el sitio de la copia de trabajo y encuadrado" + (detras != nil ? ", encima de \(queDetras) (\(detras!.lastPathComponent)), con el mismo zoom" : "") : "⚠ No he podido abrirlo en Excel (\(abierto.texto))")
                     } else {
                         NSWorkspace.shared.activateFileViewerSelecting([url])
                     }
