@@ -158,3 +158,11 @@ y          = 27.433     # mm: el margen superior, como en los capítulos maqueta
 texto_desde = 91        # mm: el texto de la portadilla empieza aquí (plantilla del capítulo 09)
 # Estilo de carácter para el título en la cabecera: lo toma la variable «Encabezado» de la cornisa
 estilo_caracter_titulo = "Encabezado"
+
+# Partes del libro. La cornisa toma «PARTE N.» del marcador de sección y el título de la
+# variable de texto «Titulo Parte»: la hoja «Sección» de la app pone las dos cosas al elegir
+# la parte (tras importar, propone la del capítulo según «capitulos»).
+[partes]
+variable  = "Titulo Parte"
+titulos   = ["FUNDAMENTOS DE LA GONIOSCOPIA", "PATOLOGÍA CLÍNICA", "CIRUGÍA Y GONIOSCOPIA"]
+capitulos = [[1, 2, 3, 4], [5, 6, 7, 8, 9, 10, 11, 12], [13, 14, 15]]
