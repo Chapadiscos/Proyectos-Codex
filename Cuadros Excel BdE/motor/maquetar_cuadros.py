@@ -1881,6 +1881,8 @@ class Estilos:
         if clave in self.cache:
             return self.cache[clave]
         base = sin_relleno_codigo(formato_numero(self, i))
+        if not texto and base.strip() == "@":
+            base = "General"   # (una cifra con formato de texto, CARD_02 N22: con «@» no hay margen posible)
         if millares:
             base = con_millares_codigo(base)
         relleno = "_0" * ceros
