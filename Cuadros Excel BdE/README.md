@@ -411,6 +411,19 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
      EXCEL con el que se igualó (no la traducción del autor); se cierran solo las copias de trabajo. El archivo del autor
      nunca se pisa, aunque se llame «… EXCEL» (es copia de nuestro EXCEL). Se guarda como **«… EXCEL TRADUCIDO»**
      (petición del usuario, 2026-11-25; si ya existe, « (2)»…).
+     Qué se copia del modelo y cómo (probado con el Arg_03 de «Cuadros TRADUCCION»: EXCEL, EXCEL MODIFICADO y la
+     traducción del autor; las tres variantes salen iguales a su modelo en todas las celdas visibles):
+     - anchos (en puntos: el número de Excel cambia si la fuente Normal del libro es otra), altos y, celda a celda,
+       fuente, relleno, borde, alineación y **formato de número** (el del autor puede ser de un EXCEL antiguo,
+       «0.0_m_m»; los internos de Excel, < 164, se copian por número: «@» es el 49);
+     - después **no** se rehace «cifras a la derecha»: pisaba los retoques a mano (columna D a la izquierda);
+     - **saltos de línea del autor** en la primera columna: fuera si sin ellos ocupa menos líneas con el ancho del
+       modelo (`juntar_saltos_primera`, como el paso 1; el detalle dice «C21 sin el salto de línea del autor»);
+     - **líneas de cada texto** contadas como las dibuja Excel (`ESCALA_LINEAS_EXCEL` 1,0 y `RELLENO_LINEAS_PT` 1,5,
+       sin el colchón de los anchos; `lineas_limpias` quita el espacio y el «\r» de los saltos). Si el texto ocupa
+       otras líneas que en el modelo, la fila toma el alto que tiene en el modelo una fila de esas líneas, salvo que
+       ese alto sea un retoque exagerado (más de 1,5 veces n líneas de 1 línea: la fila 25 del MODIFICADO a 64 pt),
+       y entonces crece en proporción.
    - **Aviso de modelo** (petición del usuario, 2026-11-24): al empezar (y al terminar «Líneas y fondos») el motor
      busca si el cuadro tiene modelo (`estado["modelo"]`). La app resalta en naranja «Igualar al modelo · hay
      modelo», avisa al acabar «Líneas y fondos» y, al «Guardar como EXCEL» sin igualar, pregunta antes.
