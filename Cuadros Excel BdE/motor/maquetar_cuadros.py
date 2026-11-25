@@ -6606,6 +6606,16 @@ def traduccion(trabajo, pid=None, ruta_modelo=None):
         raise Fallo("No encuentro el mismo cuadro en el otro idioma («C_…» ↔ «CIng_…»): elígelo con «Igualar traducción a otro EXCEL…»")
     pub = pub_de(pid)
     _, pasos = nombres(trabajo)
+    with zipfile.ZipFile(modelo) as zm:
+        hoja_m = hoja_cuadro(zm)[0]
+        _, _, cuadro_m = celdas(zm, hoja_m, idioma(modelo.name), [], pub)
+        est_m = Estilos(zm.read("xl/styles.xml").decode("utf-8"))
+        tema_m = colores_tema(zm)
+        xm = zm.read(hoja_de(zm, hoja_m)).decode("utf-8")
+        ancho_m, mdw_m = anchos_columnas(xm), digito_maximo(est_m.xml)
+        altos_m, defecto_m = altos_filas(zm, hoja_m)
+        celdas_m = celdas_hoja(xm, leer_compartidos(zm)[1])
+    medir_l = medidor("Roboto-Light.ttf")
     # 1. Reglas de texto del idioma en las celdas (sin tocar las que llevan formato dentro del texto)
     base = pasos / estado["pasos"][estado["actual"]]["archivo"]
     with zipfile.ZipFile(base) as z:
@@ -6617,11 +6627,24 @@ def traduccion(trabajo, pid=None, ruta_modelo=None):
         _, _, cuadro_t = celdas(z, hoja, lengua, [], pub)
     todas = celdas_hoja(hoja_xml, compartidos)
     sis = re.findall(r'<si>.*?</si>|<si/>', sst, re.S)
-    cambiadas = []
+    cambiadas, juntadas = [], []
     for (c, f), v in sorted(todas.items(), key=lambda t: (t[0][1], t[0][0])):
         if f > cuadro_t["f2"] or c > cuadro_t["c2"] or v.get("numero") or not v.get("texto", "").strip() or indice_rico(v, compartidos) is not None:
             continue
         nuevo = reglas_texto(v["texto"], lengua, pub)
+        if (pub.get("juntar_saltos_primera") and medir_l and c == cuadro_t["primera"] and f > cuadro_t["fin_cabecera"]
+                and re.search(r"[\r\n]", nuevo.strip())):
+            # Saltos de línea del autor en la primera columna: fuera si sin ellos ocupa menos líneas, con el ancho del
+            # modelo, como en el paso 1 (Arg_03 inglés con la columna C del MODIFICADO: «…Foreign direct⏎investment.
+            # Assets (2024)» cabe en una línea y su fila iba a 28 pt en vez de 14; el usuario, 2026-11-25)
+            sz_ = re.search(r'<sz val="([\d.]+)"', est_m.fuente_de(celdas_m.get((c, f), {}).get("s", 0)))
+            pt_ = float(sz_.group(1)) if sz_ else CUERPO_CELDA
+            m_ = lambda t_, _p, _pt=pt_: medir_l(t_, _pt) * ESCALA_LINEAS_EXCEL
+            util = round(ancho_m(c) * mdw_m) - 2 * RELLENO_LINEAS_PT
+            junto = re.sub(r"\s*[\r\n]+\s*", " ", nuevo.strip())
+            if util > 0 and len(partir(junto, util, m_)) < len(partir(lineas_limpias(nuevo), util, m_)):
+                nuevo = re.match(r"[ \u00a0]*", nuevo).group(0) + junto
+                juntadas.append(ref(c, f))
         if nuevo == v["texto"] or not sst:
             continue
         r_ = ref(c, f)
@@ -6632,7 +6655,10 @@ def traduccion(trabajo, pid=None, ruta_modelo=None):
         sis.append(f'<si><t xml:space="preserve">{html.escape(nuevo, quote=False)}</t></si>')
         hoja_xml = (hoja_xml[:celda.start()] + f'<c r="{r_}"{" s=" + chr(34) + s_.group(1) + chr(34) if s_ else ""} t="s"><v>{len(sis) - 1}</v></c>'
                     + hoja_xml[celda.end():])
-        cambiadas.append(f"{r_} «{v['texto'].strip()[:25]}» → «{nuevo.strip()[:25]}»".replace("\n", " / ").replace("\r", ""))
+        if r_ in juntadas and reglas_texto(v["texto"], lengua, pub) == v["texto"]:
+            cambiadas.append(f"{r_} sin el salto de línea del autor (sin él ocupa menos líneas)")
+        else:
+            cambiadas.append(f"{r_} «{v['texto'].strip()[:25]}» → «{nuevo.strip()[:25]}»".replace("\n", " / ").replace("\r", ""))
     if cambiadas:
         sst = re.sub(r'(<sst\b[^>]*>).*(</sst>)', lambda q: q.group(1) + "".join(sis) + q.group(2), sst, count=1, flags=re.S)
         sst = re.sub(r'\buniqueCount="\d+"', f'uniqueCount="{len(sis)}"', sst, count=1)
@@ -6642,15 +6668,6 @@ def traduccion(trabajo, pid=None, ruta_modelo=None):
         estado = leer_estado(trabajo)
     # 2. Celda a celda, el aspecto del modelo
     base = pasos / estado["pasos"][estado["actual"]]["archivo"]
-    with zipfile.ZipFile(modelo) as zm:
-        hoja_m = hoja_cuadro(zm)[0]
-        _, _, cuadro_m = celdas(zm, hoja_m, idioma(modelo.name), [], pub)
-        est_m = Estilos(zm.read("xl/styles.xml").decode("utf-8"))
-        tema_m = colores_tema(zm)
-        xm = zm.read(hoja_de(zm, hoja_m)).decode("utf-8")
-        ancho_m, mdw_m = anchos_columnas(xm), digito_maximo(est_m.xml)
-        altos_m, defecto_m = altos_filas(zm, hoja_m)
-        celdas_m = celdas_hoja(xm, leer_compartidos(zm)[1])
     with zipfile.ZipFile(base) as z:
         hoja_xml = z.read(ruta_hoja).decode("utf-8")
         est = Estilos(z.read("xl/styles.xml").decode("utf-8"))
