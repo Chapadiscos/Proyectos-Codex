@@ -551,6 +551,76 @@ RE_PANEL = re.compile(r'\s*\d+(?:\.\d+)*\.?\s*[a-zA-Z]\b')   # «1 a», «1.a»,
 RE_NUMERO_PANEL = re.compile(r'\s*(\d+(?:\.\d+)*)\.?\s*([a-zA-Z])(?![^\W\d_])[.)]?([ \t\u00a0]*)(?=\S)')
 HUECO_PANEL = "  "
 
+# Número del gráfico (todas las publicaciones, decisión del usuario 2026-11-25): el del nombre del archivo, que es
+# el del .ai («G_IA2025_1.1» → «Gráfico 1.1», aunque el autor ponga su «Gráfico 2.1»), y los títulos de panel con
+# ese número («2.1.a» → «1.1.a»). Solo si el nombre lleva un número con punto; los recuadros («Rec_…») aún no.
+RE_NUMERO_ARCHIVO = re.compile(r'^[A-Za-z]+_[^_ ]+_(\d+(?:\.\d+)+)(?=$|[ _])')
+RE_NUMERO_GRAFICO = re.compile(r'(Gráfico|Grafico|Chart|Figure)(\s+)(\S+)', re.I)
+
+
+def numero_de_archivo(nombre):
+    """El número del gráfico según el nombre del archivo («G_IA2025_1.16 …» → «1.16»), o None."""
+    nombre = Path(nombre).stem
+    if nombre.lower().startswith("rec"):
+        return None
+    m = RE_NUMERO_ARCHIVO.match(nombre)
+    return m.group(1) if m else None
+
+
+def cambiar_letras(ancla, cambiar):
+    """Aplica cambiar(texto) -> (inicio, fin, nuevo) o None al primer párrafo con texto del cuadro, sin mover
+    el formato: lo nuevo va en la carrera de la primera letra cambiada. Devuelve el ancla."""
+    cuerpo = re.search(r'<xdr:txBody>.*?</xdr:txBody>', ancla, re.S)
+    if not cuerpo:
+        return ancla
+    for parrafo in re.findall(r'<a:p>.*?</a:p>', cuerpo.group(0), re.S):
+        trozos = list(re.finditer(r'<a:t>([^<]*)</a:t>', parrafo))
+        textos_t = [html.unescape(t.group(1)) for t in trozos]
+        if not "".join(textos_t).strip():
+            continue
+        letras = [(c, k) for k, t in enumerate(textos_t) for c in t]
+        hecho = cambiar("".join(c for c, _ in letras))
+        if not hecho:
+            return ancla
+        ini, fin, nuevo = hecho
+        k0 = letras[ini][1] if ini < len(letras) else letras[-1][1]
+        letras = letras[:ini] + [(c, k0) for c in nuevo] + letras[fin:]
+        nuevos = ["".join(c for c, k in letras if k == j) for j in range(len(textos_t))]
+        piezas, ultimo = [], 0
+        for t, texto_nuevo in zip(trozos, nuevos):
+            piezas.append(parrafo[ultimo:t.start()] + f'<a:t>{html.escape(texto_nuevo, quote=False)}</a:t>')
+            ultimo = t.end()
+        nuevo_cuerpo = cuerpo.group(0).replace(parrafo, "".join(piezas) + parrafo[ultimo:], 1)
+        return ancla.replace(cuerpo.group(0), nuevo_cuerpo, 1)
+    return ancla
+
+
+def numero_grafico_de(texto):
+    """El número de «Gráfico NN» tal como lo escribió el autor («Gráfico 2.1» → «2.1»)."""
+    m = RE_NUMERO_GRAFICO.search(texto)
+    return m.group(3).rstrip(".") if m else None
+
+
+def renumerar_grafico(ancla, nuevo):
+    """«Gráfico 2.1» → «Gráfico <nuevo>» (con el número del nombre del archivo)."""
+    def cambiar(texto):
+        m = RE_NUMERO_GRAFICO.search(texto)
+        if not m or m.group(3) == nuevo:
+            return None
+        return m.start(3), m.end(3), nuevo
+    return cambiar_letras(ancla, cambiar)
+
+
+def renumerar_panel(ancla, viejo, nuevo):
+    """«2.1.a  …» → «1.1.a  …» si el panel lleva el número viejo del gráfico o el de otro gráfico («4.3.c» en el
+    3.3: errata del Excel); los paneles de la hoja del gráfico llevan siempre su número."""
+    def cambiar(texto):
+        m = RE_NUMERO_PANEL.match(texto)
+        if not m or m.group(1) == nuevo or (m.group(1) != viejo and "." not in m.group(1)):
+            return None
+        return m.start(1), m.end(1), nuevo
+    return cambiar_letras(ancla, cambiar)
+
 
 def dos_espacios_panel(ancla, idioma="es"):
     """Número del panel como «N.x», 2 espacios hasta el título y los espacios dobles del título en uno, aunque
@@ -710,6 +780,11 @@ def textos(z, estado):
         detalle.append(f"«{separado}» iba en el mismo cuadro que el título: separado en su propio cuadro")
     tipos = clasificar_textos(partes, caja, alto_pastilla, ancho_ret)
     relaciones_dibujo = rels(z, ruta)
+    numero_nuevo = numero_de_archivo(estado.get("origen", ""))
+    numero_viejo = next((numero_grafico_de(html.unescape(texto_forma(partes[k])))
+                         for k, (t, _) in tipos.items() if t == "grafico"), None)
+    if numero_nuevo and numero_viejo == numero_nuevo:
+        numero_nuevo = None
 
     def es_tarta_parte(k):
         """¿Es una tarta el gráfico de la parte k del dibujo?"""
@@ -727,6 +802,9 @@ def textos(z, estado):
             hechos.add("grafico")
             a = con_marco(a, marco_grafico, filas)
             detalle.append(f"Gráfico NN «{corto}»: Roboto Regular 7 pt, marco y posición de la plantilla")
+            if numero_nuevo:
+                a = renumerar_grafico(a, numero_nuevo)
+                detalle.append(f"  número del nombre del archivo: «{numero_viejo}» → «{numero_nuevo}»")
         elif tipo == "titulo":
             hechos.add("titulo")
             a = con_marco(a, marco_titulo, filas, final_regular=FINAL_TITULO)
@@ -752,6 +830,13 @@ def textos(z, estado):
         else:
             a = fijar_letra(a, 800, ROBOTO)
             a, cambios_panel = dos_espacios_panel(a, estado["idioma"])
+            numero = numero_nuevo or numero_viejo
+            if numero and re.fullmatch(r'\d+(?:\.\d+)*', numero):
+                renumerado = renumerar_panel(a, numero_viejo, numero)
+                if renumerado != a:
+                    antes_num = RE_NUMERO_PANEL.match(html.unescape(texto_forma(a))).group(1)
+                    a = renumerado
+                    cambios_panel.append(f"número del gráfico «{antes_num}» → «{numero}»")
             detalle.append(f"Título de panel «{corto}»: Roboto Regular 8 pt" + "".join(f"; {c}" for c in cambios_panel))
         partes[k] = a
     # Todos los textos, en negro (norma general); lo de fuera de la retícula no se toca
@@ -5100,7 +5185,9 @@ def etiquetas_categorias(xml):
         return []
     niveles = [dict((int(i), v) for i, v in re.findall(r'<c:pt idx="(\d+)">\s*<c:v>([^<]*)</c:v>', n))
                for n in (re.findall(r'<c:lvl>(.*?)</c:lvl>', cat.group(0), re.S) or [cat.group(0)])]
-    n = int(re.search(r'<c:ptCount val="(\d+)"', cat.group(0)).group(1))
+    cuenta = re.search(r'<c:ptCount val="(\d+)"', cat.group(0))
+    # Sin caché de categorías (rango vacío o borrado, Rec_IA2025_2.2_G1) no hay etiquetas que medir
+    n = int(cuenta.group(1)) if cuenta else max((max(nv, default=-1) for nv in niveles), default=-1) + 1
     etiquetas = [niveles[0].get(i, "") for i in range(n)]
     if len(niveles) > 1 and '<c:noMultiLvlLbl val="1"/>' in xml:
         for nivel in niveles[1:]:

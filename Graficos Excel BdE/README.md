@@ -120,6 +120,11 @@ Las versiones hechas cuando retícula y textos eran dos pasos («Retícula y pas
      de un gráfico), escribe el texto nuevo también en su celda (`escribir_vinculos`); solo los que ha cambiado
      ella. Si la celda es una fórmula, solo se cambia su valor guardado y hay aviso.
    - Si «Gráfico NN» y el título van en el mismo cuadro (dos párrafos), se parte en dos cuadros.
+   - Número del gráfico (todas las publicaciones): el del **nombre del archivo**, que es el del .ai
+     (`G_IA2025_1.1` → «Gráfico 1.1» / «Chart 1.1», aunque el autor escriba su «Gráfico 2.1»), y los títulos de
+     panel de la hoja del gráfico con ese número («2.1.a» → «1.1.a»; también los que traen el número de otro
+     gráfico por errata, «4.3.c» en el 3.3). Solo si el nombre lleva un número con punto (`G_DO26XX_01` no
+     cambia); los recuadros (`Rec_…`) todavía no. Si el panel va vinculado a una celda, se cambia también en ella.
    - La pastilla del autor se reconoce aunque esté hasta 1 mm desplazada del origen (en el 2.6, 0,3 mm).
    - Leyendas en minúscula salvo siglas (y la primera letra, la de después de un punto, los nombres propios y
      los números romanos), solo si el autor las escribió enteras en mayúsculas («FRENTE AL EURO» → «Frente al

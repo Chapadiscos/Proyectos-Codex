@@ -19,6 +19,9 @@
   ],
   "publicaciones": [
     {"id": "documentos-ocasionales-y-de-trabajo", "nombre": "Documentos Ocasionales y de Trabajo", "color": "FFE0C9", "tema": "BdE_2026"},
-    {"id": "informe-anual", "nombre": "Informe Anual", "color": "B3D9FF", "tema": "BdE_2026"}
+    {"id": "informe-anual", "nombre": "Informe Anual", "color": "B3D9FF", "tema": "BdE_2026"},
+    {"id": "memoria-supervision", "nombre": "Memoria Supervisión", "color": "B3D9FF", "tema": "BdE_2026"},
+    {"id": "economia-latinoamericana", "nombre": "LATAM/Economía Latinoamericana", "color": "F3CED3", "tema": "BdE_2026"},
+    {"id": "indicadores-macrofinancieros", "nombre": "LATAM/Indicadores Macrofinancieros", "color": "F3CED3", "tema": "BdE_2026"}
   ]
 }
