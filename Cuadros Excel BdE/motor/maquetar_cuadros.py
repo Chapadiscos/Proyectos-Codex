@@ -1589,7 +1589,7 @@ def textos(z, hoja, estado, propuestas=None, pub=None):
             # El país del título, el del archivo (LATAM/Indicadores: el original de México traía «Colombia: …» y el de
             # República Dominicana «La República Dominicana: …»; los PDF, bien)
             codigo = re.search(r'_([A-Za-z]+)_\d+\b', Path(estado.get("origen", "")).name)
-            pais = pub.get("paises", {}).get(codigo.group(1)) if codigo else None
+            pais = pub.get("paises", {}).get(codigo.group(1)) if codigo and estado.get("idioma", "es") == "es" else None
             if pais:
                 todo = html.unescape(texto_forma(a))
                 antes = re.match(r'\s*([^:\n]+?)\s*:', todo)
@@ -5834,6 +5834,17 @@ def buscar_modelo(trabajo, estado):
     «Modelos» (junto a ella o en el proyecto). (ruta, parecido) o (None, 0)."""
     origen = Path(estado["origen"])
     base = re.sub(r"\s+(ORIGINALES|ORIGINAL)\b.*$", "", origen.stem)
+    # Un cuadro en inglés («CIng_…_Br_01»): su modelo es el EXCEL español del mismo cuadro («C_…_Br_01 … EXCEL»),
+    # con el que comparte rejilla y cifras (petición del usuario, 2026-11-25: los dos PDF, iguales salvo los textos)
+    if estado.get("idioma") == "en":
+        clave = re.sub(r"^([A-Z])_?Ing_", r"\1_", re.sub(r"\s+(LATAM|EXCEL)\b.*$", "", base))
+        for carpeta in [origen.parent, origen.parent / "Modelos", PROYECTO / "Cuadros ORIGINALES", PROYECTO / "Modelos"]:
+            if carpeta.is_dir():
+                pareja = sorted((f for f in carpeta.glob(clave + "*.xlsx") if " EXCEL" in f.stem and not f.name.startswith("~$")
+                                 and idioma(f.name) == "es" and re.match(re.escape(clave) + r"(\s|$)", f.stem)),
+                                key=lambda f: f.stat().st_mtime)
+                if pareja:
+                    return pareja[-1], 1.0
     carpetas = [origen.parent, origen.parent / "Modelos", PROYECTO / "Modelos"]
     candidatos = []
     for carpeta in carpetas:
@@ -5990,6 +6001,16 @@ def igualar_modelo(trabajo, pid=None):
         altos_v = altos_filas(z, hoja)
         caja = medidas_hoja(z, hoja, dibujo) if dibujo else None
         tema_t = colores_tema(z)
+    # Mismo cuadro en el otro idioma (inglés traducido del español terminado, o al revés): la misma rejilla y las
+    # mismas cifras en las mismas celdas → se copia todo celda a celda y el aspecto es idéntico
+    f_ini_t = min(cuadro_t.get("bloque_arriba") or [cuadro_t["f1"]])
+    zona = [(c, f) for f in range(f_ini_t, cuadro_t["f2"] + 1) for c in range(cuadro_t["c1"], cuadro_t["c2"] + 1)]
+    num_t = {k: todas_t[k]["texto"] for k in zona if todas_t.get(k, {}).get("numero")}
+    iguales = sum(1 for k, v in num_t.items() if celdas_m.get(k, {}).get("numero") and abs(float(v) - float(celdas_m[k]["texto"])) < 1e-9)
+    if len(num_t) >= 10 and iguales >= 0.9 * len(num_t):
+        return igualar_celda_a_celda(trabajo, estado, base, hoja, ruta_hoja, hoja_xml, est, mdw, todas_t, ancho_t, dibujo,
+                                     altos_v, caja, cuadro_t, modelo, ancho_m, mdw_m, altos_m, defecto_m, celdas_m, est_m,
+                                     tema_m, cuadro_m, iguales, len(num_t))
     # Columnas por su papel
     cols = {et["primera"]: em["primera"]}
     for papel in ("datos", "solo_bloque"):
@@ -6169,6 +6190,101 @@ def igualar_modelo(trabajo, pid=None):
                        + marca([ref(et["primera"], f) for f in sorted(otra_vecina)]))
     for a_ in avisos:
         detalle.append("Aviso: " + a_)
+    return nuevo_paso(trabajo, IGUAL_AL_MODELO, cambios, detalle, cuadro_t)
+
+
+def igualar_celda_a_celda(trabajo, estado, base, hoja, ruta_hoja, hoja_xml, est, mdw, todas_t, ancho_t, dibujo, altos_v,
+                          caja, cuadro_t, modelo, ancho_m, mdw_m, altos_m, defecto_m, celdas_m, est_m, tema_m, cuadro_m,
+                          iguales, n_cifras):
+    """El mismo cuadro en el otro idioma (CIng_ frente a su EXCEL español): anchos, altos (también las filas y
+    columnas ocultas) y el formato de cada celda, copiados en su misma celda; los textos son los de este cuadro.
+    Avisa de las cifras distintas, de los textos que están en un idioma y no en el otro y de los que piden más
+    líneas que en el modelo (petición del usuario, 2026-11-25)."""
+    detalle = [f"Modelo: «{modelo.name}», el mismo cuadro en el otro idioma ({iguales} de {n_cifras} cifras iguales en "
+               "las mismas celdas): se copia todo celda a celda"]
+    c_fin = max(cuadro_t["c2"], cuadro_m["c2"])
+    f_fin = max(cuadro_t["f2"], cuadro_m["f2"])
+    # Anchos: los de todas las columnas hasta el final del cuadro (las ocultas, ocultas)
+    nuevos_anchos = {}
+    for c in range(1, c_fin + 1):
+        pt = round(ancho_m(c) * mdw_m)
+        nuevos_anchos[c] = ancho_comun(pt, mdw, digito_windows(est.xml)) if pt > 0 else 0
+    hoja_xml = poner_anchos(hoja_xml, nuevos_anchos)
+    # Altos: los de todas las filas hasta el final del cuadro (las ocultas, ocultas)…
+    altos = {f: round(altos_m.get(f - 1, defecto_m) / EMU_PT, 2) for f in range(1, f_fin + 1)}
+    # …salvo las que aquí piden más líneas (un concepto en inglés más largo): con su alto de la app, y aviso
+    medir_l = medidor("Roboto-Light.ttf")
+    mas_lineas = []
+    if medir_l:
+        for (c, f), v in todas_t.items():
+            if not (cuadro_t["f1"] <= f <= f_fin and c <= c_fin) or v.get("numero") or not v.get("texto", "").strip():
+                continue
+            if altos[f] == 0 or f <= cuadro_t["fin_cabecera"]:
+                continue
+            ancho_c = round(ancho_m(c) * mdw_m) - 2 * RELLENO_CELDA_PT
+            sz_ = re.search(r'<sz val="([\d.]+)"', est_m.fuente_de(celdas_m.get((c, f), {}).get("s", 0)))
+            pt_ = float(sz_.group(1)) if sz_ else CUERPO_CELDA
+            m_ = lambda t, _p, _pt=pt_: medir_l(t, _pt) * ESCALA_TEXTO_EXCEL
+            n_t = len(partir(v["texto"].strip(), ancho_c, m_))
+            t_m = celdas_m.get((c, f), {}).get("texto", "").strip()
+            n_m = len(partir(t_m, ancho_c, m_)) if t_m else 1
+            if n_t > n_m:
+                alto_app = altos_v[0].get(f - 1, altos_v[1]) / EMU_PT
+                altos[f] = round(max(altos[f] * n_t / max(1, n_m), alto_app), 2)
+                mas_lineas.append(ref(c, f))
+    def poner_alto(m):
+        fila = m.group(0)
+        f = int(re.search(r'\br="(\d+)"', fila).group(1))
+        if f not in altos:
+            return fila
+        fila = re.sub(r'\s(ht|customHeight|hidden)="[^"]*"', "", fila)
+        oculta = ' hidden="1"' if altos[f] == 0 else ""
+        return fila[:-1].rstrip("/") + f'{oculta} ht="{altos[f]:g}" customHeight="1"' + ("/>" if fila.endswith("/>") else ">")
+    hoja_xml = asegurar_filas(hoja_xml, list(range(1, f_fin + 1)))
+    hoja_xml = re.sub(r'<row\b[^>]*?/?>', poner_alto, hoja_xml)
+    # Formato de cada celda, el de su misma celda en el modelo
+    formatos = {}
+    for f in range(1, f_fin + 1):
+        for c in range(1, c_fin + 1):
+            if (c, f) in todas_t or (c, f) in celdas_m:
+                formatos[(c, f)] = con_formato_de(est, todas_t.get((c, f), {}).get("s", 0),
+                                                  formato_de(est_m, tema_m, celdas_m.get((c, f), {}).get("s", 0)))
+    hoja_xml = con_estilo(hoja_xml, formatos)
+    cambios = {ruta_hoja: hoja_xml.encode("utf-8"), "xl/styles.xml": est.resultado().encode("utf-8")}
+    if dibujo and caja:
+        f_ini = min(cuadro_t.get("bloque_arriba") or [cuadro_t["f1"]])
+        dibujo_nuevo, _, _ = colocar_cuadro(dibujo, caja, altos_v, altos, f_ini, cuadro_t["f2"])
+        if dibujo_nuevo != dibujo:
+            cambios[dibujo_de_hoja_ruta(z_ruta=base, hoja=hoja)] = dibujo_nuevo.encode("utf-8")
+    detalle.append(f"Copiados del modelo: anchos de {len(nuevos_anchos)} columnas, altos de {len(altos)} filas y formato de "
+                   f"{len(formatos)} celdas; los textos son los de este cuadro")
+    # Avisos: cifras distintas y textos que están en un idioma y no en el otro
+    zona = [(c, f) for f in range(1, f_fin + 1) for c in range(1, c_fin + 1) if altos.get(f, 1) > 0 and round(ancho_m(c) * mdw_m) > 0]
+    distintas, solo_uno, sin_traducir = [], [], []
+    for k in zona:
+        a_, b_ = todas_t.get(k, {}), celdas_m.get(k, {})
+        # (un texto igual que en el modelo: ¿sin traducir? Arg_03 inglés del autor, «mm de dólares», «España»…)
+        if not a_.get("numero") and a_.get("texto", "").strip() and a_.get("texto", "").strip() == b_.get("texto", "").strip() \
+                and re.search(r"[A-Za-zÁÉÍÓÚáéíóúÑñ]{3,}", a_["texto"]):
+            sin_traducir.append(ref(*k))
+        if a_.get("numero") or b_.get("numero"):
+            if not (a_.get("numero") and b_.get("numero") and abs(float(a_["texto"]) - float(b_["texto"])) < 1e-9):
+                distintas.append(ref(*k))
+        elif bool(a_.get("texto", "").strip()) != bool(b_.get("texto", "").strip()):
+            solo_uno.append(ref(*k))
+    if distintas:
+        detalle.append(f"Aviso: cifras distintas del modelo ({len(distintas)}): " + ", ".join(distintas[:10])
+                       + ("…" if len(distintas) > 10 else "") + marca(distintas))
+    if solo_uno:
+        detalle.append(f"Aviso: celdas con texto en un idioma y vacías en el otro ({len(solo_uno)}): " + ", ".join(solo_uno[:10])
+                       + ("…" if len(solo_uno) > 10 else "") + marca(solo_uno))
+    if sin_traducir:
+        detalle.append(f"Aviso: textos iguales que en el modelo, ¿sin traducir? ({len(sin_traducir)}): "
+                       + ", ".join(f"{r} «{todas_t[(col_num(RE_REF.match(r).group(1)), int(RE_REF.match(r).group(2)))]['texto'].strip()[:20]}»"
+                                   for r in sin_traducir[:8]) + ("…" if len(sin_traducir) > 8 else "") + marca(sin_traducir))
+    if mas_lineas:
+        detalle.append("Aviso: textos que piden más líneas que en el modelo (su fila, más alta): " + ", ".join(mas_lineas[:10])
+                       + marca(mas_lineas))
     return nuevo_paso(trabajo, IGUAL_AL_MODELO, cambios, detalle, cuadro_t)
 
 

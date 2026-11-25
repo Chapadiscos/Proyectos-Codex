@@ -375,6 +375,12 @@ tablas hechas en celdas, con la pastilla, «Cuadro N», el título, las unidades
    - **CARD_02 (2026-11-24)**: como los 03 (modelo Arg_03); «_» sin dato → «—»; Igualar al modelo, en una fila con
      otra vecina debajo cuya pareja sí está en el modelo, toma la línea de la fila del modelo de justo encima de esa
      pareja (sin «Activos de los bancos…», la oscura de fin de grupo pasa a «Exposición crediticia…», como el PDF).
+   - **Versión en inglés** (petición del usuario, 2026-11-25): el autor traduce nuestro EXCEL español terminado y lo
+     devuelve («CIng_…»). La app lo maqueta en inglés (pasos 1-4) y «Igualar al modelo» busca primero el EXCEL español
+     del mismo cuadro («C_… EXCEL»). Si comparten rejilla (≥90 % de las cifras iguales en las mismas celdas), copia
+     celda a celda anchos, altos (también ocultas) y formatos: el aspecto es el del español y los textos, los ingleses.
+     Avisa de cifras distintas, de celdas con texto en un idioma y vacías en el otro, de textos iguales que en el
+     español (¿sin traducir?) y de los que piden más líneas (su fila, más alta). Probado con Arg_03 (79/79 cifras).
    - **Aviso de modelo** (petición del usuario, 2026-11-24): al empezar (y al terminar «Líneas y fondos») el motor
      busca si el cuadro tiene modelo (`estado["modelo"]`). La app resalta en naranja «Igualar al modelo · hay
      modelo», avisa al acabar «Líneas y fondos» y, al «Guardar como EXCEL» sin igualar, pregunta antes.
