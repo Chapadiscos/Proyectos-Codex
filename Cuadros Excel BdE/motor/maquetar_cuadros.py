@@ -1899,6 +1899,7 @@ class Estilos:
         al = dict(re.findall(r'(\w+)="([^"]*)"', re.search(r'<alignment\b[^>]*/>', dentro).group(0))) if re.search(r'<alignment\b[^>]*/>', dentro) else {}
         al["horizontal"] = "right"
         al.pop("indent", None)
+        al.pop("wrapText", None)   # (con «Ajustar texto» Excel no respeta el margen del final: Hon_01, fila 36)
         dentro = re.sub(r'<alignment\b[^>]*/>', "", dentro)
         dentro = "<alignment" + "".join(f' {k}="{v}"' for k, v in al.items()) + "/>" + dentro
         nuevo = f"<xf{atributos}>{dentro}</xf>"
