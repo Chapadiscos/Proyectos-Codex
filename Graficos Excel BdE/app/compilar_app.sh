@@ -17,3 +17,9 @@ cp "$dir/icono.icns" "$app/Contents/Resources/"
 codesign --force --deep -s - -r='designated => identifier "es.estudioencuadre.graficos-excel"' "$app" 2>/dev/null
 touch "$app"                                       # para que el Finder refresque el icono
 echo "Creada: $app"
+# Si está instalada en Aplicaciones, se actualiza también allí (busca el motor con
+# «defaults write es.estudioencuadre.graficos-excel motor <ruta>», porque allí no lo tiene al lado)
+instalada="/Applications/${app:t}"
+if [[ -d "$instalada" ]]; then
+    rm -rf "$instalada" && ditto "$app" "$instalada" && touch "$instalada" && echo "Actualizada: $instalada"
+fi

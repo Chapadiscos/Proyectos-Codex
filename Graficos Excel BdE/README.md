@@ -466,6 +466,9 @@ La hoja de «Nueva publicación» / «Editar publicación» enseña:
 - `motor/maquetar_excel.py`: el motor (Python 3 del sistema, sin dependencias). Toca el .xlsx por dentro y
   deja igual todo lo que el paso no cambia. Se puede usar suelto:
   `maquetar_excel.py empezar|estado|ir|reiniciar|paso1|paso2|paso3|paso4|info|publicaciones|guardar_publicacion|borrar_publicacion|paletas`.
-- `app/compilar_app.sh` → `Gráficos Excel BdE.app` en esta carpeta (no va a git).
+- `app/compilar_app.sh` → `Gráficos Excel BdE.app` en esta carpeta (no va a git) y, si está instalada en
+  Aplicaciones, también la de `/Applications` (2026-11-25). Allí no tiene el motor al lado: lo busca con
+  `defaults write es.estudioencuadre.graficos-excel motor "/Volumes/DATOS/Proyectos Codex/Graficos Excel BdE/motor"`
+  (ya puesto). El motor se usa siempre desde esta carpeta: sus cambios no piden recompilar.
 - `app/crear_icono.swift` dibuja el icono (degradado verde-azul de «Maquetar» y «Versiones» con unas barras);
   `compilar_app.sh` lo convierte en `app/icono.icns` si no existe (para rehacerlo, se borra el .icns).

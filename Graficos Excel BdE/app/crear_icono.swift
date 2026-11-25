@@ -1,10 +1,10 @@
-// Dibuja el icono de la app (degradado con los colores de «Maquetar» y «Versiones» y un gráfico de barras)
+// Dibuja el icono de la app (fondo verde de Excel, #107C41, y un gráfico de barras blanco)
 // en la carpeta .iconset que se le pasa; compilar_app.sh lo convierte en icono.icns con iconutil.
 import AppKit
 
 let destino = CommandLine.arguments[1]
-let colores = [NSColor(red: 0.13, green: 0.55, blue: 0.36, alpha: 1),
-               NSColor(red: 0.16, green: 0.47, blue: 0.96, alpha: 1)]
+// El verde de Excel (#107C41)
+let verdeExcel = NSColor(red: 16 / 255, green: 124 / 255, blue: 65 / 255, alpha: 1)
 
 func dibujar(_ lado: Int) -> Data {
     let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: lado, pixelsHigh: lado, bitsPerSample: 8,
@@ -16,7 +16,8 @@ func dibujar(_ lado: Int) -> Data {
     // El margen y el redondeo de los iconos de macOS
     let forma = NSBezierPath(roundedRect: NSRect(x: s * 0.1, y: s * 0.1, width: s * 0.8, height: s * 0.8),
                              xRadius: s * 0.18, yRadius: s * 0.18)
-    NSGradient(colors: colores)!.draw(in: forma, angle: -45)
+    verdeExcel.setFill()
+    forma.fill()
     let conf = NSImage.SymbolConfiguration(pointSize: s * 0.36, weight: .semibold)
     if let simbolo = NSImage(systemSymbolName: "chart.bar.xaxis", accessibilityDescription: nil)?.withSymbolConfiguration(conf) {
         let blanco = NSImage(size: simbolo.size, flipped: false) { r in
