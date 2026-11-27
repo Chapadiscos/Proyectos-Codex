@@ -405,6 +405,16 @@ Las versiones hechas cuando retícula y textos eran dos pasos («Retícula y pas
      8,5 mm entre paneles; FUENTES 5 mm bajo el último, a lo ancho de las dos columnas.
    - Unidades (cuadro de texto dentro del gráfico, en su 20 % de arriba): en la línea del eje vertical, con su
      línea de base 2 mm por encima del borde de arriba del trazado. El marco del gráfico empieza en ellas.
+     Solo una: entre los textos del 20 % de arriba y el cuarto de la izquierda, el de más arriba (a la misma
+     altura, el de más a la izquierda); «Gráfico N…» de los recuadros no cuenta. Los demás son textos interiores
+     (LATAM 10 y 14: «Septiembre 2 %», junto a su línea vertical, acababa encima de «Densidad»; 2026-11-27). Van
+     en una línea (`wrap="none"`: con los márgenes del autor «Densidad» se partía).
+   - Textos del autor debajo del trazado (su centro por debajo; título del eje horizontal, «Corto plazo»…):
+     debajo de las categorías, a 1 mm, centrados en el mismo punto del eje; el panel reserva su alto. Títulos de
+     los ejes del propio gráfico (`<c:title>` de un eje): el de abajo, igual; el de la izquierda, girado delante de
+     los números (su ancho + 8 pt de aire, en dos líneas si es más largo que el panel), centrado a lo alto del
+     trazado (`colocar_titulos_eje`). Los títulos girados en cuadros de texto, también en barras verticales y
+     líneas: a la izquierda, sin márgenes interiores y con el largo de su línea más larga (LATAM 5, 19 b, 27).
    - Título del gráfico de 2 o 3 líneas: su marco, la pastilla y todo lo de debajo crecen o bajan un interlineado
      del título por línea de más (el alto de línea de Roboto Medium 8,5 pt, 9,96 pt, por el interlineado del
      párrafo): la pastilla queda siempre a la misma distancia por debajo del texto. Se reescribe su anclaje (en

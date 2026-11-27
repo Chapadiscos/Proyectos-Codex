@@ -429,6 +429,7 @@ def paso1(trabajo, pid):
     estado = leer_estado(trabajo)
     _, pasos = nombres(trabajo)
     base = pasos / estado["pasos"][estado["actual"]]["archivo"]
+    SOLO_EN_GRAFICO.clear()
     # Si el autor lo ha agrupado todo, primero se desagrupa (cada elemento queda en su sitio)
     with zipfile.ZipFile(base) as z:
         ruta = dibujo_de_hoja(z, HOJA_GRAFICO)
@@ -884,7 +885,9 @@ def leyendas_en_minuscula(z, ruta_graf, xml, idioma, hojas):
         if nuevo == antes:
             return ser
         f = re.search(r"<c:f>(?:'([^']+)'|([^!<]+))!\$([A-Z]+)\$(\d+)</c:f>", tx.group(0))
-        if f:
+        if f and es_externa(f.group(1) or f.group(2)):
+            SOLO_EN_GRAFICO.append(f"«{nuevo}» ({f.group(1) or f.group(2)}!{f.group(3)}{f.group(4)})")
+        elif f:
             ruta_hoja = hoja_de(z, f.group(1) or f.group(2))
             hoja = hojas.get(ruta_hoja) or z.read(ruta_hoja).decode("utf-8")
             c = celda(hoja, f.group(3) + f.group(4))
@@ -1400,6 +1403,10 @@ def textos(z, estado):
         detalle.append("Textos vinculados a celdas, cambiados también en su celda (si no, Excel los repone): "
                        + ", ".join(vinculos[:6]))
     detalle += avisos_vinculos
+    if SOLO_EN_GRAFICO:
+        detalle.append("Aviso: textos que salen de otro libro (vínculo externo, que no se toca): cambiados solo en lo que "
+                       "guarda el gráfico; si alguien actualiza los vínculos, Excel repone los del otro libro: "
+                       + ", ".join(dict.fromkeys(SOLO_EN_GRAFICO)))
     for ruta_hoja, hoja in hojas_datos.items():
         cambios[ruta_hoja] = hoja.encode("utf-8")
     if estilos != estilos_antes:
@@ -1435,6 +1442,10 @@ def escribir_vinculos(z, pares, hojas):
             if not m:
                 avisos.append(f"Aviso: «{texto[:40]}» va vinculado a «{ref}», que no es una celda: Excel puede "
                               "reponer el texto anterior al abrir el libro")
+                continue
+            if es_externa(m.group(1) or m.group(2)):
+                avisos.append(f"Aviso: «{texto[:40]}» va vinculado a «{ref}», en otro libro (vínculo externo, no se "
+                              "toca): si alguien actualiza los vínculos, Excel repone el texto de allí")
                 continue
             try:
                 ruta_hoja = hoja_de(z, m.group(1) or m.group(2))
@@ -1784,6 +1795,16 @@ def posicion(ancla):
     return (int(m.group(1)), int(m.group(2))) if m else (0, 0)
 
 
+def es_externa(nombre):
+    """¿La hoja de una fórmula está en otro libro («[2]D2», vínculo externo)?"""
+    return bool(re.match(r"'?\[\d+\]", nombre or ""))
+
+
+# Textos cambiados solo en el gráfico porque su celda está en otro libro (vínculo externo, que no se toca nunca):
+# el paso 1 avisa al final (Indicadores Macrofinancieros, 2026-11-27)
+SOLO_EN_GRAFICO = []
+
+
 def hoja_de(z, nombre):
     wb = z.read("xl/workbook.xml").decode("utf-8")
     m = re.search(r'<sheet\b(?=[^>]*\bname="' + re.escape(nombre) + r'")(?=[^>]*\br:id="([^"]+)")[^>]*/>', wb)
@@ -1970,6 +1991,8 @@ CUERPO_UNIDADES = 7
 ALTO_UNIDADES = CUERPO_UNIDADES * 1.2 + 1   # cuadro de una línea (pt)
 BASE_UNIDADES = CUERPO_UNIDADES * 0.93      # de arriba del cuadro a la línea de base (ascendente de Roboto)
 SEPARACION_CATEGORIAS = 6.0   # del eje a las etiquetas de categorías (pt, medido en Excel)
+AIRE_TITULO_EJE = 8              # pt que ocupa de más un título de eje de Excel (su aire alrededor, medido a ojo: 27)
+TEXTO_BAJO_CATEGORIAS = 1 * MM  # de las categorías a un texto del autor de debajo (título del eje horizontal)
 MARGEN_CATEGORIAS = 4.0       # debajo de la última línea (pt)
 NIVEL_CATEGORIAS = 5.0        # además de su línea, cada nivel de más (pt, medido en Excel)
 MEDIA_ETIQUETA = 7 * 1.2 / 2  # el número de arriba del eje sobresale medio alto por encima del trazado (pt)
@@ -2418,7 +2441,10 @@ def trazado_rel(xml):
     return (f["x"], f["y"], f["w"], f["h"]) if len(f) == 4 else None
 
 
-def es_unidad_grafico(ancla, xml=None):
+RE_TITULO_EN_GRAFICO = re.compile(r'(?:Gr[áa]fico|Chart|Figure)\s*\d', re.I)
+
+
+def es_unidad_grafico(ancla, xml=None, formas=None):
     """Unidades dentro del gráfico: siempre texto horizontal y no un número suelto («(2)»). En barras
     verticales y líneas, cuadro en el 20 % de arriba y el cuarto de la izquierda (donde empieza el eje; lo de
     más a la derecha es una etiqueta, como «Elecciones EEUU» sobre una barra). En barras horizontales, las del
@@ -2433,13 +2459,31 @@ def es_unidad_grafico(ancla, xml=None):
         # quedaba arriba, cortado; la guía y el .ai las ponen debajo de los números del eje)
         arriba = y < 0.2 and x < 0.25 and not re.match(r'(?:Gr[áa]fico|Chart)\s+\d|\d+(?:\.\d+)*\.[a-z]\b', texto)
         return y >= (t[1] + t[3] - 0.02 if t else 0.75) or arriba
-    return y < 0.2 and x < 0.25
+    if not (y < 0.2 and x < 0.25):
+        return False
+    # «Gráfico 1. …» dentro del gráfico (recuadros del Informe Anual) es su título, no unidades
+    if RE_TITULO_EN_GRAFICO.match(texto):
+        return False
+    if formas:
+        # Solo una: la de más arriba (y, a la misma altura, la de más a la izquierda). En esa esquina también caen
+        # los textos de las líneas del autor («Septiembre 2 %», junto a una vertical: LATAM 10 y 14), que se
+        # quedaban encima de las unidades
+        candidatas = [a for a in re.findall(r'<cdr:relSizeAnchor\b.*?</cdr:relSizeAnchor>', formas, re.S)
+                      if texto_forma(a).strip() and not girado(a)
+                      and not (RE_NUMERO_SUELTO.fullmatch(html.unescape(texto_forma(a)).strip())
+                               and "%" not in texto_forma(a))
+                      and caja_rel(a)[1] < 0.2 and caja_rel(a)[0] < 0.25
+                      and not RE_TITULO_EN_GRAFICO.match(html.unescape(texto_forma(a)).strip())]
+        if candidatas:
+            primera = min(candidatas, key=lambda a: (round(caja_rel(a)[1], 2), caja_rel(a)[0]))
+            return texto_forma(primera) == texto_forma(ancla) and caja_rel(primera) == caja_rel(ancla)
+    return True
 
 
 def unidades_de(formas, xml=None):
     """Las anclas de las unidades en las formas del gráfico."""
     return [a for a in re.findall(r'<cdr:relSizeAnchor\b.*?</cdr:relSizeAnchor>', formas, re.S)
-            if texto_forma(a).strip() and es_unidad_grafico(a, xml)]
+            if texto_forma(a).strip() and es_unidad_grafico(a, xml, formas)]
 
 
 def colocar_unidades(formas, ancla, x, y, ancho, alto, medir):
@@ -2455,6 +2499,9 @@ def colocar_unidades(formas, ancla, x, y, ancho, alto, medir):
     nueva = re.sub(r'<a:bodyPr\b', '<a:bodyPr anchor="t" tIns="0" bIns="0"', nueva, count=1) \
         if 'tIns=' not in re.search(r'<a:bodyPr\b[^>]*>', nueva).group(0) else \
         re.sub(r'<a:bodyPr\b', '<a:bodyPr anchor="t"', nueva, count=1)
+    # En una línea, sin ajuste: con los márgenes del autor, «Densidad» se partía («Densida⏎d», LATAM 10)
+    nueva = re.sub(r'(<a:bodyPr\b[^>]*?)\s+wrap="\w+"', r'\1', nueva, count=1)
+    nueva = re.sub(r'<a:bodyPr\b', '<a:bodyPr wrap="none"', nueva, count=1)
     return formas.replace(ancla, nueva)
 
 
@@ -2577,10 +2624,36 @@ def media_ultima_cifra(xml, medir):
     return medir(texto, int(cuerpo.group(1)) / 100 if cuerpo else 7) / 2
 
 
+def colocar_titulos_eje(xml, titulos, dentro, alto_cat, ancho, alto, medir):
+    """Los títulos de los ejes del gráfico en su sitio: el de la izquierda, girado, pegado al borde y centrado a lo
+    alto del trazado; el de abajo, debajo de las categorías y centrado bajo el trazado (`dentro`, pt)."""
+    def poner(m):
+        eje = m.group(0)
+        pos = re.search(r'<c:axPos val="(\w)"/>', eje)
+        if not pos or pos.group(1) not in titulos:
+            return eje
+        largo = medir(titulos[pos.group(1)], 7) + 4
+        if pos.group(1) == "l":
+            x, y = 0, dentro[1] + dentro[3] / 2 - largo / 2
+        else:
+            x, y = dentro[0] + dentro[2] / 2 - largo / 2, dentro[1] + dentro[3] + alto_cat + TEXTO_BAJO_CATEGORIAS
+        lay = (f'<c:layout><c:manualLayout><c:xMode val="edge"/><c:yMode val="edge"/><c:x val="{max(0, x) / ancho:.6f}"/>'
+               f'<c:y val="{max(0, y) / alto:.6f}"/></c:manualLayout></c:layout>')
+
+        def titulo(t):
+            sin = re.sub(r'<c:layout>.*?</c:layout>|<c:layout/>', "", t.group(0), count=1, flags=re.S)
+            return re.sub(r'(</c:tx>)', lambda q: q.group(1) + lay, sin, count=1) if "</c:tx>" in sin \
+                else sin.replace("<c:title>", "<c:title>" + lay, 1)
+        return re.sub(r'<c:title>.*?</c:title>', titulo, eje, count=1, flags=re.S)
+    return re.sub(r'<c:(valAx|catAx|dateAx)>.*?</c:\1>', poner, xml, flags=re.S)
+
+
 def alto_titulo_girado(ancla, largo, medir):
     """Ancho que ocupa un título girado (sus líneas a 7 pt) si tiene `largo` pt para cada línea."""
     texto = html.unescape(texto_forma(ancla)).strip()
-    lineas = max(1, lineas_parrafos([texto], largo, CUERPO_UNIDADES, medir)) if medir else 1
+    # Cada párrafo (salto manual) en su línea al menos (19 b: «Aumento de la demanda.⏎Condiciones…»)
+    parrafos = [p for p in texto.split("\n") if p.strip()] or [texto]
+    lineas = max(len(parrafos), lineas_parrafos(parrafos, largo, CUERPO_UNIDADES, medir)) if medir else len(parrafos)
     return lineas * CUERPO_UNIDADES * INTERLINEA + 2
 
 
@@ -3147,8 +3220,29 @@ def paso2(trabajo, pid=None):
             unidades = unidades_de(formas, xml)
             # En barras horizontales las unidades son las del eje de valores, debajo: arriba no hay
             unidades_arriba = [] if horizontal else unidades
+            # Títulos girados del eje vertical (también en barras verticales y líneas: LATAM 5, 19 b y 27 se montaban
+            # sobre los números del eje)
             girados = [a for a in re.findall(r'<cdr:relSizeAnchor\b.*?</cdr:relSizeAnchor>', formas, re.S)
-                       if texto_forma(a).strip() and girado(a)] if horizontal else []
+                       if texto_forma(a).strip() and girado(a)] if not es_tarta(xml) else []
+            # Textos que el autor puso debajo del trazado (título del eje horizontal, «Corto plazo»…): van debajo de
+            # las categorías (LATAM 10 y 14: «Tasa de crecimiento esperada» se movía con el trazado y quedaba encima
+            # de las cifras)
+            t_autor = trazado_rel(xml)
+            bajo_trazado = [a for a in re.findall(r'<cdr:relSizeAnchor\b.*?</cdr:relSizeAnchor>', formas, re.S)
+                            if t_autor and not horizontal and not es_tarta(xml) and texto_forma(a).strip()
+                            and not girado(a) and a not in unidades
+                            and (caja_rel(a)[1] + caja_rel(a)[3]) / 2 >= t_autor[1] + t_autor[3]]
+            # Títulos de los ejes del propio gráfico (<c:title> del eje): el de la izquierda, girado delante de los
+            # números; el de abajo, debajo de las categorías (LATAM 5 y 27: Excel los montaba sobre las cifras)
+            titulos_eje = {}
+            if not horizontal and not es_tarta(xml):
+                for e in re.finditer(r'<c:(valAx|catAx|dateAx)>.*?</c:\1>', xml, re.S):
+                    tit = re.search(r'<c:title>.*?</c:title>', e.group(0), re.S)
+                    pos = re.search(r'<c:axPos val="(\w)"/>', e.group(0))
+                    if tit and pos and pos.group(1) in "lb" and '<c:delete val="1"/>' not in e.group(0):
+                        texto_t = "".join(html.unescape(t) for t in re.findall(r'<a:t>([^<]*)</a:t>', tit.group(0))).strip()
+                        if texto_t:
+                            titulos_eje[pos.group(1)] = texto_t
             subida = SUBIDA_GRAFICO + (SUBIDA_CON_UNIDADES if unidades_arriba else 0)
 
             # Dónde empieza el gráfico (lo más alto de su trazado), con o sin título de panel
@@ -3241,6 +3335,21 @@ def paso2(trabajo, pid=None):
                 if horizontal and unidades:
                     # Las unidades del eje de valores, debajo de sus números
                     alto_cat += UNIDADES_BAJO_NUMEROS + ALTO_UNIDADES
+                    filas_cat = max(1, math.ceil((alto_cat - LETRA_ABAJO) / paso_pt - 1e-6))
+                alto_cat_solo = alto_cat
+                if "b" in titulos_eje:
+                    alto_cat += TEXTO_BAJO_CATEGORIAS + 7 * INTERLINEA + 2
+                    filas_cat = max(1, math.ceil((alto_cat - LETRA_ABAJO) / paso_pt - 1e-6))
+                if "l" in titulos_eje:
+                    # Excel deja aire alrededor del título; si es más largo que el alto del panel, lo parte en líneas
+                    lineas_tl = max(1, math.ceil(medir(titulos_eje["l"], 7) / (FILAS_PANEL * paso_pt * 0.75)))
+                    ancho_tl = lineas_tl * 7 * INTERLINEA + AIRE_TITULO_EJE
+                    numeros += ancho_tl + TITULO_GIRADO_A_CATEGORIAS
+                    trazado -= ancho_tl + TITULO_GIRADO_A_CATEGORIAS
+                if bajo_trazado:
+                    alto_bajo = max((html.unescape(texto_forma(a)).strip().count("\n") + 1) * 7 * INTERLINEA + 2
+                                    for a in bajo_trazado)
+                    alto_cat += TEXTO_BAJO_CATEGORIAS + alto_bajo
                     filas_cat = max(1, math.ceil((alto_cat - LETRA_ABAJO) / paso_pt - 1e-6))
                 if girados:
                     # El título girado del eje vertical, a la izquierda de las categorías
@@ -3342,6 +3451,10 @@ def paso2(trabajo, pid=None):
                     H += extra_ley
                 xml = disposicion(xml, W, H, dentro, None if motivo else
                                   ((x2 - x1) / EMU_PT - LEYENDA_A_LA_IZQUIERDA, inicio - arriba_marco, ANCHO_LEYENDA(w2)), medir)
+                if titulos_eje:
+                    xml = colocar_titulos_eje(xml, titulos_eje, dentro, alto_cat_solo, W, H, medir)
+                    linea += "".join(f" título del eje {'vertical, girado a la izquierda' if k == 'l' else 'horizontal, debajo de las categorías'}"
+                                     f" «{v[:30]}»;" for k, v in titulos_eje.items())
                 if modo_ley in ("comun", "propia"):
                     ly_l = inicio - arriba_marco + alto_panel + LEYENDA_BAJO_PANEL
                     xml = poner_leyenda(xml, W, H, lx_l, ly_l, lw_l, lh_l, "b")
@@ -3382,7 +3495,7 @@ def paso2(trabajo, pid=None):
                 if viejo:
                     fijos = set(unidades) | set(girados)
                     actuales = re.findall(r'<cdr:relSizeAnchor\b.*?</cdr:relSizeAnchor>', formas, re.S)
-                    saltar = [a for a in actuales if girado(a) or es_unidad_grafico(a, xml_antes) or a in fijos]
+                    saltar = [a for a in actuales if girado(a) or es_unidad_grafico(a, xml_antes, formas) or a in fijos]
                     gx0, gy0, gw0, gh0 = caja(partes[ig])
                     formas, movidos = recolocar_formas(formas, viejo, (gw0 / EMU_PT, gh0 / EMU_PT), dentro, W, H, saltar)
                     if movidos:
@@ -3398,9 +3511,40 @@ def paso2(trabajo, pid=None):
             # con el trazado nuevo (G_IA2025_3.2 c: los promedios y sus líneas se quedaban sobre otras barras)
             viejo = trazado_rel(xml_antes)
             if formas and viejo and not tarta and not horizontal:
-                actuales = re.findall(r'<cdr:relSizeAnchor\b.*?</cdr:relSizeAnchor>', formas, re.S)
-                saltar = [a for a in actuales if girado(a) or es_unidad_grafico(a, xml_antes) or a in unidades_arriba]
+                # Título girado del eje vertical: a la izquierda de los números, a lo alto del trazado
+                for a in girados:
+                    ancho_g = alto_titulo_girado(a, dentro[3], medir)
+                    # Sin márgenes interiores: con los del autor el texto se metía en los números (19 b)
+                    sin_m = a
+                    for _ in range(4):
+                        sin_m = re.sub(r'(<a:bodyPr\b[^>]*?)\s+[lrtb]Ins="-?\d+"', r'\1', sin_m)
+                    sin_m = re.sub(r'<a:bodyPr\b', '<a:bodyPr lIns="0" rIns="0" tIns="0" bIns="0"', sin_m, count=1)
+                    formas = formas.replace(a, sin_m, 1)
+                    # A lo alto, lo que mide su línea más larga (si pasa del trazado, sobresale centrado: como en el
+                    # .ai del 19 b; si no, Excel partía «Condiciones de concesión más laxas»)
+                    largo_g = max([medir(p_, 7) * 1.08 + 8 for p_ in html.unescape(texto_forma(a)).split("\n") if p_.strip()]
+                                  + [dentro[3]])
+                    cy_g = dentro[1] + dentro[3] / 2
+                    y0_g = max(0, cy_g - largo_g / 2)
+                    formas, _ = colocar_rel(formas, sin_m, 0, y0_g, ancho_g, min(H, y0_g + largo_g), W, H)
+                    linea += f" título del eje vertical «{html.unescape(texto_forma(a)).strip()[:30]}» girado, a la izquierda;"
+                # Lo de debajo del trazado, debajo de las categorías, con su centro en el mismo punto del eje
+                y_bajo = dentro[1] + dentro[3] + alto_cat_solo + TEXTO_BAJO_CATEGORIAS
                 gx0, gy0, gw0, gh0 = caja(partes[ig])
+                for a in bajo_trazado:
+                    bx0, _, bx1, _ = caja_rel(a)
+                    cx = dentro[0] + ((bx0 + bx1) / 2 - viejo[0]) / viejo[2] * dentro[2]
+                    mw = (bx1 - bx0) * gw0 / EMU_PT / 2
+                    alto_a = (html.unescape(texto_forma(a)).strip().count("\n") + 1) * 7 * INTERLINEA + 2
+                    formas, _ = colocar_rel(formas, a, cx - mw, y_bajo, cx + mw, y_bajo + alto_a, W, H)
+                if bajo_trazado:
+                    linea += (" debajo de las categorías: " + ", ".join(f"«{html.unescape(texto_forma(a)).strip()[:30]}»"
+                                                                       for a in bajo_trazado) + ";")
+                    cambios[ruta_formas] = formas.encode("utf-8")
+                bajo_textos = {texto_forma(a) for a in bajo_trazado}
+                actuales = re.findall(r'<cdr:relSizeAnchor\b.*?</cdr:relSizeAnchor>', formas, re.S)
+                saltar = [a for a in actuales if girado(a) or es_unidad_grafico(a, xml_antes, formas) or a in unidades_arriba
+                          or texto_forma(a) in bajo_textos]
                 formas, movidos = recolocar_formas(formas, viejo, (gw0 / EMU_PT, gh0 / EMU_PT), dentro, W, H, saltar,
                                                    centro=True, lineas=True)
                 if movidos:
@@ -3979,6 +4123,9 @@ def cambiar_categorias(z, xml, hojas, funcion):
     if f:
         compartidos = textos_compartidos(z)
         for nombre, ref in celdas_de_rango(html.unescape(f.group(1))):
+            if es_externa(nombre):
+                SOLO_EN_GRAFICO.append(f"categorías de {nombre}!{ref}")
+                break
             ruta_hoja = hoja_de(z, nombre)
             hoja = hojas.get(ruta_hoja) or z.read(ruta_hoja).decode("utf-8")
             c = celda(hoja, ref)
@@ -4642,6 +4789,17 @@ def textos_especiales(z, xml, idioma, hojas, estilos, trazado, medir):
         if not codigo or codigo == actual:
             return eje
         texto_u = cifra(u).replace(".", ",")
+        # Datos en otro libro (vínculo externo, «[2]D2!…»; Indicadores Macrofinancieros): sus celdas no están aquí y
+        # los vínculos externos no se tocan: el formato va en el eje, desenlazado
+        rangos_eje = [html.unescape(f) for g in GRUPOS.finditer(xml)
+                      if ide in re.findall(r'<c:axId val="(\d+)"/>', g.group(0))
+                      for f in re.findall(r'<c:(?:val|yVal)>\s*<c:numRef>\s*<c:f>([^<]*)</c:f>', g.group(0))]
+        if enlazado and any(n.startswith("[") or "[" in n for f in rangos_eje for n, _ in celdas_de_rango(f)):
+            poner(h, ORDEN_EJE[m.group(1)], "numFmt", f'<c:numFmt formatCode="{html.escape(codigo)}" sourceLinked="0"/>')
+            notas.append(f"Aviso: números del eje de valores {codigo} (saltos de {texto_u}; antes {actual}): los datos "
+                         "están en otro libro (vínculo externo, no se toca), así que el formato va en el eje y deja de "
+                         "seguir al de los datos")
+            return f"<c:{m.group(1)}>" + "".join(t for _, t in h) + f"</c:{m.group(1)}>"
         if enlazado:
             # Formato enlazado a los datos: se cambia en las celdas de las series de ese eje
             for g in GRUPOS.finditer(xml):
@@ -6100,6 +6258,10 @@ def paso4(trabajo, pid=None):
                                "en la hoja: la línea base hay que ponerla a mano")
                 continue
             nombre = refs[0][0] or refs[0][1]
+            if es_externa(nombre):
+                detalle.append(f"Aviso: el panel {n} indica la base {base} («{corto}»), pero sus datos están en otro libro "
+                               "(vínculo externo, no se toca): la línea base hay que ponerla a mano")
+                continue
             refs = [r for r in refs if (r[0] or r[1]) == nombre]
             fila1 = min(int(r[3]) for r in refs)
             ruta_hoja = hoja_de(z, nombre)
@@ -7176,7 +7338,7 @@ def solo_columna_1(trabajo, pid=None):
             if ruta_formas:
                 formas = z.read(ruta_formas).decode("utf-8")
                 actuales = re.findall(r'<cdr:relSizeAnchor\b.*?</cdr:relSizeAnchor>', formas, re.S)
-                saltar = [a for a in actuales if girado(a) or es_unidad_grafico(a, xml)]
+                saltar = [a for a in actuales if girado(a) or es_unidad_grafico(a, xml, formas)]
                 dentro = (t[0] * W, t[1] * H, nuevo_w * W, t[3] * H)
                 formas, movidos = recolocar_formas(formas, t, (W, H), dentro, W, H, saltar)
                 if movidos:
@@ -7890,7 +8052,7 @@ def maquetar_formas_grafico(xml, graf=None):
         texto = texto_forma(a).strip()
         if not texto:
             return a
-        if es_unidad_grafico(a, graf) or girado(a):
+        if es_unidad_grafico(a, graf, xml) or girado(a):
             unidades.append(texto[:40])
             return fijar_letra(a, 700, ROBOTO)
         otros.append(texto[:40])
