@@ -3,6 +3,7 @@
 // tal como lo dibuja Excel en la versión elegida. El trabajo lo hace motor/maquetar_excel.py sobre una
 // copia, con una versión por paso; la app lanza los pasos, va adelante y atrás y habla con Excel.
 import AppKit
+import PDFKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -70,6 +71,57 @@ func partirMarca(_ linea: String) -> (texto: String, marca: String?) {
     return (String(linea[..<r.lowerBound]), String(linea[r.upperBound..<linea.index(before: linea.endIndex)]))
 }
 
+/// Lo que va entre ⟪ ⟫ en una línea del motor (lo que cambia en un «antes» → «después», o lo que señala un aviso),
+/// en rojo y negrita sobre fondo rosado, como en Cuadros Excel BdE (petición del usuario, 2026-11-26).
+func conResaltes(_ linea: String) -> AttributedString {
+    var salida = AttributedString()
+    var resto = Substring(linea)
+    while let a = resto.range(of: "⟪"), let b = resto[a.upperBound...].range(of: "⟫") {
+        salida += AttributedString(String(resto[..<a.lowerBound]))
+        var rojo = AttributedString(String(resto[a.upperBound..<b.lowerBound]))
+        rojo.foregroundColor = .red
+        rojo.font = .system(size: 11.5, weight: .bold)
+        rojo.backgroundColor = Color.red.opacity(0.12)
+        salida += rojo
+        resto = resto[b.upperBound...]
+    }
+    salida += AttributedString(String(resto))
+    return salida
+}
+
+/// Una línea del detalle de un paso o de la comparación: viñeta (⚠ en los avisos), texto con resaltes en rojo y,
+/// si tiene marca, diana: al pulsarla Excel selecciona lo que dice.
+struct FilaDetalle: View {
+    @ObservedObject var taller: Taller
+    let entera: String
+    var color: Color = .accentColor
+    var body: some View {
+        let (linea, marca) = partirMarca(entera)
+        let aviso = linea.hasPrefix("Aviso")
+        let cambio = linea.hasPrefix("Cambio")
+        let fila = HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: aviso ? "exclamationmark.triangle.fill" : cambio ? "arrow.left.arrow.right" : "circle.fill")
+                .font(.system(size: aviso || cambio ? 10 : 4))
+                .foregroundStyle(aviso ? Color.red : cambio ? Color.orange : color)
+            Text(conResaltes(linea)).font(.system(size: 11.5, weight: aviso ? .bold : .regular))
+                .foregroundStyle(aviso ? Color.red : Color.primary)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if marca != nil {
+                Image(systemName: "scope").font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(aviso ? Color.red : cambio ? Color.orange : color)
+            }
+        }
+        if let marca {
+            Button { taller.verEnExcel(marca) } label: { fila.contentShape(Rectangle()) }
+                .buttonStyle(.plain)
+                .help("Seleccionar en Excel \(descripcionMarca(marca))")
+        } else {
+            fila.textSelection(.enabled)
+        }
+    }
+}
+
 /// Lo que se ve de una marca en la ayuda: «Gráfico 6» (hoja «Gráfico») o las celdas B9, B10 (hoja «Datos»)
 func descripcionMarca(_ marca: String) -> String {
     if marca.hasPrefix("celdas:") {
@@ -99,6 +151,9 @@ struct Respuesta: Decodable {
     let original: String?
     let terminado: String?
     let borrados: [String]?
+    let a_mano: Bool?
+    let paneles: String?
+    let comprobacion: [String]?
 }
 
 /// Los pasos de maquetación que la app sabe hacer, en orden
@@ -114,6 +169,12 @@ struct PasoMaquetacion: Identifiable {
 let herramientaSinEje = PasoMaquetacion(id: 0, titulo: "Sin eje vertical, valor sobre cada barra",
     detalle: "Para gráficos de barras verticales que lo necesiten: quita el eje vertical (y sus líneas de división), pone el valor encima de cada barra (6 pt, con los decimales de los datos) apartando las que se montan, y alarga el trazado hasta el principio de la columna. Después de «Tamaño y colocación»; mejor al final.",
     icono: "chart.bar.doc.horizontal", orden: "sin_eje_vertical")
+
+/// Herramienta: el panel sin leyenda, que el paso 2 extiende a las dos columnas, solo en la columna 1 (petición del
+/// usuario, 2026-11-26, G_IA2025_1.11)
+let herramientaColumna1 = PasoMaquetacion(id: 0, titulo: "Sin leyenda: gráfico solo en la columna 1",
+    detalle: "Cuando la app avisa de que un panel va sin leyenda (o la tiene oculta) y su gráfico ocupa las dos columnas: el trazado vuelve a acabar al final de la columna 1, los textos sueltos del gráfico se mueven con él y las etiquetas del eje horizontal se recalculan para el ancho nuevo (cuerpo y dirección, guía pág. 11). Después de «Tamaño y colocación».",
+    icono: "rectangle.lefthalf.inset.filled", orden: "solo_columna_1")
 
 let pasosMaquetacion = [
     PasoMaquetacion(id: 1, titulo: "Retícula, pastilla y textos",
@@ -235,8 +296,32 @@ let colaAppleScript = DispatchQueue(label: "es.estudioencuadre.graficos-excel.ap
 
 /// Ejecuta un AppleScript dentro de la app (NSAppleScript), no con `osascript` aparte: lanzar un programa en
 /// cada orden a Excel costaba segundos. Los argumentos llegan como `argv`, igual que con `osascript`.
+/// La ruta escrita exactamente como está en el disco: los acentos pueden ir en una letra («ñ») o descompuestos
+/// («n» + tilde), y Excel da el «full name» de un libro como lo tiene el disco (en DATOS, descompuesto). Si la app
+/// le pasa la otra forma, las comparaciones no casan y no encuentra el libro (el botón ⓧ no cerraba la copia del
+/// G_IA2025_1.9 de «Español», 2026-11-26). Lo que no existe se escribe en la forma del resto de la ruta.
+func rutaComoEnDisco(_ ruta: String) -> String {
+    guard ruta.hasPrefix("/") else { return ruta }
+    var actual = "", descompuesta = false
+    let partes = ruta.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+    for (k, parte) in partes.enumerated() {
+        if k == 0 { continue }
+        if parte.isEmpty { actual += "/"; continue }
+        let padre = actual.isEmpty ? "/" : actual
+        let nombres = (try? FileManager.default.contentsOfDirectory(atPath: padre)) ?? []
+        let buscada = parte.precomposedStringWithCanonicalMapping
+        if let enDisco = nombres.first(where: { $0.precomposedStringWithCanonicalMapping == buscada }) {
+            if enDisco != buscada { descompuesta = true }
+            actual += "/" + enDisco
+        } else {
+            actual += "/" + (descompuesta ? parte.decomposedStringWithCanonicalMapping : parte)
+        }
+    }
+    return actual
+}
+
 func osascript(_ guion: String, _ argumentos: [String] = [], espera: TimeInterval) async -> (ok: Bool, texto: String) {
-    let lista = "{" + argumentos.map(cadenaAS).joined(separator: ", ") + "}"
+    let lista = "{" + argumentos.map { cadenaAS(rutaComoEnDisco($0)) }.joined(separator: ", ") + "}"
     let fuente = guion
         .replacingOccurrences(of: "on run argv", with: "on run\nset argv to \(lista)\nwith timeout of \(Int(espera)) seconds")
         .replacingOccurrences(of: "end run", with: "end timeout\nend run")
@@ -313,12 +398,23 @@ final class Taller: ObservableObject {
     /// Hay una versión de la app más nueva que la que está abierta (se ha compilado después de arrancar), como en
     /// Cuadros Excel BdE (petición del usuario, 2026-11-25)
     @Published var appNueva = false
+    /// Control «Paneles»: «auto» (lo que detecte la app), «lado» (lado a lado) o «apilados» (petición del usuario,
+    /// 2026-11-27: otras publicaciones tendrán paneles lado a lado y habrá apilados que pasar a lado a lado por espacio)
+    @Published var paneles = "auto"
     private let arranque = Date()
     private var ultimaRevision = Date.distantPast
 
     var motorEncontrado: Bool { FileManager.default.fileExists(atPath: motor.appendingPathComponent("maquetar_excel.py").path) }
     var publicacionActual: Publicacion? { publicaciones.first { $0.id == publicacion } }
     var carpetaPasos: URL? { trabajo.map { URL(fileURLWithPath: $0.deletingPathExtension().path + " (pasos)") } }
+    /// El nombre del Excel que se ha abierto (el del autor), no el de la copia de trabajo «… maquetado.xlsx» que
+    /// procesa la app (petición del usuario, 2026-11-26)
+    var nombreAbierto: String? {
+        guard let trabajo else { return nil }
+        var base = trabajo.deletingPathExtension().lastPathComponent
+        if base.hasSuffix(" maquetado") { base = String(base.dropLast(" maquetado".count)) }
+        return base + ".xlsx"
+    }
     var ejecucionVista: Ejecucion? { ejecuciones.first { $0.id == vista } ?? ejecuciones.last }
     var ejecucionEnCurso: Ejecucion? { ejecuciones.first { $0.id == enCurso } }
     var pasoActual: Paso? { pasos.indices.contains(actual) ? pasos[actual] : nil }
@@ -433,6 +529,7 @@ final class Taller: ObservableObject {
 
     private func aplicar(_ r: Respuesta) {
         if let t = r.trabajo { trabajo = URL(fileURLWithPath: t) }
+        if r.pasos != nil { paneles = r.paneles ?? "auto" }
         idioma = r.idioma ?? idioma
         actual = r.actual ?? actual
         pasos = r.pasos ?? pasos
@@ -474,14 +571,45 @@ final class Taller: ObservableObject {
 
     // MARK: Pasos y versiones
 
+    func cambiarPaneles(_ modo: String) {
+        guard let trabajo, modo != paneles else { return }
+        let nombres = ["auto": "automático", "lado": "lado a lado", "apilados": "apilados"]
+        let hechos = pasos.filter { $0.n > 0 && $0.n <= actual }.count
+        let lanzar = {
+            self.tarea("Paneles: \(nombres[modo] ?? modo)") { id in
+                guard let r = await self.llamarMotor(["paneles", trabajo.path, modo, self.publicacion], registro: id) else { return false }
+                self.aplicar(r)
+                self.anotar(id, "Paneles \(nombres[modo] ?? modo): de vuelta a la copia exacta y rehechos los pasos de maquetación (\(self.actual))")
+                if let p = self.pasoActual, self.actual > 0 { self.anotar(id, self.resumen(p.detalle, version: p.n)) }
+                return await self.mostrar(id)
+            }
+        }
+        if hechos > 0 {
+            pregunta = Pregunta(titulo: "¿Rehacer con los paneles \(nombres[modo] ?? modo)?",
+                                texto: "La retícula se pone en el paso 1: la app vuelve a la copia exacta del original y rehace los pasos de maquetación que ya estaban hechos. Se pierden las versiones de las herramientas («Sin eje vertical», «Solo columna 1») y los cambios a mano en Excel.",
+                                boton: "Rehacer", hacer: lanzar)
+        } else {
+            lanzar()
+        }
+    }
+
     func hacer(_ paso: PasoMaquetacion) {
         guard let trabajo else { return }
         let lanzar = {
             self.tarea(paso.id > 0 ? "\(paso.id). \(paso.titulo)" : paso.titulo) { id in
+                // Lo retocado a mano en Excel no se pierde: se guarda y pasa a ser la versión de la que parte el paso
+                guard await self.recogerAMano(id, trabajo) else { return false }
                 guard let r = await self.llamarMotor([paso.orden, trabajo.path, self.publicacion], registro: id) else { return false }
                 self.aplicar(r)
-                self.pasoActual?.detalle.forEach { self.anotar(id, "• " + $0) }
-                return await self.mostrar(id)
+                if let p = self.pasoActual { self.anotar(id, self.resumen(p.detalle, version: p.n)) }
+                guard await self.mostrar(id) else { return false }
+                // Al terminar el último paso, lo que dibuja Excel de verdad: leyendas y categorías enteras
+                if paso.orden == "paso5" {
+                    await self.comprobarEnExcel(id, trabajo)
+                    // Y la comparación con el original, con los dos libros superpuestos en Excel
+                    _ = await self.compararConOriginal(id, trabajo)
+                }
+                return true
             }
         }
         if actual + 1 < pasos.count {
@@ -491,6 +619,70 @@ final class Taller: ObservableObject {
         } else {
             lanzar()
         }
+    }
+
+    /// Comprobación final (petición del usuario, 2026-11-27): Excel exporta a PDF el libro abierto y el motor mira en
+    /// la página del gráfico que se vean enteras las entradas de las leyendas y las categorías (Excel esconde sin
+    /// avisar lo que no le cabe: 8.2, «Compras en TPV»). El PDF va a la carpeta de Office, donde Excel escribe sin
+    /// pedir permiso; si macOS pregunta si la app puede leer datos de otras apps, hay que permitirlo.
+    func comprobarEnExcel(_ id: UUID, _ trabajo: URL) async {
+        let carpetaOffice = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Group Containers/UBF8T346G9.Office")
+        let pdf = carpetaOffice.appendingPathComponent("Graficos Excel BdE comprobacion.pdf")
+        try? FileManager.default.removeItem(at: pdf)
+        let guion = """
+        on run argv
+            tell application "Microsoft Excel"
+                repeat with i from 1 to (count workbooks)
+                    set n to full name of workbook i
+                    if n is item 1 of argv or n is item 2 of argv then
+                        save as (worksheet "Gráfico" of workbook i) filename (item 3 of argv) file format PDF file format
+                        return "ok"
+                    end if
+                end repeat
+            end tell
+            return "sin libro"
+        end run
+        """
+        let r = await osascript(guion, [trabajo.path, Taller.copiaB(trabajo).path, pdf.path], espera: 60)
+        guard r.texto == "ok", let documento = PDFDocument(url: pdf) else {
+            anotar(id, "Aviso: comprobación en Excel: no he podido exportar el gráfico a PDF para comprobarlo (\(r.texto.isEmpty ? "sin PDF" : r.texto))")
+            return
+        }
+        let texto = (0..<documento.pageCount).map { documento.page(at: $0)?.string ?? "" }.joined(separator: "\u{0C}")
+        try? FileManager.default.removeItem(at: pdf)
+        let archivoTexto = URL(fileURLWithPath: trabajo.deletingPathExtension().path + " (pasos)")
+            .appendingPathComponent("comprobacion.txt")
+        do { try texto.write(to: archivoTexto, atomically: true, encoding: .utf8) } catch {
+            anotar(id, "Aviso: comprobación en Excel: no he podido guardar el texto del PDF (\(error.localizedDescription))")
+            return
+        }
+        guard let c = await llamarMotor(["comprobar", trabajo.path, archivoTexto.path], registro: id) else { return }
+        aplicar(c)
+        for linea in c.comprobacion ?? [] { anotar(id, linea) }
+    }
+
+    /// Antes de un paso o una herramienta: si hay cambios sin guardar en Excel, se guardan; si la copia de trabajo ya
+    /// no es la versión de la que partía (retoques a mano de posición, tamaño…), el motor la guarda como versión
+    /// «Cambios a mano en Excel» y el paso parte de ella (petición del usuario, 2026-11-26). Falso si no se pudo.
+    func recogerAMano(_ id: UUID, _ trabajo: URL) async -> Bool {
+        if excel {
+            let estado = await osascript(Taller.guionGuardado, [trabajo.path, Taller.copiaB(trabajo).path], espera: 10)
+            if estado.texto.contains("sin guardar") {
+                let guardado = await osascript(Taller.guionGuardar, [trabajo.path, Taller.copiaB(trabajo).path], espera: 30)
+                guard guardado.texto.contains("ok") else {
+                    anotar(id, "⚠ No he podido guardar en Excel tus cambios a mano: guárdalos (⌘S) y vuelve a pulsar el paso (\(guardado.texto))")
+                    return false
+                }
+                try? await Task.sleep(nanoseconds: 400_000_000)
+            }
+        }
+        guard let r = await llamarMotor(["a_mano", trabajo.path], registro: id) else { return false }
+        if r.a_mano == true {
+            aplicar(r)
+            anotar(id, "Tus cambios a mano en Excel, guardados como versión \(actual) «Cambios a mano en Excel»: el paso parte de ella ⟦version:\(actual)⟧")
+        }
+        return true
     }
 
     /// Ir a otra versión, como un deshacer: la copia de trabajo pasa a ser esa versión y Excel la recarga en la
@@ -520,6 +712,38 @@ final class Taller: ObservableObject {
 
     /// Volver a empezar desde el original del autor: se borran todas las versiones (se pregunta antes) y la
     /// copia de trabajo vuelve a ser la copia exacta.
+    /// Si se ha abierto el Excel que no era: se cierra el trabajo sin salir de la app (petición del usuario, 2026-11-26).
+    /// Se cierra en Excel sin guardar y se borra lo que ha generado la app para él (las dos copias de trabajo y la
+    /// carpeta «(pasos)»); el Excel del autor no se toca. La app vuelve a «Elegir Excel…».
+    func descartar() {
+        guard let trabajo, enCurso == nil else { return }
+        let base = trabajo.deletingPathExtension().lastPathComponent
+        guard base.hasSuffix(" maquetado") else { return }
+        let generados = [trabajo, Taller.copiaB(trabajo), URL(fileURLWithPath: trabajo.deletingPathExtension().path + " (pasos)")]
+            .filter { FileManager.default.fileExists(atPath: $0.path) }
+        pregunta = Pregunta(titulo: "¿Cerrar este Excel y empezar de nuevo?",
+                            texto: "Se cierra en Excel sin guardar y se borra lo que ha hecho la app con él: " + generados.map { "«\($0.lastPathComponent)»" }.joined(separator: ", ") + ". El Excel del autor no se toca. Después puedes elegir otro Excel.",
+                            boton: "Cerrar y borrar") {
+            self.tarea("Cerrar el trabajo") { id in
+                await self.cerrarEnExcel(trabajo)
+                for g in generados {
+                    do {
+                        try FileManager.default.removeItem(at: g)
+                        self.anotar(id, "Borrado: \(g.lastPathComponent)")
+                    } catch {
+                        self.anotar(id, "⚠ No he podido borrar \(g.lastPathComponent): \(error.localizedDescription)")
+                    }
+                }
+                self.trabajo = nil
+                self.pasos = []
+                self.actual = 0
+                self.comparacion = []
+                self.anotar(id, "Listo: elige otro Excel")
+                return true
+            }
+        }
+    }
+
     func reiniciar() {
         guard let trabajo, pasos.count > 1 else { return }
         pregunta = Pregunta(titulo: "¿Reiniciar desde el original?",
@@ -537,6 +761,11 @@ final class Taller: ObservableObject {
     /// Selecciona en Excel (en el libro abierto, sin tocar el archivo) la forma de una línea del detalle: el gráfico
     /// del panel o FUENTES. Va por su número en la hoja (los autores repiten nombres) y, si no casa, por su nombre.
     func verEnExcel(_ marca: String) {
+        // Desde la actividad: ir a esa versión, que enseña sus cambios y avisos
+        if marca.hasPrefix("version:"), let n = Int(marca.dropFirst("version:".count)) {
+            if n != actual { ir(n) }
+            return
+        }
         guard let ruta = trabajo else { return }
         if marca.hasPrefix("celdas:") { verCeldasEnExcel(marca, ruta); return }
         let partes = marca.dropFirst("forma:".count).split(separator: "|", maxSplits: 2).map(String.init)
@@ -634,16 +863,47 @@ final class Taller: ObservableObject {
     /// cifras, no la colocación. Avisa de lo que falta y de lo que ha cambiado. No crea versión.
     func comparar() {
         guard let trabajo else { return }
-        tarea("Comparar con el original") { id in
-            guard let r = await self.llamarMotor(["comparar", trabajo.path], registro: id) else { return false }
-            self.comparacion = r.comparacion ?? []
-            if let c = r.comparado, let o = r.original {
-                self.anotar(id, "«\(URL(fileURLWithPath: c).lastPathComponent)» (lo guardado) frente a «\(URL(fileURLWithPath: o).lastPathComponent)»")
-            }
-            self.comparacion.forEach { self.anotar(id, "• " + $0) }
-            return true
-        }
+        tarea("Comparar con el original") { id in await self.compararConOriginal(id, trabajo) }
     }
+
+    /// Comparación con el original del autor: en la tarjeta «Terminar» solo lo que sale de comparar (los avisos de
+    /// los pasos ya están en su versión). Después, en Excel, la copia de trabajo encima del original, en el mismo
+    /// sitio y con el mismo zoom, para pasar de uno a otro (petición del usuario, 2026-11-27: antes lo hacía «Guardar
+    /// como EXCEL»). La hace sola la app al terminar el paso 5.
+    func compararConOriginal(_ id: UUID, _ trabajo: URL) async -> Bool {
+        guard let r = await llamarMotor(["comparar", trabajo.path], registro: id) else { return false }
+        comparacion = r.comparacion ?? []
+        if let c = r.comparado, let o = r.original {
+            anotar(id, "Comparación: «\(URL(fileURLWithPath: c).lastPathComponent)» frente a «\(URL(fileURLWithPath: o).lastPathComponent)»")
+        }
+        let avisos = comparacion.filter { $0.hasPrefix("Aviso") }.count
+        anotar(id, (avisos > 0 ? "⚠ \(avisos) aviso\(avisos == 1 ? "" : "s") de la comparación" : "✓ Comparación sin avisos")
+                   + " → ver «Comparación con el original», en la tarjeta «Terminar»")
+        if excel, let o = r.original {
+            let original = URL(fileURLWithPath: o)
+            // La copia de trabajo que está abierta en Excel (son dos con la misma versión: la normal y la « (2)»)
+            let abierta = await osascript(Taller.guionCualAbierta, [trabajo.path, Taller.copiaB(trabajo).path], espera: 10)
+            let copia = abierta.texto == "2" ? Taller.copiaB(trabajo) : trabajo
+            let hecho = await abrirParaComparar(copia, original)
+            anotar(id, hecho ? "En Excel: la copia de trabajo encima del original del autor (\(original.lastPathComponent)), en el mismo sitio y con el mismo zoom"
+                             : "⚠ No he podido poner en Excel la copia de trabajo encima del original")
+        }
+        return true
+    }
+
+    private static let guionCualAbierta = """
+    on run argv
+        if application "Microsoft Excel" is not running then return "0"
+        tell application "Microsoft Excel"
+            repeat with i from 1 to (count workbooks)
+                set n to full name of workbook i
+                if n is item 1 of argv then return "1"
+                if n is item 2 of argv then return "2"
+            end repeat
+        end tell
+        return "0"
+    end run
+    """
 
     /// Nombre que tendrá el resultado: el del original con «ORIGINALES»/«ORIGINAL» cambiado por «EXCEL», o con
     /// « EXCEL» al final (si ya existe, el motor le pone « (2)»…). Como en Cuadros Excel BdE (petición del usuario,
@@ -661,6 +921,21 @@ final class Taller: ObservableObject {
         }
         return base + ".xlsx"
     }
+
+    private static let guionGuardar = """
+    on run argv
+        tell application "Microsoft Excel"
+            repeat with i from 1 to (count workbooks)
+                set n to full name of workbook i
+                if n is item 1 of argv or n is item 2 of argv then
+                    save workbook i
+                    return "ok"
+                end if
+            end repeat
+        end tell
+        return "sin libro"
+    end run
+    """
 
     private static let guionGuardado = """
     on run argv
@@ -685,37 +960,94 @@ final class Taller: ObservableObject {
         guard let trabajo, enCurso == nil else { return }
         Task {
             let estado = await osascript(Taller.guionGuardado, [trabajo.path, Taller.copiaB(trabajo).path], espera: 10)
+            self.guardadoAntes = false
             if estado.texto.contains("sin guardar") {
-                self.aviso = Aviso(titulo: "Hay cambios sin guardar en Excel",
-                                   texto: "Guarda el libro en Excel (⌘S) si quieres conservarlos, o deshazlos, y vuelve a pulsar «Guardar como EXCEL».")
+                // Los cambios hechos a mano en Excel se guardan solos, sin pasar por ⌘S (petición del usuario,
+                // 2026-11-26; en Cuadros Excel BdE se ofrece con un botón)
+                let guardado = await osascript(Taller.guionGuardar, [trabajo.path, Taller.copiaB(trabajo).path], espera: 30)
+                guard guardado.texto.contains("ok") else {
+                    self.aviso = Aviso(titulo: "No he podido guardar el libro en Excel",
+                                       texto: "Guárdalo en Excel (⌘S) y vuelve a pulsar «Guardar como EXCEL». (\(guardado.texto))")
+                    return
+                }
+                self.guardadoAntes = true
+                try? await Task.sleep(nanoseconds: 400_000_000)
+            }
+            // Aviso si no se han dado todos los pasos (petición del usuario, 2026-11-26: el 1.4 se guardó en la versión
+            // de «Ejes» y las series quedaron sin su formato)
+            let faltan = self.pasosQueFaltan
+            if !faltan.isEmpty {
+                self.pregunta = Pregunta(titulo: "No se han dado todos los pasos",
+                                         texto: "Falta" + (faltan.count > 1 ? "n" : "") + ": " + faltan.map { "«\($0)»" }.joined(separator: ", ") + ". Se guardaría la versión \(self.actual) tal como está.",
+                                         boton: "Guardar igualmente") {
+                    Task {
+                        try? await Task.sleep(nanoseconds: 300_000_000)
+                        self.confirmarGuardar(trabajo)
+                    }
+                }
                 return
             }
-            self.pregunta = Pregunta(titulo: "¿Guardar como EXCEL?",
-                                     texto: "Se guarda «\(self.nombreTerminado)» junto al original (si ya existe, no se pisa: se añade « (2)») y se abre en Excel encima del original del autor, en el mismo sitio y con el mismo zoom, para compararlos. Se borran la copia de trabajo, su copia « (2)» y la carpeta «(pasos)» con todas las versiones. El original del autor no se toca. No se puede deshacer.",
-                                     boton: "Guardar y borrar") {
-                self.tarea("Guardar como EXCEL") { id in
-                    await self.cerrarEnExcel(trabajo)
-                    guard let r = await self.llamarMotor(["terminar", trabajo.path], registro: id),
-                          let hecho = r.terminado else { return false }
-                    let url = URL(fileURLWithPath: hecho)
-                    self.anotar(id, "Guardado: \(url.lastPathComponent)")
-                    (r.borrados ?? []).forEach { self.anotar(id, "Borrado: \($0)") }
-                    self.trabajo = nil
-                    self.pasos = []
-                    self.actual = 0
-                    self.comparacion = []
-                    // El EXCEL y, detrás, el original del autor, en el sitio de la copia de trabajo y con el mismo zoom,
-                    // para pasar de uno a otro y compararlos (petición del usuario, 2026-11-25, como en Cuadros)
-                    if self.excel {
-                        let original = r.original.map { URL(fileURLWithPath: $0) }
-                        let abierto = await self.abrirParaComparar(url, original)
-                        self.anotar(id, abierto ? "Abierto en Excel: \(url.lastPathComponent)" + (original != nil ? ", encima del original del autor (\(original!.lastPathComponent)), en el mismo sitio y con el mismo zoom" : "")
-                                                : "⚠ No he podido abrirlo en Excel")
-                    } else {
-                        NSWorkspace.shared.activateFileViewerSelecting([url])
-                    }
-                    return true
+            self.confirmarGuardar(trabajo)
+        }
+    }
+
+    /// Se han guardado solos, antes de «Guardar como EXCEL», cambios hechos a mano en Excel (para anotarlo)
+    private var guardadoAntes = false
+
+    /// Avisos del paso con ese título en las versiones hasta la elegida (la última vez que se hizo)
+    func avisos(de titulo: String) -> [String] {
+        (pasos.last { $0.titulo == titulo && $0.n <= actual }?.detalle ?? []).filter { $0.hasPrefix("Aviso") }
+    }
+
+    /// Todos los avisos de las versiones hasta la elegida, con su paso: lo que queda por revisar
+    var avisosPendientes: [(paso: String, linea: String)] {
+        pasos.filter { $0.n >= 1 && $0.n <= actual }.flatMap { p in
+            p.detalle.filter { $0.hasPrefix("Aviso") }.map { (paso: "\(p.n). \(p.titulo)", linea: $0) }
+        }
+    }
+
+    /// Una línea de resumen para la actividad (el detalle está en «Cambios de la versión»; petición del usuario,
+    /// 2026-11-26: verlo dos veces despistaba). Con marca para saltar a esa versión.
+    func resumen(_ detalle: [String], version n: Int) -> String {
+        let avisos = detalle.filter { $0.hasPrefix("Aviso") }.count
+        let cambios = detalle.count - avisos
+        return (avisos > 0 ? "⚠ " : "✓ ") + "\(cambios) cambio\(cambios == 1 ? "" : "s")"
+            + (avisos > 0 ? " · \(avisos) aviso\(avisos == 1 ? "" : "s")" : " · sin avisos")
+            + " → ver «Cambios de la versión \(n)» ⟦version:\(n)⟧"
+    }
+
+    /// Los pasos de maquetación que no están en las versiones hasta la elegida (la que se guardaría)
+    var pasosQueFaltan: [String] {
+        let hechos = Set(pasos.filter { $0.n <= actual }.map(\.titulo))
+        return pasosMaquetacion.filter { p in
+            // El paso 1 de antes eran dos: «Retícula y pastilla» y «Textos»
+            !(hechos.contains(p.titulo) || (p.id == 1 && hechos.contains("Textos")))
+        }.map(\.titulo)
+    }
+
+    private func confirmarGuardar(_ trabajo: URL) {
+        self.pregunta = Pregunta(titulo: "¿Guardar como EXCEL?",
+                                 texto: "Se guarda «\(self.nombreTerminado)» junto al original (si ya existe, no se pisa: se añade « (2)»). Se borran la copia de trabajo, su copia « (2)» y la carpeta «(pasos)» con todas las versiones. El original del autor no se toca. No se puede deshacer.",
+                                 boton: "Guardar y borrar") {
+            self.tarea("Guardar como EXCEL") { id in
+                if self.guardadoAntes { self.anotar(id, "Cambios hechos a mano en Excel: guardados antes de seguir") }
+                await self.cerrarEnExcel(trabajo)
+                guard let r = await self.llamarMotor(["terminar", trabajo.path], registro: id),
+                      let hecho = r.terminado else { return false }
+                let url = URL(fileURLWithPath: hecho)
+                self.anotar(id, "Guardado: \(url.lastPathComponent)")
+                // El original del autor que abrió la comparación, también fuera de Excel (sin guardar: no se toca)
+                if let o = r.original, await self.cerrarOriginal(URL(fileURLWithPath: o)) {
+                    self.anotar(id, "Cerrado en Excel el original del autor: \(URL(fileURLWithPath: o).lastPathComponent)")
                 }
+                (r.borrados ?? []).forEach { self.anotar(id, "Borrado: \($0)") }
+                self.trabajo = nil
+                self.pasos = []
+                self.actual = 0
+                self.comparacion = []
+                // Ya no se abre en Excel: los dos libros se superponen al comparar, al terminar el paso 5
+                // (petición del usuario, 2026-11-27)
+                return true
             }
         }
     }
@@ -1127,6 +1459,26 @@ final class Taller: ObservableObject {
         _ = await osascript(guion, [trabajo.path, carpeta, Taller.copiaB(trabajo).path], espera: 20)
     }
 
+    /// Cierra en Excel el original del autor (lo abre la comparación para superponerlo), sin guardar. Cierto si estaba.
+    private func cerrarOriginal(_ original: URL) async -> Bool {
+        guard excel else { return false }
+        let guion = """
+        on run argv
+            if application "Microsoft Excel" is not running then return "no"
+            tell application "Microsoft Excel"
+                repeat with i from (count workbooks) to 1 by -1
+                    if full name of workbook i is item 1 of argv then
+                        close workbook i saving no
+                        return "si"
+                    end if
+                end repeat
+            end tell
+            return "no"
+        end run
+        """
+        return await osascript(guion, [original.path], espera: 20).texto == "si"
+    }
+
     func verEnExcel() {
         tarea("Ver en Excel") { id in await self.mostrarEnExcel(id, recargar: false) }
     }
@@ -1383,8 +1735,8 @@ struct BarraLateral: View {
                         Image(systemName: soltando ? "arrow.down.doc.fill" : (taller.trabajo == nil ? "doc.badge.plus" : "tablecells"))
                             .font(.system(size: 24, weight: .light))
                             .foregroundStyle(colorApp)
-                        if let t = taller.trabajo {
-                            Text(t.lastPathComponent).font(.system(size: 12, weight: .semibold)).multilineTextAlignment(.center)
+                        if taller.trabajo != nil, let t = taller.nombreAbierto {
+                            Text(t).font(.system(size: 12, weight: .semibold)).multilineTextAlignment(.center)
                                 .lineLimit(2).truncationMode(.middle)
                             Text("Clic o arrastra otro para cambiar").font(.system(size: 10.5)).foregroundStyle(.secondary)
                         } else {
@@ -1410,6 +1762,9 @@ struct BarraLateral: View {
                 if let t = taller.trabajo {
                     HStack(spacing: 6) {
                         Button { taller.verEnExcel() } label: { Label("Abrir en Excel", systemImage: "arrow.up.forward.app") }
+                            .disabled(taller.enCurso != nil)
+                        Button { taller.descartar() } label: { Image(systemName: "xmark.circle") }
+                            .help("Cerrar este Excel y empezar de nuevo (si no era el que querías): se borran la copia de trabajo y sus versiones; el original no se toca")
                             .disabled(taller.enCurso != nil)
                         Button { NSWorkspace.shared.activateFileViewerSelecting([t]) } label: { Image(systemName: "folder") }
                             .help("Mostrar en el Finder")
@@ -1452,6 +1807,7 @@ struct Rotulo: View {
 
 struct Cabecera: View {
     @ObservedObject var taller: Taller
+    @State private var verAvisos = false
 
     var body: some View {
         HStack(alignment: .center, spacing: 14) {
@@ -1459,11 +1815,38 @@ struct Cabecera: View {
                 .font(.system(size: 26))
                 .foregroundStyle(colorApp)
             VStack(alignment: .leading, spacing: 3) {
-                Text(taller.trabajo?.lastPathComponent ?? "Ningún Excel").font(.system(size: 20, weight: .bold))
+                Text(taller.nombreAbierto ?? "Ningún Excel").font(.system(size: 20, weight: .bold))
                     .lineLimit(1).truncationMode(.middle)
                 Text(detalle).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
             }
             Spacer()
+            let pendientes = taller.avisosPendientes
+            if !pendientes.isEmpty {
+                // Total de avisos de esta maquetación (versiones hasta la elegida); al pulsar, la lista con sus dianas
+                Button { verAvisos.toggle() } label: {
+                    Label("\(pendientes.count) aviso\(pendientes.count == 1 ? "" : "s") en esta maquetación", systemImage: "exclamationmark.triangle.fill")
+                        .font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
+                        .padding(.horizontal, 12).padding(.vertical, 6)
+                        .background(Capsule().fill(Color.red))
+                }
+                .buttonStyle(.plain)
+                .popover(isPresented: $verAvisos, arrowEdge: .bottom) {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Avisos de esta maquetación").font(.system(size: 13, weight: .bold))
+                            ForEach(Array(pendientes.enumerated()), id: \.offset) { _, a in
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(a.paso).font(.system(size: 10.5, weight: .semibold)).foregroundStyle(.secondary)
+                                    FilaDetalle(taller: taller, entera: a.linea, color: .red)
+                                }
+                            }
+                        }
+                        .padding(14)
+                    }
+                    .frame(width: 520)
+                    .frame(maxHeight: 460)
+                }
+            }
             if taller.appNueva {
                 Label("Hay una versión nueva de la app: ciérrala (⌘Q) y vuelve a abrirla", systemImage: "arrow.triangle.2.circlepath")
                     .font(.system(size: 12, weight: .semibold))
@@ -1548,11 +1931,26 @@ struct TarjetaMaquetar: View {
     var body: some View {
         Tarjeta(numero: "PASOS", titulo: "Maquetar", lema: "Cada paso trabaja sobre la versión elegida y deja una versión nueva",
                 icono: "wand.and.stars", color: colorApp, trabajando: taller.enCurso != nil) {
+            // Antes del paso 1: al abrir el Excel ya se ve si los paneles van apilados o lado a lado (petición del
+            // usuario, 2026-11-27: así no hay que volver atrás ni se pierden los cambios a mano)
+            Rotulo("Paneles (antes del paso 1)")
+            Picker("Paneles", selection: Binding(get: { taller.paneles }, set: { taller.cambiarPaneles($0) })) {
+                Text("Automático").tag("auto")
+                Text("Apilados").tag("apilados")
+                Text("Lado a lado").tag("lado")
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .disabled(taller.trabajo == nil || taller.publicacionActual == nil || taller.enCurso != nil)
+            .help("Automático: la app ve si los paneles van lado a lado (dos gráficos a la misma altura, en mitades distintas). Apilados: uno debajo de otro, como siempre. Lado a lado: también los que el autor apiló, en filas de dos (para los que no caben al publicar).")
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(pasosMaquetacion) { p in
                     let hecho = taller.pasos.contains { $0.titulo == p.titulo && $0.n <= taller.actual }
+                    let version = taller.pasos.last { $0.titulo == p.titulo && $0.n <= taller.actual }?.n
                     Accion(icono: p.icono, titulo: "\(p.id). \(p.titulo)", detalle: p.detalle, color: colorApp,
-                           principal: !hecho, marca: hecho ? "checkmark.circle.fill" : nil) { taller.hacer(p) }
+                           principal: !hecho, marca: hecho ? "checkmark.circle.fill" : nil,
+                           avisos: taller.avisos(de: p.titulo).count,
+                           verAvisos: { if let version { taller.ir(version) } }) { taller.hacer(p) }
                 }
             }
             .disabled(taller.trabajo == nil || taller.publicacionActual == nil || taller.enCurso != nil)
@@ -1560,7 +1958,13 @@ struct TarjetaMaquetar: View {
             let colocado = taller.pasos.contains { $0.titulo == "Tamaño y colocación" && $0.n <= taller.actual }
             let hechaSinEje = taller.pasos.contains { $0.titulo == herramientaSinEje.titulo && $0.n <= taller.actual }
             Accion(icono: herramientaSinEje.icono, titulo: herramientaSinEje.titulo, detalle: herramientaSinEje.detalle,
-                   color: colorApp, principal: false, marca: hechaSinEje ? "checkmark.circle.fill" : nil) { taller.hacer(herramientaSinEje) }
+                   color: colorApp, principal: false, marca: hechaSinEje ? "checkmark.circle.fill" : nil, avisos: taller.avisos(de: herramientaSinEje.titulo).count,
+                   verAvisos: { if let v = taller.pasos.last(where: { $0.titulo == herramientaSinEje.titulo && $0.n <= taller.actual })?.n { taller.ir(v) } }) { taller.hacer(herramientaSinEje) }
+                .disabled(taller.trabajo == nil || taller.publicacionActual == nil || taller.enCurso != nil || !colocado)
+            let hechaColumna1 = taller.pasos.contains { $0.titulo == herramientaColumna1.titulo && $0.n <= taller.actual }
+            Accion(icono: herramientaColumna1.icono, titulo: herramientaColumna1.titulo, detalle: herramientaColumna1.detalle,
+                   color: colorApp, principal: false, marca: hechaColumna1 ? "checkmark.circle.fill" : nil, avisos: taller.avisos(de: herramientaColumna1.titulo).count,
+                   verAvisos: { if let v = taller.pasos.last(where: { $0.titulo == herramientaColumna1.titulo && $0.n <= taller.actual })?.n { taller.ir(v) } }) { taller.hacer(herramientaColumna1) }
                 .disabled(taller.trabajo == nil || taller.publicacionActual == nil || taller.enCurso != nil || !colocado)
             Label("Siguientes pasos: los iremos añadiendo", systemImage: "ellipsis")
                 .font(.system(size: 10.5)).foregroundStyle(.tertiary)
@@ -1570,6 +1974,7 @@ struct TarjetaMaquetar: View {
 
 struct TarjetaVersiones: View {
     @ObservedObject var taller: Taller
+    @State private var verCambios = false
 
     var body: some View {
         Tarjeta(numero: "VERSIONES", titulo: "Adelante y atrás", lema: "Elige una versión para verla en Excel",
@@ -1607,32 +2012,27 @@ struct TarjetaVersiones: View {
                   systemImage: "info.circle")
                 .font(.system(size: 10.5)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             if let p = taller.pasoActual, !p.detalle.isEmpty {
+                // Los avisos, siempre a la vista; los cambios, plegados (petición del usuario, 2026-11-26)
+                let avisos = p.detalle.filter { $0.hasPrefix("Aviso") }
+                let cambios = p.detalle.filter { !$0.hasPrefix("Aviso") }
                 VStack(alignment: .leading, spacing: 5) {
                     Rotulo("Cambios de la versión \(p.n)")
-                    ForEach(p.detalle, id: \.self) { entera in
-                        // Los avisos, en rojo y negrita: piden comprobar algo a mano. Con marca (diana), al pulsar la
-                        // línea Excel selecciona el gráfico del panel o la forma a la que se refiere
-                        let (linea, marca) = partirMarca(entera)
-                        let aviso = linea.hasPrefix("Aviso")
-                        let fila = HStack(alignment: .firstTextBaseline, spacing: 6) {
-                            Image(systemName: aviso ? "exclamationmark.triangle.fill" : "circle.fill")
-                                .font(.system(size: aviso ? 10 : 4))
-                                .foregroundStyle(aviso ? Color.red : colorVersiones)
-                            Text(linea).font(.system(size: 11.5, weight: aviso ? .bold : .regular))
-                                .foregroundStyle(aviso ? Color.red : Color.primary)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            if marca != nil {
-                                Image(systemName: "scope").font(.system(size: 10, weight: .semibold))
-                                    .foregroundStyle(aviso ? Color.red : colorVersiones)
+                    if avisos.isEmpty {
+                        Label("Sin avisos", systemImage: "checkmark.circle.fill")
+                            .font(.system(size: 11.5, weight: .semibold)).foregroundStyle(.green)
+                    } else {
+                        ForEach(avisos, id: \.self) { FilaDetalle(taller: taller, entera: $0, color: colorVersiones) }
+                    }
+                    if !cambios.isEmpty {
+                        DisclosureGroup(isExpanded: $verCambios) {
+                            VStack(alignment: .leading, spacing: 5) {
+                                ForEach(cambios, id: \.self) { FilaDetalle(taller: taller, entera: $0, color: colorVersiones) }
                             }
-                        }
-                        if let marca {
-                            Button { taller.verEnExcel(marca) } label: { fila.contentShape(Rectangle()) }
-                                .buttonStyle(.plain)
-                                .help("Seleccionar en Excel \(descripcionMarca(marca))")
-                        } else {
-                            fila
+                            .padding(.top, 4)
+                        } label: {
+                            Text(verCambios ? "Ocultar los \(cambios.count) cambios" : "Ver los \(cambios.count) cambios")
+                                .font(.system(size: 11.5, weight: .medium)).foregroundStyle(colorVersiones)
+                                .onTapGesture { verCambios.toggle() }
                         }
                     }
                 }
@@ -1653,7 +2053,7 @@ struct TarjetaTerminar: View {
                 icono: "checkmark.seal", color: color, trabajando: taller.enCurso != nil) {
             HStack(alignment: .top, spacing: 14) {
                 Accion(icono: "doc.text.magnifyingglass", titulo: "Comparar con el original",
-                       detalle: "Textos, cifras y datos de todas las hojas frente al Excel del autor (no la colocación): avisa de lo que falte y de los cambios de cifras, fechas, trimestres, mayúsculas… No crea versión",
+                       detalle: "Textos, cifras y datos de todas las hojas frente al Excel del autor (no la colocación): avisa de lo que falte y de los cambios de cifras, fechas, trimestres, mayúsculas… y pone en Excel la copia encima del original, con el mismo zoom. Se hace sola al terminar el paso 5. No crea versión",
                        color: color, principal: taller.comparacion.isEmpty) { taller.comparar() }
                 Accion(icono: "checkmark.circle", titulo: "Guardar como EXCEL",
                        detalle: taller.trabajo == nil ? "Guarda el resultado junto al original y borra las copias y las versiones"
@@ -1674,7 +2074,7 @@ struct TarjetaTerminar: View {
                             Image(systemName: aviso ? "exclamationmark.triangle.fill" : cambio ? "arrow.left.arrow.right" : "circle.fill")
                                 .font(.system(size: aviso || cambio ? 10 : 4))
                                 .foregroundStyle(aviso ? Color.red : cambio ? Color.orange : color)
-                            Text(linea).font(.system(size: 11.5, weight: aviso ? .bold : .regular))
+                            Text(conResaltes(linea)).font(.system(size: 11.5, weight: aviso ? .bold : .regular))
                                 .foregroundStyle(aviso ? Color.red : Color.primary)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -1735,6 +2135,9 @@ struct Accion: View {
     let color: Color
     var principal = false
     var marca: String?
+    /// Avisos del paso (globo rojo «⚠ N»); al pulsar el globo, `verAvisos` (ir a la versión de ese paso)
+    var avisos = 0
+    var verAvisos: (() -> Void)? = nil
     let hacer: () -> Void
     @State private var encima = false
     @Environment(\.isEnabled) private var activa
@@ -1753,6 +2156,15 @@ struct Accion: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 2)
+                if avisos > 0 {
+                    Button { verAvisos?() } label: {
+                        Text("⚠ \(avisos)").font(.system(size: 10.5, weight: .bold)).foregroundStyle(.white)
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(Capsule().fill(Color.red))
+                    }
+                    .buttonStyle(.plain)
+                    .help("\(avisos) aviso\(avisos == 1 ? "" : "s") en este paso: pulsa para ir a su versión y verlos en «Cambios de la versión»")
+                }
                 if let marca { Image(systemName: marca).foregroundStyle(color) }
             }
             .padding(6)
@@ -1812,7 +2224,7 @@ struct Consola: View {
                             ForEach(Array(e.texto.components(separatedBy: "\n").enumerated()), id: \.offset) { _, entera in
                                 // Las líneas con marca se pulsan: Excel selecciona la forma a la que se refieren
                                 let (linea, marca) = partirMarca(entera)
-                                let texto = Text(linea.isEmpty ? " " : linea)
+                                let texto = Text(linea.isEmpty ? AttributedString(" ") : conResaltes(linea))
                                     .font(.system(size: 11.5, weight: linea.hasPrefix("• Aviso") ? .bold : .regular, design: .monospaced))
                                     .foregroundStyle(color(linea))
                                 if let marca {
@@ -1825,7 +2237,8 @@ struct Consola: View {
                                         .contentShape(Rectangle())
                                     }
                                     .buttonStyle(.plain)
-                                    .help("Pulsa para verlo seleccionado en Excel")
+                                    .help(marca.hasPrefix("version:") ? "Pulsa para ir a esa versión y ver sus cambios y avisos"
+                                                                      : "Pulsa para verlo seleccionado en Excel")
                                 } else {
                                     texto.frame(maxWidth: .infinity, alignment: .leading)
                                 }

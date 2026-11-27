@@ -5,7 +5,9 @@
     "grupo": "Grupo 240",
     "pastilla_modelo": "Rectángulo 182",
     "marco_grafico": "Rectángulo 67",
-    "marco_titulo": "Rectángulo 68"
+    "marco_titulo": "Rectángulo 68",
+    "hoja_lado_a_lado": "Recuadros_Gráficos_Titulo 1",
+    "grupo_lado_a_lado": "Grupo 3"
   },
   "muestrario": [
     {"nombre": "Publicaciones bianuales, trimestrales, boletín económico", "color": "F3CED3"},

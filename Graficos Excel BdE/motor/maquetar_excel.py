@@ -140,6 +140,25 @@ def reiniciar(trabajo):
     return {"trabajo": str(trabajo), **estado}
 
 
+def paneles(trabajo, modo, pid=None):
+    """Control «Paneles» de la app (petición del usuario, 2026-11-27): «auto», «lado» o «apilados». La retícula se
+    pone en el paso 1: se vuelve a la copia exacta y se rehacen los pasos de maquetación que ya estaban hechos (las
+    versiones de las herramientas y los cambios a mano de después se pierden)."""
+    if modo not in MODOS_PANELES:
+        raise Fallo(f"Modo de paneles desconocido: «{modo}»")
+    estado = leer_estado(trabajo)
+    hechos = [p["titulo"] for p in estado["pasos"][1:estado["actual"] + 1]]
+    estado["paneles"] = modo
+    guardar_estado(trabajo, estado)
+    orden_pasos = [(RETICULA_Y_TEXTOS, paso1), ("Tamaño y colocación", paso2), ("Ejes", paso3),
+                   (LINEAS_INTERIORES, paso4), (TRAMAS_COLORES_LINEAS, paso5)]
+    hasta = max([k for k, (t, _) in enumerate(orden_pasos) if t in hechos] or [-1])
+    r = ir(trabajo, 0)
+    for _, f in orden_pasos[:hasta + 1]:
+        r = f(trabajo, pid)
+    return r
+
+
 def ir(trabajo, n):
     estado = leer_estado(trabajo)
     n = int(n)
@@ -178,6 +197,63 @@ def nuevo_paso(trabajo, titulo, cambios, detalle):
     return {"trabajo": str(trabajo), **estado}
 
 
+INVISIBLES = {"\n": "⏎", "\u00a0": "⍽", "\u202f": "⍽", "\u2009": "⍽", "\u200a": "⍽", "\t": "⇥", " ": "␣"}
+
+
+def resaltar(a, b, contexto=24):
+    """«…⟪x⟫…» → «…⟪y⟫…»: solo lo que cambia entre ⟪ ⟫ (la app lo pinta en rojo), con los espacios, saltos de
+    línea y espacios que no parten línea a la vista (␣ ⏎ ⍽), y algo de texto alrededor (como en Cuadros Excel BdE;
+    petición del usuario, 2026-11-26)."""
+    ops = difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes()
+
+    def lado(t, cual):
+        trozos = []
+        for op, i1, i2, j1, j2 in ops:
+            seg = t[i1:i2] if cual == 0 else t[j1:j2]
+            if op == "equal":
+                trozos.append((False, seg.replace("\n", " ")))
+            elif seg:
+                trozos.append((True, "".join(INVISIBLES.get(ch, ch) for ch in seg)))
+        salida = []
+        for k, (marcado, seg) in enumerate(trozos):
+            if marcado:
+                salida.append("⟪" + seg + "⟫")
+                continue
+            primero, ultimo = k == 0, k == len(trozos) - 1
+            if primero or trozos[k - 1][0]:
+                seg = re.sub(r'^ +', lambda m: "␣" * len(m.group(0)), seg)
+            if not ultimo and trozos[k + 1][0]:
+                seg = re.sub(r' +$', lambda m: "␣" * len(m.group(0)), seg)
+            if primero and not ultimo and len(seg) > contexto:
+                seg = "…" + seg[-contexto:]
+            elif ultimo and not primero and len(seg) > contexto:
+                seg = seg[:contexto] + "…"
+            elif not primero and not ultimo and len(seg) > 2 * contexto:
+                seg = seg[:contexto] + "…" + seg[-contexto:]
+            elif primero and ultimo:
+                seg = recortar(seg)
+            salida.append(seg)
+        return "".join(salida)
+    return f"«{lado(a, 0)}» → «{lado(b, 1)}»"
+
+
+RE_PAR_CAMBIO = re.compile(r'«([^«»⟪⟫]*)» → «([^«»⟪⟫]*)»')
+
+
+def con_resaltes(linea):
+    """Lo que la app pinta en rojo (petición del usuario, 2026-11-26): en los cambios «a» → «b», solo lo que cambia;
+    en los avisos, lo que señalan (el texto entre «», y «sept» en el de septiembre). Lo que ya lleva ⟪ ⟫ se deja."""
+    if "⟪" in linea:
+        return linea
+    cuerpo, marca_l = (linea.rsplit(" ⟦", 1) + [""])[:2] if linea.endswith("⟧") else (linea, "")
+    marca_l = (" ⟦" + marca_l) if marca_l else ""
+    if RE_PAR_CAMBIO.search(cuerpo):
+        cuerpo = RE_PAR_CAMBIO.sub(lambda m: resaltar(m.group(1), m.group(2)) if m.group(1) != m.group(2) else m.group(0), cuerpo)
+    elif cuerpo.startswith("Aviso"):
+        cuerpo = re.sub(r'«([^«»]+)»', lambda m: f"«⟪{m.group(1)}⟫»", cuerpo)
+    return cuerpo + marca_l
+
+
 def marca(hoja, indice, forma):
     """Marca invisible al final de una línea del detalle con la forma que hay que enseñar en Excel (como en Cuadros
     Excel BdE): la app la quita al mostrarla y, al pulsar la línea, selecciona esa forma en su hoja (petición del
@@ -204,9 +280,9 @@ def marcar_detalle(libro, detalle, orden_documento=False):
             partes = list(partes_dibujo(dibujo))
             caja = medidas_hoja(z, dibujo)
     except (Fallo, KeyError, OSError, zipfile.BadZipFile):
-        return detalle
+        return [con_resaltes(l) for l in detalle]
     if not hoja:
-        return detalle
+        return [con_resaltes(l) for l in detalle]
     anclas = [a for a in partes if ANCLA.fullmatch(a)]
     graficos = [(caja(a)[1], k, nombre_forma(a)) for k, a in enumerate(anclas, 1) if "<c:chart " in a]
     nombres = [(k, n) for _, k, n in (graficos if orden_documento else sorted(graficos))]
@@ -220,7 +296,7 @@ def marcar_detalle(libro, detalle, orden_documento=False):
                 linea += marca(hoja, *nombres[int(m.group(1)) - 1])
             elif fuentes and linea.startswith("Aviso") and re.search(r'(?i)\bfuentes?\b|\bsources?\b', linea):
                 linea += marca(hoja, *fuentes)
-        salida.append(linea)
+        salida.append(con_resaltes(linea))
     return salida
 
 
@@ -357,17 +433,32 @@ def paso1(trabajo, pid):
     with zipfile.ZipFile(base) as z:
         ruta = dibujo_de_hoja(z, HOJA_GRAFICO)
         dibujo, deshechos = desagrupar(z, z.read(ruta).decode("utf-8"))
+        # Títulos de panel que el autor dejó dentro de un gráfico (cuadro de texto del gráfico): a la hoja
+        dibujo, formas_cambiadas, sacados, vacias = sacar_titulos_de_graficos(z, ruta, dibujo)
     cambios0, detalle0 = {}, []
+    if sacados or vacias:
+        cambios0[ruta] = dibujo.encode("utf-8")
+        cambios0.update(formas_cambiadas)
+        detalle0 += [f"Aviso: el título de panel «{t}» estaba dentro del gráfico «{g}» (como texto del gráfico): pasa a "
+                     "la hoja para tratarlo como título de panel" for t, g in sacados]
+        por_grafico = {}
+        for f, g in vacias:
+            por_grafico.setdefault(g, []).append(f)
+        detalle0 += [f"Aviso: quitadas de dentro del gráfico «{g}» {len(fs)} forma{'s' if len(fs) > 1 else ''} vacía"
+                     f"{'s' if len(fs) > 1 else ''} e invisible{'s' if len(fs) > 1 else ''} (sin texto, relleno ni borde; "
+                     f"restos de la plantilla del autor: {', '.join(f'«{x}»' for x in fs)}): tapaban el gráfico y no "
+                     "dejaban seleccionar ni mover lo que había debajo" for g, fs in por_grafico.items()]
     if deshechos:
         cambios0[ruta] = dibujo.encode("utf-8")
         detalle0.append("Desagrupado lo que el autor había agrupado con el gráfico: " +
                         ", ".join(f"«{n}»" for n in deshechos) + " (cada elemento en su sitio)")
+    if deshechos or sacados or vacias:
         previo = io.BytesIO()
         reescribir_zip(base, previo, cambios0)
     else:
         previo = base
     with zipfile.ZipFile(previo) as z:
-        cambios, detalle = reticula_y_pastilla(z, pid)
+        cambios, detalle = reticula_y_pastilla(z, pid, estado.get("paneles", "auto"), es_recuadro(trabajo))
     intermedio = io.BytesIO()
     reescribir_zip(previo, intermedio, cambios)
     with zipfile.ZipFile(intermedio) as z:
@@ -376,7 +467,194 @@ def paso1(trabajo, pid):
                       aviso_separador_ingles(estado) + detalle0 + detalle + detalle_textos)
 
 
-def reticula_y_pastilla(z, pid):
+def sacar_titulos_de_graficos(z, ruta, dibujo):
+    """Un título de panel numerado («2.28.b …») que el autor puso dentro de un gráfico, como cuadro de texto del
+    gráfico (G_IA2025_1.28: el del panel b, dentro del gráfico del panel a), pasa a la hoja en el mismo sitio, para
+    tratarlo como título de panel (renumerarlo, 8 pt, colocarlo con su gráfico). Devuelve el dibujo, las capas de
+    formas cambiadas y [(texto, gráfico)]."""
+    partes = list(partes_dibujo(dibujo))
+    caja = medidas_hoja(z, dibujo)
+    relaciones = rels(z, ruta)
+    sig = max([int(n) for n in re.findall(r'<xdr:cNvPr\s+id="(\d+)"', dibujo)] or [1]) + 1
+    cambios, sacados, nuevas, vacias = {}, [], [], []
+    for k, a in enumerate(partes):
+        rid = re.search(r'<c:chart\b[^>]*\br:id="([^"]+)"', a) if ANCLA.fullmatch(a) else None
+        if not rid or rid.group(1) not in relaciones:
+            continue
+        ruta_graf = relaciones[rid.group(1)][1]
+        ruta_formas = next((d for t, d in rels(z, ruta_graf).values() if t.endswith("/chartUserShapes")), None)
+        if not ruta_formas or ruta_formas not in z.namelist():
+            continue
+        formas = z.read(ruta_formas).decode("utf-8")
+        antes = formas
+        gx, gy, gw, gh = caja(a)
+        for ancla in re.findall(r'<cdr:(?:relSizeAnchor|absSizeAnchor)\b.*?</cdr:(?:relSizeAnchor|absSizeAnchor)>', formas, re.S):
+            texto = html.unescape(texto_forma(ancla)).strip()
+            sp = re.search(r'<cdr:sp\b.*?</cdr:sp>', ancla, re.S)
+            subtitulo = bool(RE_SUBPANEL.match(texto)) and len(texto) < 120
+            if sp and forma_invisible(sp.group(0), texto):
+                # Forma vacía e invisible encima del gráfico: tapa sus elementos y no deja seleccionarlos ni moverlos
+                # (G_IA2025_2.5: «Rectangle 1», vinculado a «#REF!», sobre toda la parte de arriba)
+                formas = formas.replace(ancla, "", 1)
+                nombre = re.search(r'<cdr:cNvPr\b[^>]*\bname="([^"]*)"', ancla)
+                vacias.append((nombre.group(1) if nombre else "sin nombre", nombre_forma(a)))
+                continue
+            if not sp or not (subtitulo or (RE_PANEL.match(texto) and RE_NUMERO_PANEL.match(texto))):
+                continue
+            x0, y0, x1, y1 = caja_rel(ancla)
+            x, y, w, h = round(gx + x0 * gw), round(gy + y0 * gh), round((x1 - x0) * gw), round((y1 - y0) * gh)
+            forma = sp.group(0).replace("<cdr:", "<xdr:").replace("</cdr:", "</xdr:")
+            # En la capa del gráfico cada elemento repite «xmlns:a»; la hoja ya lo declara (y las reglas de los textos
+            # buscan «<a:p>» a secas)
+            forma = forma.replace(' xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"', "")
+            forma = re.sub(r'(<xdr:cNvPr\s+id=")\d+(")', rf'\g<1>{sig}\2', forma, count=1)
+            forma = re.sub(r'<a:off x="-?\d+" y="-?\d+"/>\s*<a:ext cx="\d+" cy="\d+"/>',
+                           f'<a:off x="{x}" y="{y}"/><a:ext cx="{w}" cy="{h}"/>', forma, count=1)
+            sig += 1
+            nuevas.append((k, f'<xdr:absoluteAnchor><xdr:pos x="{x}" y="{y}"/><xdr:ext cx="{w}" cy="{h}"/>{forma}'
+                              '<xdr:clientData/></xdr:absoluteAnchor>'))
+            formas = formas.replace(ancla, "", 1)
+            sacados.append((texto[:60], nombre_forma(a)))
+        if formas != antes:
+            cambios[ruta_formas] = formas.encode("utf-8")
+    # El título propio de un gráfico (<c:title>) numerado como título de panel («3.2.a …»): Excel lo pinta dentro del
+    # marco, sobre el trazado; pasa a la hoja como un título de panel más (G_MemoriaSupervision_3.2)
+    for k, a in enumerate(partes):
+        rid = re.search(r'<c:chart\b[^>]*\br:id="([^"]+)"', a) if ANCLA.fullmatch(a) else None
+        if not rid or rid.group(1) not in relaciones:
+            continue
+        ruta_graf = relaciones[rid.group(1)][1]
+        xml = z.read(ruta_graf).decode("utf-8")
+        tit = re.search(r'<c:title>.*?</c:title>', xml, re.S)
+        if not tit:
+            continue
+        texto = html.unescape("".join(re.findall(r'<a:t>([^<]*)</a:t>', tit.group(0)))).strip()
+        if not texto or not (RE_SUBPANEL.match(texto) or (RE_PANEL.match(texto) and RE_NUMERO_PANEL.match(texto))):
+            continue
+        gx, gy, gw, gh = caja(a)
+        x, y, w, h = gx, gy, round(gw * 0.95), round(6 * 36000)
+        nuevas.append((k, f'<xdr:absoluteAnchor><xdr:pos x="{x}" y="{y}"/><xdr:ext cx="{w}" cy="{h}"/><xdr:sp macro="" '
+                          f'textlink=""><xdr:nvSpPr><xdr:cNvPr id="{sig}" name="Título de panel {sig}"/><xdr:cNvSpPr txBox="1"/>'
+                          f'</xdr:nvSpPr><xdr:spPr><a:xfrm><a:off x="{x}" y="{y}"/><a:ext cx="{w}" cy="{h}"/></a:xfrm>'
+                          '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/></xdr:spPr><xdr:txBody><a:bodyPr '
+                          'wrap="square" lIns="0" tIns="0" rIns="0" bIns="0" rtlCol="0" anchor="t"/><a:lstStyle/><a:p><a:r>'
+                          '<a:rPr lang="es-ES" sz="800" b="0"><a:solidFill><a:srgbClr val="000000"/></a:solidFill>'
+                          f'<a:latin typeface="{ROBOTO}"/><a:ea typeface="{ROBOTO}"/></a:rPr><a:t>{html.escape(texto, quote=False)}'
+                          '</a:t></a:r></a:p></xdr:txBody></xdr:sp><xdr:clientData/></xdr:absoluteAnchor>'))
+        sig += 1
+        xml = xml.replace(tit.group(0), "", 1)
+        xml = re.sub(r'<c:autoTitleDeleted val="0"/>', '<c:autoTitleDeleted val="1"/>', xml)
+        if "<c:autoTitleDeleted" not in xml:
+            xml = re.sub(r'(<c:chart>)', r'\1<c:autoTitleDeleted val="1"/>', xml, count=1)
+        cambios[ruta_graf] = xml.encode("utf-8")
+        sacados.append((texto[:60], nombre_forma(a)))
+    for k, nueva in sorted(nuevas, reverse=True):
+        partes.insert(k + 1, nueva)
+        partes.insert(k + 1, "")
+    return "".join(partes), cambios, sacados, vacias
+
+
+def forma_invisible(sp, texto):
+    """Una forma sin texto que no se ve: sin relleno y sin borde (los cuadros de texto, sin nada, no tienen ni uno
+    ni otro)."""
+    if texto or "<cdr:pic" in sp:
+        return False
+    sppr = re.search(r'<cdr:spPr\b.*?</cdr:spPr>', sp, re.S)
+    sppr = sppr.group(0) if sppr else ""
+    caja_texto = 'txBox="1"' in sp
+    ln = re.search(r'<a:ln\b.*?</a:ln>|<a:ln\b[^>]*/>', sppr, re.S)
+    relleno = re.sub(r'<a:ln\b.*?</a:ln>|<a:ln\b[^>]*/>', "", sppr, flags=re.S)
+    sin_relleno = "<a:noFill" in relleno or (caja_texto and not re.search(r'<a:(?:solidFill|gradFill|pattFill|blipFill)', relleno))
+    sin_borde = (ln and "<a:noFill" in ln.group(0)) or (caja_texto and not ln)
+    sin_estilo = "<cdr:style>" not in sp or caja_texto
+    return bool(sin_relleno and sin_borde and sin_estilo)
+
+
+# ---- paneles lado a lado (Memoria de Supervisión: 2.1, 2.9, 3.1…; decisiones del usuario, 2026-11-27)
+
+ALTO_MIN_PANEL = 25 * 36000          # EMU: un gráfico más bajo es una leyenda suelta (las del 3.5)
+SEPARACION_LADO_A_LADO = 40 * 36000  # EMU: dos paneles de una fila empiezan al menos así de separados
+
+
+MODOS_PANELES = ("auto", "lado", "apilados")
+
+
+def es_recuadro(trabajo):
+    """Los recuadros («Rec_…») se dejan para el final (decisión del usuario, 2026-11-27): no van lado a lado solos."""
+    return Path(str(trabajo)).name.startswith("Rec_")
+
+
+def filas_segun_modo(z, ruta, dibujo, modo="auto", recuadro=False):
+    """Las filas de paneles lado a lado según el control «Paneles» de la app: «auto» (en todas las publicaciones, lo
+    que se detecte; los recuadros no), «lado» (lo detectado o, si el autor los apiló, en filas de dos por orden: para
+    los que no caben al publicar) o «apilados» (nunca). None: maqueta de siempre, uno debajo de otro."""
+    if modo == "apilados":
+        return None
+    filas = filas_de_paneles(z, ruta, dibujo)
+    if modo != "lado":
+        return None if recuadro else filas
+    return filas or filas_de_paneles(z, ruta, dibujo, forzar=True)
+
+
+def es_solo_leyenda(xml, alto):
+    """¿Un gráfico que solo enseña la leyenda (la leyenda común del 2.1 y el 8.3, las sueltas del 3.5)?"""
+    ley = re.search(r'<c:legend>.*?</c:legend>', xml, re.S)
+    if not ley:
+        return False
+    if alto < ALTO_MIN_PANEL:
+        return True
+    lay = dict(re.findall(r'<c:([wh]) val="([^"]+)"', ley.group(0)))
+    return float(lay.get("w", 0)) > 0.9 and float(lay.get("h", 0)) > 0.5
+
+
+def filas_de_paneles(z, ruta, dibujo, forzar=False):
+    """Los gráficos de la hoja por filas, si hay paneles lado a lado (dos o más a la misma altura, en mitades
+    distintas). Devuelve (filas, leyendas) con las posiciones en `partes_dibujo(dibujo)`: cada fila, sus paneles de
+    izquierda a derecha; `leyendas`, {fila: [gráficos que solo son leyenda, debajo de ella]}. None si no hay."""
+    relaciones = rels(z, ruta)
+    caja = medidas_hoja(z, dibujo)
+    paneles, sueltas = [], []
+    # Solo lo de dentro de la página (la retícula): a la derecha el autor deja a veces gráficos de sobra (1.19)
+    ret = next((a.group(0) for a in ANCLA.finditer(dibujo) if es_reticula(a.group(0))), None)
+    limite = caja(ret)[0] + caja(ret)[2] if ret else 175 * 36000
+    for i, a in enumerate(partes_dibujo(dibujo)):
+        rid = ANCLA.fullmatch(a) and re.search(r'<c:chart\b[^>]*\br:id="([^"]+)"', a)
+        if not rid or rid.group(1) not in relaciones:
+            continue
+        x, y, w, h = caja(a)
+        if x >= limite - 10 * 36000:
+            continue
+        xml = z.read(relaciones[rid.group(1)][1]).decode("utf-8")
+        (sueltas if es_solo_leyenda(xml, h) else paneles).append((i, x, y, w, h))
+    filas = []
+    for p in sorted(paneles, key=lambda p: p[2]):
+        for fila in filas:
+            arriba = max(q[2] for q in fila)
+            abajo = min(q[2] + q[4] for q in fila)
+            if min(abajo, p[2] + p[4]) - max(arriba, p[2]) > 0.5 * min(p[4], min(q[4] for q in fila)):
+                fila.append(p)
+                break
+        else:
+            filas.append([p])
+    if forzar and len(paneles) > 1:
+        # Forzado desde la app: los paneles, en su orden (de arriba abajo), en filas de dos
+        # (por el centro: el marco de un panel puede empezar por encima del de arriba; 1.35, el b antes que el a)
+        orden_p = sorted(paneles, key=lambda p: (p[2] + p[4] / 2, p[1]))
+        filas = [orden_p[k:k + 2] for k in range(0, len(orden_p), 2)]
+    elif not any(len(f) > 1 and max(q[1] for q in f) - min(q[1] for q in f) > SEPARACION_LADO_A_LADO for f in filas):
+        return None
+    if not (forzar and len(paneles) > 1):
+        # (forzado, el orden de arriba abajo del autor: a, b, c…; si no, de izquierda a derecha)
+        filas = [sorted(f, key=lambda p: p[1]) for f in filas]
+    leyendas = {}
+    for l in sueltas:
+        # Con la fila de encima (la más baja de las que empiezan por encima de la leyenda)
+        k = max((k for k, f in enumerate(filas) if min(q[2] for q in f) <= l[2]), default=0)
+        leyendas.setdefault(k, []).append(l)
+    return [[q[0] for q in f] for f in filas], {k: [q[0] for q in sorted(v, key=lambda q: q[1])] for k, v in leyendas.items()}
+
+
+def reticula_y_pastilla(z, pid, modo="auto", recuadro=False):
     """Retícula y pastilla de la publicación desde el archivo de retículas, al fondo y en A1;
     se borran las del autor por si las ha tocado."""
     pub = publicacion(pid)
@@ -391,6 +669,12 @@ def reticula_y_pastilla(z, pid):
 
     ruta = dibujo_de_hoja(z, HOJA_GRAFICO)
     dibujo = z.read(ruta).decode("utf-8")
+    # Paneles lado a lado: la retícula de los recuadros (dos columnas iguales y sus filas); la pastilla, la de siempre
+    lado_a_lado = filas_segun_modo(z, ruta, dibujo, modo, recuadro)
+    if lado_a_lado and ret.get("grupo_lado_a_lado"):
+        with zipfile.ZipFile(PROYECTO / ret["archivo"]) as zr:
+            dibujo_lad = zr.read(dibujo_de_hoja(zr, ret["hoja_lado_a_lado"])).decode("utf-8")
+        grupo = next(a.group(0) for a in ANCLA.finditer(dibujo_lad) if nombre_forma(a.group(0)) == ret["grupo_lado_a_lado"])
 
     detalle = []
     quitar = []
@@ -414,7 +698,10 @@ def reticula_y_pastilla(z, pid):
     nueva_ret, sig = renumerar(anclar_arriba_izquierda(grupo, cx, cy), sig, "Retícula")
     px, py = tamano(modelo)
     nueva_pas, sig = renumerar(anclar_arriba_izquierda(color_relleno(modelo, pub["color"]), px, py), sig, "Pastilla")
-    detalle.append(f"Retícula del archivo de retículas en A1, al fondo ({cx / 360000:.2f} × {cy / 360000:.2f} cm)")
+    detalle.append(f"Retícula del archivo de retículas en A1, al fondo ({cx / 360000:.2f} × {cy / 360000:.2f} cm)"
+                   + (f": la de los recuadros, de dos columnas iguales, porque los paneles van lado a lado "
+                      f"({sum(len(f) for f in lado_a_lado[0])} paneles en {len(lado_a_lado[0])} fila"
+                      f"{'s' if len(lado_a_lado[0]) > 1 else ''})" if lado_a_lado else ""))
     detalle.append(f"Pastilla de {pub['nombre']} en A1, encima de la retícula (color {pub['color']}, {px / 360000:.2f} × {py / 360000:.2f} cm)")
 
     # Primero en el dibujo = al fondo; la pastilla va justo encima de la retícula.
@@ -436,7 +723,12 @@ SIGLAS = {"EEUU", "EE.UU.", "EE", "UU", "UEM", "UE", "EA", "PIB", "IPC", "IPCA",
           "OCDE", "OPEP", "IA", "TIC", "PYME", "PYMES", "VAB", "EPA", "PMI", "CNMV", "TAE", "TIN", "ICO", "IRPF",
           "IVA", "I+D", "SA", "EBAE", "ROE", "ROA", "NPL", "BBVA", "CCAA", "AAPP", "ISFLSH", "PER", "ETF", "EURIBOR",
           "FED", "INE", "AEAT", "BIS", "BPI", "UK", "US", "USA", "USD", "EUR", "GBP", "JPY", "CNY", "ESG", "TR", "EMU",
-          "GDP", "CPI", "HICP", "ECB", "IMF", "OECD", "SME", "SMES", "AI", "UN", "CET1", "LTV", "LTI", "DTI", "DSTI", "SMI", "OIS"}
+          "GDP", "CPI", "HICP", "ECB", "IMF", "OECD", "SME", "SMES", "AI", "UN", "CET1", "LTV", "LTI", "DTI", "DSTI", "SMI", "OIS",
+          "CLU", "EBE", "REB", "PFEMP", "PTF"}
+# Siglas que el propio autor escribe en mayúsculas dentro de una leyenda en minúscula del mismo gráfico
+# («PFEMP + margen de flexibilidad» → «PFEMP» también es sigla en la leyenda «PFEMP», G_IA2025_1.35 c). Las pone
+# `leyendas_en_minuscula` para cada gráfico
+SIGLAS_DEL_GRAFICO = set()
 SIGLAS_ESCRITAS = {"BDE": "BdE", "PYMES": "pymes", "PYME": "pyme", "ROE": "RoE", "EURIBOR": "euríbor", "SMES": "SMEs",
                    "FED": "Fed"}
 # «UN» es sigla en inglés (Naciones Unidas) pero artículo en español: según el idioma
@@ -468,16 +760,33 @@ NOMBRES_PROPIOS_SOLO_EN = {"EURO", "AREA", "MAY", "MARCH", "UNITED", "STATES", "
 ROMANOS = re.compile(r'(?=[IVXLC]+$)M*(C[MD]|D?C{0,3})(X[CL]|L?X{0,3})(I[XV]|V?I{0,3})$')
 
 
+CONECTORES_MINUSCULA = {"y", "e", "o", "u", "a", "de", "del", "en", "and", "of", "in", "to"}
+
+
+def sin_vocales(palabra):
+    """Una palabra de dos o más letras sin vocales (ni «y»: «BY», «MY» en inglés) no es una palabra, es una sigla
+    («PTF», «CNMV»;
+    G_IA2025_3.1, «PTF» → «Ptf»)."""
+    letras = [c for c in palabra if c.isalpha()]
+    return len(letras) >= 2 and all(c.isupper() for c in letras) and not any(c in "AEIOUYÁÉÍÓÚÜaeiouyáéíóúü" for c in letras)
+
+
 def en_minuscula(texto, idioma="es"):
     """Nombre de leyenda en minúscula salvo las siglas, los nombres propios, los números romanos y la primera
     letra (y la de después de un punto). Solo si está entero en mayúsculas; si no, como lo escribió el autor."""
     # Las llamadas a nota («(b)», en minúscula por norma) no cuentan para saber si está en mayúsculas
-    letras = [c for c in re.sub(r'\(\w\)', "", texto) if c.isalpha()]
+    # Ni las conjunciones y preposiciones cortas que el autor ya dejó en minúscula («… 2002-2007 y 2022-2025»,
+    # G_IA2025_1.31)
+    # (también las llamadas dobles: «(a, b)», «(a y b)», título del 1.33 b)
+    sin_notas = re.sub(r'\(\w(?:\s*(?:,|y|and)\s*\w)*\)', "", texto)
+    palabras = re.findall(r'[^\W\d_]+', sin_notas)
+    letras = [c for p in palabras if p not in CONECTORES_MINUSCULA for c in p]
     if not letras or any(c.islower() for c in letras):
         return texto
-    siglas = SIGLAS - (set() if idioma == "en" else SIGLAS_SOLO_EN)
+    siglas = (SIGLAS | SIGLAS_DEL_GRAFICO) - (set() if idioma == "en" else SIGLAS_SOLO_EN)
     propios = NOMBRES_PROPIOS - (set() if idioma == "en" else NOMBRES_PROPIOS_SOLO_EN)
-    partes = re.split(r'(\s+)', texto)
+    # El guion también separa: «CLU-MANUFACTURAS» → «CLU-manufacturas» (1.33 a)
+    partes = re.split(r'(\s+|(?<=[^\W\d_])-(?=[^\W\d_]))', texto)
     salida, mayuscula = [], True
     for parte in partes:
         if not parte or parte.isspace():
@@ -488,6 +797,7 @@ def en_minuscula(texto, idioma="es"):
         if len(limpia) == 1 and parte.startswith("(") and limpia.isalpha():
             nueva = parte
         elif limpia in siglas or limpia.replace(".", "") in siglas or any(c.isdigit() for c in limpia) or (limpia and ROMANOS.match(limpia)) \
+                or sin_vocales(limpia) \
                 or re.fullmatch(r"[A-ZÁÉÍÓÚÑ]+(?:[&+][A-ZÁÉÍÓÚÑ]+)+", limpia):
             # (siglas con «&» o «+», «S&P», «I+D»: se dejan; antes «S&P 500» → «S&p 500», G_IA2025_1.13)
             escrita = SIGLAS_ESCRITAS.get(limpia, limpia)
@@ -505,7 +815,8 @@ def en_minuscula(texto, idioma="es"):
                     nueva = nueva[:i] + nueva[i].upper() + nueva[i + 1:]
         if any(c.isalpha() for c in parte):
             mayuscula = False
-        if parte.rstrip("»\"')").endswith((".", ":", "?", "!")):
+        # Tras los dos puntos, minúscula en castellano («IAPC de servicios: evolución…», como en el .ai del 1.31)
+        if parte.rstrip("»\"')").endswith((".", "?", "!") if idioma != "en" else (".", ":", "?", "!")):
             mayuscula = True
         salida.append(nueva)
     return "".join(salida)
@@ -554,6 +865,11 @@ def leyendas_en_minuscula(z, ruta_graf, xml, idioma, hojas):
     texto, que es su origen. `hojas` guarda las hojas de datos ya cambiadas. Devuelve el xml y lo cambiado."""
     compartidos = textos_compartidos(z)
     hechos = []
+    SIGLAS_DEL_GRAFICO.clear()
+    for nombre in re.findall(r'<c:tx>.*?<c:v>([^<]*)</c:v>', xml, re.S):
+        nombre = html.unescape(nombre)
+        if any(c.islower() for c in nombre):
+            SIGLAS_DEL_GRAFICO.update(p for p in re.findall(r'[^\W\d_]{2,}', nombre) if p.isupper())
 
     def serie(m):
         ser = m.group(0)
@@ -590,10 +906,15 @@ def leyendas_en_minuscula(z, ruta_graf, xml, idioma, hojas):
     if es_tarta(xml):
         xml, cambios, _ = cambiar_categorias(z, xml, hojas, lambda t: nombre_leyenda(t, idioma))
         hechos += cambios
+    SIGLAS_DEL_GRAFICO.clear()
     return xml, hechos
 
 
-RE_PANEL = re.compile(r'\s*\d+(?:\.\d+)*\.?\s*[a-zA-Z]\b')   # «1 a», «1.a», «2.6.a»: título de panel
+RE_PANEL = re.compile(r'\s*\d+(?:\.\d+)*\.?\s*[a-zA-Z]\b'   # «1 a», «1.a», «2.6.a»: título de panel
+                      r'|\s*[a-h][.)]?\s+[A-ZÁÉÍÓÚÑ]')        # y solo la letra: «a  Número de operaciones» (8.3)
+RE_SOLO_LETRA = re.compile(r'\s*([a-h])[.)]?[ \t\u00a0]+(?=[A-ZÁÉÍÓÚÑ])')
+# Subtítulo numerado de un panel lado a lado («1  Número anual de operaciones», «2  Importe…»: 8.1)
+RE_SUBPANEL = re.compile(r'\s*\d\s+[^\W\d_]{2,}')
 
 
 # Título de panel (todas las publicaciones): el número siempre como «N.x», letra en minúscula («1 a», «6.A.», «6.a)» → «1.a», «6.a»;
@@ -672,6 +993,49 @@ def renumerar_panel(ancla, viejo, nuevo):
     return cambiar_letras(ancla, cambiar)
 
 
+def numerar_panel(ancla, numero):
+    """«a  Número de operaciones» → «8.3.a  Número de operaciones»: el título de panel con solo la letra lleva
+    el número del gráfico, como en el .ai (G_MemoriaSupervision_8.3)."""
+    def cambiar(texto):
+        m = RE_SOLO_LETRA.match(texto)
+        if not m:
+            return None
+        return m.start(1), m.end(0), f"{numero}.{m.group(1)}{HUECO_PANEL}"
+    return cambiar_letras(ancla, cambiar)
+
+
+def sangria_panel(ancla):
+    """Sangría francesa del título de panel (todas las publicaciones; petición del usuario, 2026-11-27, 8.2 b): las
+    líneas siguientes a la primera (las que parte Excel y las de un salto manual) empiezan donde empieza el título,
+    después de «8.2.b  », como en el .ai. Devuelve (ancla, sangría en pt o 0)."""
+    cuerpo = re.search(r'<xdr:txBody>.*?</xdr:txBody>', ancla, re.S)
+    medir = medidor()
+    if not cuerpo or not medir:
+        return ancla, 0
+    parrafos = [p for p in re.findall(r'<a:p>.*?</a:p>', cuerpo.group(0), re.S)
+                if "".join(re.findall(r'<a:t>([^<]*)</a:t>', p)).strip()]
+    if not parrafos:
+        return ancla, 0
+    primero = html.unescape("".join(re.findall(r'<a:t>([^<]*)</a:t>', parrafos[0])))
+    m = RE_NUMERO_PANEL.match(primero)
+    if not m:
+        return ancla, 0
+    sangria = medir(primero[:m.end()], 8)
+    emu = round(sangria * EMU_PT)
+
+    def con_ppr(parrafo, indent):
+        atributos = f'marL="{emu}" indent="{indent}"'
+        directo = re.match(r'<a:p>\s*<a:pPr\b([^>]*?)(/?)>', parrafo)
+        if directo:
+            resto = re.sub(r'\s+(marL|indent)="[^"]*"', "", directo.group(1))
+            return parrafo.replace(directo.group(0), f'<a:p><a:pPr {atributos}{resto}{directo.group(2)}>', 1)
+        return parrafo.replace("<a:p>", f'<a:p><a:pPr {atributos}/>', 1)
+    nuevo = cuerpo.group(0)
+    for k, p in enumerate(parrafos):
+        nuevo = nuevo.replace(p, con_ppr(p, -emu if k == 0 else 0), 1)
+    return ancla.replace(cuerpo.group(0), nuevo, 1), sangria
+
+
 def dos_espacios_panel(ancla, idioma="es"):
     """Número del panel como «N.x», 2 espacios hasta el título y los espacios dobles del título en uno, aunque
     el texto vaya repartido entre varias carreras (cada letra se queda en su carrera). Devuelve (ancla, lista
@@ -708,14 +1072,24 @@ def dos_espacios_panel(ancla, idioma="es"):
         else:
             fin_cabeza = 0
         # Espacios dobles dentro del título: uno
-        limpias, quitados = letras[:fin_cabeza], 0
+        limpias, quitados, saltos = letras[:fin_cabeza], 0, 0
         for c, k in letras[fin_cabeza:]:
+            # Saltos de línea manuales: un espacio. En un título enlazado a una celda, Excel hace de cada línea un
+            # párrafo sin la sangría y la segunda línea volvía al borde; partida por Excel, la sangría la alinea
+            # bajo el título (8.2 b, probado en Excel; petición del usuario, 2026-11-27)
+            # (solo con número de panel delante: «Gráfico 1⏎El peso…» de los recuadros va así a propósito)
+            if c in "\n\r\v" and fin_cabeza:
+                saltos += 1
+                c = " "
             if c == " " and limpias[len(limpias) - 1:] and limpias[-1][0] == " " and len(limpias) > fin_cabeza:
                 quitados += 1
                 continue
             limpias.append((c, k))
-        if quitados:
+        if quitados > saltos:
             hechos.append("espacios dobles del título en uno")
+        if saltos:
+            hechos.append("Aviso: salto de línea manual del título cambiado por un espacio: Excel parte la línea él solo "
+                          "y la sangría deja la segunda bajo el título (con el salto, volvía al borde)")
         # El título en minúscula salvo nombres propios y siglas (las reglas de las leyendas), si viene en
         # mayúsculas; cada letra sigue en su carrera
         titulo = "".join(c for c, _ in limpias[fin_cabeza:])
@@ -758,7 +1132,7 @@ def clasificar_textos(partes, caja, alto_pastilla, ancho_ret):
         elif "grafico" not in vistos and RE_GRAFICO.match(texto):
             vistos.add("grafico")
             tipos[i] = ("grafico", None)
-        elif RE_PANEL.match(texto):
+        elif RE_PANEL.match(texto) or RE_SUBPANEL.match(texto):
             # Numerado: título de panel, aunque el autor lo ponga donde iría el título (gráficos sin título)
             tipos[i] = ("panel", None)
         elif "titulo" not in vistos and y < alto_pastilla:
@@ -771,7 +1145,11 @@ def clasificar_textos(partes, caja, alto_pastilla, ancho_ret):
             # (su cuadro, unos 5,5 mm con el margen de dentro); un título de panel queda a 10 mm o más
             encima = [(gi, g) for gi, g in graficos if g[1] - 7 * 36000 <= y <= g[1] + g[3] / 2]
             if encima:
-                gi, g = min(encima, key=lambda t: abs(t[1][1] - y))
+                # El gráfico en cuya caja cae el texto (paneles lado a lado: dos a la misma altura; el más estrecho si
+                # uno se ensancha para la leyenda común) y, si no, el más cercano a lo alto
+                cx_t = x + caja(a)[2] / 2
+                gi, g = min(encima, key=lambda t: (0 if t[1][0] <= cx_t <= t[1][0] + t[1][2] else 1,
+                                                   round(abs(t[1][1] - y) / (15 * 36000)), t[1][2], abs(t[1][1] - y)))
                 # Unidades: arriba (hasta 12 mm por debajo del borde) y a la izquierda; lo demás, interior (el
                 # texto del hueco de un anillo, una etiqueta…)
                 unidad = x < g[0] + g[2] / 4 and y <= g[1] + 12 * 36000
@@ -872,22 +1250,36 @@ def textos(z, estado):
         elif tipo == "interior" and es_tarta_parte(tipos[k][1]):
             # El texto del hueco de un anillo (p. ej. «2,3 billones de euros»), como en el TERMINADO
             a = texto_centro_tarta(a)
-            detalle.append(f"Texto en el centro de la tarta «{corto}»: la cifra en Roboto Black 24 pt y el texto en "
-                           "Roboto Regular 7 pt, centrado")
+            a = re.sub(r'<xdr:txBody>.*?</xdr:txBody>', lambda m: cuerpo_centro_tarta(texto_forma(a), "xdr"), a, count=1, flags=re.S)
+            detalle.append(f"Texto en el centro de la tarta «{corto}»: la cifra en Roboto Black 24 pt y, debajo, el texto "
+                           "en Roboto Regular 7 pt, centrados")
         elif tipo == "interior":
             a = fijar_letra(a, 700, ROBOTO)
             detalle.append(f"Texto sobre el gráfico, a la derecha «{corto}»: Roboto Regular 7 pt, donde lo dejó el autor")
         else:
             a = fijar_letra(a, 800, ROBOTO)
-            a, cambios_panel = dos_espacios_panel(a, estado["idioma"])
             numero = numero_nuevo or numero_viejo
+            con_numero = []
+            if numero and re.fullmatch(r'\d+(?:\.\d+)*', numero) and RE_SOLO_LETRA.match(html.unescape(texto_forma(a))):
+                a = numerar_panel(a, numero)
+                con_numero = [f"con el número del gráfico: «⟪{html.unescape(texto_forma(a)).strip()[:30]}⟫»"]
+            a, cambios_panel = dos_espacios_panel(a, estado["idioma"])
+            cambios_panel = con_numero + cambios_panel
             if numero and re.fullmatch(r'\d+(?:\.\d+)*', numero):
                 renumerado = renumerar_panel(a, numero_viejo, numero)
                 if renumerado != a:
                     antes_num = RE_NUMERO_PANEL.match(html.unescape(texto_forma(a))).group(1)
                     a = renumerado
                     cambios_panel.append(f"número del gráfico «{antes_num}» → «{numero}»")
+            a, sangria = sangria_panel(a)
+            avisos_panel = [c for c in cambios_panel if c.startswith("Aviso: ")]
+            cambios_panel = [c for c in cambios_panel if not c.startswith("Aviso: ")]
+            # (se dice si el título no cabe en una línea de media página: la sangría está siempre)
+            if sangria and (avisos_panel or medidor()(html.unescape(texto_forma(a)).strip(), 8) > 215):
+                cambios_panel.append(f"sangría de {sangria / MM:.1f} mm: las líneas siguientes empiezan bajo el título, "
+                                     "después del número".replace(".", ",", 1))
             detalle.append(f"Título de panel «{corto}»: Roboto Regular 8 pt" + "".join(f"; {c}" for c in cambios_panel))
+            detalle += [f"Aviso: título de panel «{corto}»: " + c[len("Aviso: "):] for c in avisos_panel]
         partes[k] = a
     # Todos los textos, en negro (norma general); lo de fuera de la retícula no se toca
     otros_colores = []
@@ -908,17 +1300,30 @@ def textos(z, estado):
     estilos_antes = estilos
     medir = medidor()
     (x1, w1), (x2, w2) = guias_reticula(dibujo)[0]
+    # (lado a lado solo si el paso 1 ha puesto la retícula de los recuadros: dos columnas iguales)
+    lado_textos = abs(w1 - w2) <= 0.05 * w1
     for i, rid in enumerate(re.findall(r'<c:chart\b[^>]*\br:id="([^"]+)"', dibujo), 1):
         ruta_graf = relaciones[rid][1]
         graf, cuentas = maquetar_grafico(z.read(ruta_graf).decode("utf-8"), anchos.get(rid))
         graf, minusculas = leyendas_en_minuscula(z, ruta_graf, graf, estado["idioma"], hojas_datos)
         # Textos especiales (guía, págs. 10 y 11), con el ancho que tendrá el trazado en «Tamaño y colocación»
-        ancho_final = (x2 + w2 - x1 if anchos.get(rid) and sin_leyenda(graf, anchos[rid]) else w1) / EMU_PT
+        # (lado a lado, cada panel tiene solo su columna aunque vaya sin leyenda: 8.2 b, años amontonados)
+        ancho_final = (x2 + w2 - x1 if anchos.get(rid) and sin_leyenda(graf, anchos[rid]) and not lado_textos
+                       else w1) / EMU_PT
         trazado = ancho_final - (ancho_numeros_eje(graf, medir) if medir else 0)
         graf, estilos, especiales = textos_especiales(z, graf, estado["idioma"], hojas_datos, estilos, trazado, medir)
-        if es_tarta(graf):
-            graf, estilos, notas_tarta, quitado = tarta_paso1(z, graf, hojas_datos, estilos)
-            especiales += notas_tarta
+        # Barras y líneas con etiquetas en % (fracciones del autor con formato de porcentaje): como las tartas, los
+        # datos no se tocan, «%» como unidad y aviso (decisión del usuario, 2026-11-26, G_MemoriaSupervision_1.1)
+        quitado_otros = not es_tarta(graf) and etiquetas_con_porcentaje(graf)
+        if quitado_otros:
+            especiales.append("Aviso: eliminar el «⟪%⟫» de las cifras en Illustrator (etiquetas de datos con formato de "
+                              "porcentaje: los datos del autor no se tocan; «%» como unidad)")
+        if es_tarta(graf) or quitado_otros:
+            if es_tarta(graf):
+                graf, estilos, notas_tarta, quitado = tarta_paso1(z, graf, hojas_datos, estilos)
+                especiales += notas_tarta
+            else:
+                quitado = True
             # «%» como unidad arriba a la izquierda, si el gráfico no la tiene ya
             k = next(j for j, a in enumerate(partes) if f'r:id="{rid}"' in a)
             formas_graf = next((z.read(d).decode("utf-8") for t, d in rels(z, ruta_graf).values()
@@ -936,6 +1341,9 @@ def textos(z, estado):
         graf, sin_marco = etiquetas_sin_marco(graf)
         if sin_marco:
             notas_etiquetas.append(f"etiquetas de datos sin borde ni fondo ({sin_marco})")
+        graf, areas = areas_sin_fondo(graf)
+        if areas:
+            notas_etiquetas.append(" y ".join(areas) + " sin fondo ni borde")
         graf, orto = etiquetas_ortotipografia(z, graf, hojas_datos, estado["idioma"])
         if orto:
             notas_etiquetas.append("texto de las etiquetas con las reglas de FUENTES: " + ", ".join(orto[:4]))
@@ -1224,7 +1632,7 @@ def texto_forma(xml):
 # ---------------------------------------------------------------- FUENTES (reglas de Gráficos Illus BdE)
 
 ROTULO = re.compile(r'\s*(FUENTES|FUENTE|SOURCES|SOURCE|NOTAS|NOTA)\s*(:|\.|\s|$)', re.I)
-NOTA_LETRA = re.compile(r'\s*([a-z])(?:\.|\t)[\t ]*')
+NOTA_LETRA = re.compile(r'\s*([a-z])(?:\.|:|\t)[\t ]*')   # «a.», «a:» (G_IA2025_1.17) o «a» + tabulador
 SANGRIA_NOTA = round(8.5 * EMU_PT)
 PPR_FUENTES = '<a:pPr marL="0" indent="0" algn="l"/>'
 PPR_NOTA_LETRA = (f'<a:pPr marL="{SANGRIA_NOTA}" indent="-{SANGRIA_NOTA}" algn="l"><a:tabLst>'
@@ -1536,6 +1944,7 @@ def maquetar_grafico(xml, ancho_pt=None):
 # gráfico en una línea: dónde empieza el panel 1 si no tiene título de panel (con título, el título va a
 # PASTILLA_A_TITULO_PANEL de la pastilla). Cada línea más del título lo baja todo un interlineado del título.
 INICIO_SIN_TITULO_PANEL = 50.57
+BAJADA_SOLO_SIN_TITULO = 3 * 72 / 25.4   # un solo gráfico sin título de panel: todo 3 mm más abajo
 INTERLINEA_TITULO_PANEL = 9.6
 MM = 72 / 25.4
 SUBIDA_GRAFICO = 0.5 * MM
@@ -1551,6 +1960,10 @@ TITULO_PANEL_A_GRAFICO = 7.377 * MM   # del final del título de panel al gráfi
 SUBIDA_CON_UNIDADES = 0.7 * MM
 UNIDADES_A_GRAFICO = 2 * MM          # del final de las unidades al borde de arriba del trazado
 LEYENDA_A_LA_IZQUIERDA = 3 * MM      # el cuadro de la leyenda tiene aire alrededor: así su texto cae en la columna 2
+# Ancho máximo del cuadro de la leyenda: empieza 3 mm antes de la columna 2 y llega hasta su final (antes acababa
+# 3 mm antes y partía en dos líneas entradas que caben en una: G_IA2025_2.1, 1.33, 1.35; el texto sigue sin pasar
+# del final de la columna, por el margen de dentro del cuadro)
+ANCHO_LEYENDA = lambda w2: w2 / EMU_PT + LEYENDA_A_LA_IZQUIERDA
 CUERPO_TITULO = 8.5
 PASTILLA_A_TITULO_PANEL = 3.8 * MM   # del borde de abajo de la pastilla al texto del título del panel 1 (TERMINADO)
 CUERPO_UNIDADES = 7
@@ -1780,9 +2193,33 @@ def desagrupar(z, dibujo):
     return dibujo, deshechos
 
 
+UNIDADES_EJE = {"hundreds": 1e2, "thousands": 1e3, "tenThousands": 1e4, "hundredThousands": 1e5, "millions": 1e6,
+                "tenMillions": 1e7, "hundredMillions": 1e8, "billions": 1e9, "trillions": 1e12}
+
+
+def factor_unidades(eje):
+    """Entre cuánto divide Excel los números de un eje de valores con «Mostrar unidades» (1 sin ellas)."""
+    unidad = re.search(r'<c:dispUnits>.*?</c:dispUnits>', eje, re.S)
+    if not unidad:
+        return 1
+    fijo = re.search(r'<c:builtInUnit val="(\w+)"/>', unidad.group(0))
+    propio = re.search(r'<c:custUnit val="([^"]+)"/>', unidad.group(0))
+    return UNIDADES_EJE.get(fijo.group(1), 1) if fijo else (float(propio.group(1)) or 1) if propio else 1
+
+
 def ancho_numeros_eje(xml, medir):
-    """Lo que ocupan a la izquierda los números del eje de valores (pt, aproximado por el dato mayor)."""
-    valores = [abs(float(v)) for v in re.findall(r'<c:val>.*?</c:val>', xml, re.S)
+    """Lo que ocupan a la izquierda los números del eje de valores (pt, aproximado por el dato mayor). Si no hay
+    eje de valores a la izquierda que se vea (borrado o sin cifras), nada: el trazado empieza al principio de la
+    columna (G_IA2025_3.6, cifras sobre las barras y eje borrado, 2026-11-26)."""
+    izquierdos = [e for e in re.findall(r'<c:valAx>.*?</c:valAx>', xml, re.S) if '<c:axPos val="l"/>' in e]
+    # Sin eje vertical a la izquierda, o ninguno con cifras: el trazado empieza al principio de la columna 1
+    if all('<c:delete val="1"/>' in e or '<c:tickLblPos val="none"/>' in e for e in izquierdos):
+        return AIRE_TRAZADO_SIN_EJE
+    # Con «Mostrar unidades» (miles…), los números como se ven (G_MemoriaSupervision_8.2 b: «320», no «313.500»;
+    # el trazado empezaba 20 pt tarde)
+    factor = next((factor_unidades(e) for e in izquierdos
+                   if '<c:delete val="1"/>' not in e and '<c:tickLblPos val="none"/>' not in e), 1)
+    valores = [abs(float(v)) / factor for v in re.findall(r'<c:val>.*?</c:val>', xml, re.S)
                for v in re.findall(r'<c:v>(-?[\d.Ee+-]+)</c:v>', v)]
     negativos = any(float(v) < 0 for v in re.findall(r'<c:val>.*?<c:v>(-[\d.]+)</c:v>', xml, re.S))
     mayor = f"{round(max(valores) * 1.1) if valores else 100:,}".replace(",", ".")
@@ -1791,7 +2228,8 @@ def ancho_numeros_eje(xml, medir):
 
 
 def nombres_series(xml):
-    return [html.unescape(v) for v in re.findall(r'<c:ser>.*?<c:tx>.*?<c:v>([^<]*)</c:v>', xml, re.S)]
+    return [nombre_serie(t) for t in re.findall(r'<c:ser>.*?</c:ser>', xml, re.S)
+            if re.search(r'<c:v>', (re.search(r'<c:tx>.*?</c:tx>', t, re.S) or re.match("", "")).group(0))]
 
 
 def disposicion(xml, ancho, alto, dentro, leyenda, medir):
@@ -1823,10 +2261,17 @@ def disposicion(xml, ancho, alto, dentro, leyenda, medir):
         lmax -= corrimiento   # y sigue sin pasar del final de la columna 2
     # Excel centra las entradas en el cuadro: con el ancho justo de la línea más larga (partiendo los nombres
     # que no caben en la columna 2), la muestra queda al principio
-    partidos = [partir_lineas(n, lmax - clave - 2, 7, medir) for n, _ in entradas]
-    lw = max(w for anchos in partidos for w in anchos) + clave + 2
-    # Excel da a cada entrada el alto de la más alta y reparte lo que sobre: alto justo para todas
-    lh = len(entradas) * (max(len(a) for a in partidos) * 7 * INTERLINEA + 1.5) + 4
+    # Excel dibuja el texto algo más ancho que la suma de los anchos de las letras (como en Cuadros, un 5 %): si el
+    # cuadro se ajusta justo, parte en dos líneas entradas que aquí cabían en una y el alto ya no llega (las
+    # entradas se montan o desaparecen; G_IA2025_1.22, 2026-11-26)
+    medir_excel = lambda t, sz: medir(t, sz) * TEXTO_EXCEL_MAS_ANCHO
+    # Si una entrada se parte en el ancho máximo: con lo que mide Excel de verdad (medido en el PDF: el texto, como
+    # nuestra medida; del borde del cuadro al texto, 13 pt, y 16 más con muestra de línea). Con el margen de 1,06 y la
+    # clave de 17 partía entradas que caben y Excel abría la leyenda a todo el alto (G_MemoriaSupervision_4.5,
+    # G_IA2025_2.1). El ancho del cuadro, en cambio, con el margen (si no, Excel parte lo que cabía: 1.22)
+    partidos = [partir_lineas(n, lmax - texto_desde(con_lineas) - HUECO_DERECHA_LEYENDA, 7, medir) for n, _ in entradas]
+    lw = min(lmax, max(w * TEXTO_EXCEL_MAS_ANCHO for anchos in partidos for w in anchos) + clave + 2 + HOLGURA_LEYENDA)
+    lh = alto_entradas(partidos)
     if centrada:
         ly = max(0, ly - lh / 2)
 
@@ -1845,6 +2290,36 @@ def disposicion(xml, ancho, alto, dentro, leyenda, medir):
 
 MUESTRA_LINEA_ANTES = 1.3 * MM   # lo que la muestra de línea empezaba antes de la columna 2 con la leyenda a 3 mm
 MUESTRA_BARRA_ANTES = 0.2 * MM   # y la de las leyendas con barras
+def alto_entradas(partidos):
+    """Alto (pt) de una leyenda con esas entradas (cada una, los anchos de sus líneas). Excel reparte el cuadro a
+    partes iguales entre las entradas y centra cada una en su hueco: con entradas de dos o más líneas, el hueco
+    tiene que dejar aire o invaden la de al lado (G_IA2025_1.22, «energéticas» sobre «Combustibles»)."""
+    lineas = max((len(a) for a in partidos), default=1)
+    return len(partidos) * (lineas * 7 * INTERLINEA + (1.5 if lineas == 1 else AIRE_ENTRADA_VARIAS_LINEAS)) + 4
+
+
+def alto_leyenda_necesario(xml, lmax, medir):
+    """El alto que necesitará la leyenda en la columna 2 (lmax pt de ancho), como lo calcula `disposicion`."""
+    entradas = entradas_leyenda(xml) or [("Serie", False)]
+    con_lineas = any(linea for _, linea in entradas)
+    clave = CLAVE_LEYENDA + (CLAVE_LINEA_DE_MAS if con_lineas else 0)
+    solo_lineas = all(linea for _, linea in entradas)
+    lmax -= (MUESTRA_LINEA_ANTES if solo_lineas else MUESTRA_BARRA_ANTES) + 0.5 * MM
+    return alto_entradas([partir_lineas(n, lmax - texto_desde(con_lineas) - HUECO_DERECHA_LEYENDA, 7, medir)
+                          for n, _ in entradas])
+
+
+AIRE_ENTRADA_VARIAS_LINEAS = 9.0   # pt entre entradas de varias líneas (medido en Excel, 1.22: con menos se tocan)
+TEXTO_DESDE_BORDE = 13            # pt del borde izquierdo de la leyenda al texto (muestra de barra; medido en Excel)
+HUECO_DERECHA_LEYENDA = 3         # pt que deja Excel a la derecha del texto (2) y 1 de holgura
+
+
+def texto_desde(con_lineas):
+    return TEXTO_DESDE_BORDE + (CLAVE_LINEA_DE_MAS if con_lineas else 0)
+
+
+TEXTO_EXCEL_MAS_ANCHO = 1.06   # lo que Excel dibuja el texto más ancho que la suma de las letras (medido en Cuadros: 5 %)
+HOLGURA_LEYENDA = 3            # pt de más en el ancho de la leyenda, para que Excel no parta las líneas que caben
 CLAVE_LEYENDA = 7 + 4 + 6
 CLAVE_LINEA_DE_MAS = 16
 
@@ -1878,6 +2353,14 @@ def entradas_leyenda(xml):
             continue
         sppr = hijo(hijos(ser), "spPr") or ""
         sin_linea = re.search(r'<a:ln\b[^>]*>\s*<a:noFill/>', sppr)
+        # Series sin ningún dato: Excel no las enseña en la leyenda (el 1.14, panel a: contaban para su alto). La muestra
+        # ancha de la app sí ocupa su hueco (texto en blanco): cuenta (1.28, panel a: si no, «Inmigrantes» no cabía)
+        valores = re.search(r'<c:(?:val|yVal)>.*?</c:(?:val|yVal)>', ser, re.S)
+        if valores and not es_muestra(ser) and not re.search(r'<c:pt idx="\d+">\s*<c:v>[^<]+</c:v>', valores.group(0)):
+            continue
+        # La línea de referencia del autor (todo 100 o 50): el paso 4 la hace línea base, fuera de la leyenda (3.2 a)
+        if tipo[ser] in ("lineChart", "line3DChart") and es_constante_base(ser, xml=xml):
+            continue
         entradas.append((html.unescape(nombre.group(1)),
                          tipo[ser] in ("lineChart", "line3DChart", "scatterChart", "radarChart") and not sin_linea))
     return entradas
@@ -1946,7 +2429,10 @@ def es_unidad_grafico(ancla, xml=None):
     x, y, _, _ = caja_rel(ancla)
     if es_horizontal(xml):
         t = trazado_rel(xml)
-        return y >= (t[1] + t[3] - 0.02 if t else 0.75)
+        # Debajo del trazado o, como en un gráfico vertical, arriba a la izquierda (G_MemoriaSupervision_2.7 b: se
+        # quedaba arriba, cortado; la guía y el .ai las ponen debajo de los números del eje)
+        arriba = y < 0.2 and x < 0.25 and not re.match(r'(?:Gr[áa]fico|Chart)\s+\d|\d+(?:\.\d+)*\.[a-z]\b', texto)
+        return y >= (t[1] + t[3] - 0.02 if t else 0.75) or arriba
     return y < 0.2 and x < 0.25
 
 
@@ -1985,6 +2471,88 @@ def ancho_categorias_izquierda(xml, medir):
     sz = int(cuerpo.group(1)) / 100 if cuerpo else 7
     largo = max([medir(l, sz) for e in etiquetas_categorias(xml) for l in e.split("\n")] or [0])
     return largo + 8 if eje else 0
+
+
+def media_ultima_categoria(xml, sz, medir, W=None):
+    """Si las categorías van sobre las marcas (`crossBetween midCat`: líneas y áreas), la mitad (pt) de lo que
+    sobresale por la derecha del trazado: la última categoría o la etiqueta de datos del último punto, la mayor.
+    0 si van entre marcas (barras) o no hay eje de categorías abajo."""
+    if not re.search(r'<c:crossBetween val="midCat"/>', xml):
+        return 0
+    eje = next((e.group(0) for e in re.finditer(r'<c:(?:catAx|dateAx)>.*?</c:(?:catAx|dateAx)>', xml, re.S)
+                if re.search(r'<c:axPos val="b"/>', e.group(0)) and '<c:delete val="1"/>' not in e.group(0)
+                and '<c:tickLblPos val="none"/>' not in e.group(0)), None)
+    if not eje:
+        return 0
+    cat = re.search(r'<c:cat>.*?</c:cat>', xml, re.S)
+    if not cat:
+        return 0
+    textos = etiquetas_categorias(xml)
+    if textos:
+        ultima = textos[-1]
+    else:
+        # Numéricas («2025») o fechas: el último valor; las fechas, con el ancho de «sept-25»
+        vs = re.findall(r'<c:v>([^<]*)</c:v>', cat.group(0))
+        formato = re.search(r'<c:numFmt formatCode="([^"]*)"', eje)
+        fecha = "<c:dateAx>" in eje or (formato and re.search(r'[my]', re.sub(r'\[[^\]]*\]|"[^"]*"', "", html.unescape(formato.group(1)).lower())))
+        ultima = "sept-25" if fecha else (cifra(float(vs[-1])) if vs and es_numero(vs[-1]) else (vs[-1] if vs else ""))
+    mitad = max([medir(l, sz) for l in ultima.split("\n")] or [0]) / 2
+    # La etiqueta de datos del último punto, si la hay (6 pt)
+    n = re.search(r'<c:ptCount val="(\d+)"', cat.group(0))
+    ultimo = int(n.group(1)) - 1 if n else None
+    for ser in re.findall(r'<c:ser>.*?</c:ser>', xml, re.S):
+        val = re.search(r'<c:val>.*?</c:val>', ser, re.S)
+        v = val and re.search(rf'<c:pt idx="{ultimo}">\s*<c:v>([^<]*)</c:v>', val.group(0))
+        if not v or not es_numero(v.group(1)):
+            continue
+        etiquetas = re.search(r'<c:dLbls>.*?</c:dLbls>', ser, re.S)
+        if not etiquetas:
+            continue
+        propia = re.search(rf'<c:dLbl><c:idx val="{ultimo}"/>.*?</c:dLbl>', etiquetas.group(0), re.S)
+        visible = ('<c:showVal val="1"/>' in propia.group(0) and '<c:delete val="1"/>' not in propia.group(0)) if propia \
+            else '<c:showVal val="1"/>' in re.sub(r'<c:dLbl>.*?</c:dLbl>', "", etiquetas.group(0), flags=re.S)
+        if visible:
+            mitad = max(mitad, sobresale_etiqueta(ser, propia.group(0) if propia else "", etiquetas.group(0),
+                                                  float(v.group(1)), xml, medir, W))
+    return mitad
+
+
+def sobresale_etiqueta(ser, propia, etiquetas, v, xml, medir, W):
+    """Lo que sobresale por la derecha del último punto su etiqueta de datos (pt): con el formato que tiene
+    («85,29», no «85,3») y su posición; en las líneas y dispersiones Excel la pone por defecto a la derecha del punto,
+    entera fuera, no centrada; si el autor la movió a mano, su desplazamiento (fracción del ancho del gráfico, `W`)
+    (G_IA2025_2.3, petición del usuario, 2026-11-26)."""
+    general = re.sub(r'<c:dLbl>.*?</c:dLbl>', "", etiquetas, flags=re.S)
+    nf = re.search(r'<c:numFmt formatCode="([^"]*)"', propia) or re.search(r'<c:numFmt formatCode="([^"]*)"', general)
+    if nf:
+        codigo = html.unescape(nf.group(1))
+    else:
+        cache = re.search(r'<c:val>.*?<c:formatCode>([^<]*)</c:formatCode>', ser, re.S)
+        codigo = html.unescape(cache.group(1)) if cache else "General"
+    primera = re.sub(r'"[^"]*"|\[[^\]]*\]', "", codigo.split(";")[0])
+    dec = len(re.search(r'\.(0+)', primera).group(1)) if re.search(r'\.(0+)', primera) else (
+        1 if "general" in primera.lower() else 0)
+    # Con «Mostrar unidades» en su eje (miles…), Excel escribe la etiqueta en esas unidades (G_MemoriaSupervision_8.2 b:
+    # «285,1», no «285.073,0»; el trazado se acortaba 8 mm)
+    grupo = next((g for g in GRUPOS.finditer(xml) if ser in g.group(0)), None)
+    ids = re.findall(r'<c:axId val="(\d+)"/>', grupo.group(0)) if grupo else []
+    eje_v = next((e for e in re.findall(r'<c:valAx>.*?</c:valAx>', xml, re.S)
+                  if re.search(r'<c:axId val="(\d+)"/>', e).group(1) in ids), "")
+    v = v / factor_unidades(eje_v)
+    texto = f"{v:,.{dec}f}".replace(",", " ").replace(".", ",").replace(" ", ".") + ("\u00a0%" if "%" in primera else "")
+    sz = re.search(r'<a:defRPr\b[^>]*\bsz="(\d+)"', propia) or re.search(r'<a:defRPr\b[^>]*\bsz="(\d+)"', general)
+    ancho = medir(texto, int(sz.group(1)) / 100 if sz else 6)
+    pos = re.search(r'<c:dLblPos val="(\w+)"/>', propia) or re.search(r'<c:dLblPos val="(\w+)"/>', general)
+    tipo = grupo.group(1) if grupo else ""
+    pos = pos.group(1) if pos else ("r" if tipo in ("lineChart", "line3DChart", "scatterChart") else "ctr")
+    fuera = {"r": AIRE_ETIQUETA_DERECHA + ancho, "l": 0}.get(pos, ancho / 2)
+    x = re.search(r'<c:manualLayout>.*?<c:x val="(-?[\d.Ee+-]+)"/>', propia, re.S)
+    if x and W:
+        fuera += float(x.group(1)) * W
+    return max(0, fuera)
+
+
+AIRE_ETIQUETA_DERECHA = 4   # pt entre el punto y su etiqueta a la derecha (Excel, aprox.)
 
 
 def media_ultima_cifra(xml, medir):
@@ -2106,19 +2674,33 @@ def etiquetas_de_barras(xml, formas, t):
     return xml, formas, convertidas, avisos
 
 
-def recolocar_formas(formas, viejo_trazado, viejo_tam, dentro, ancho, alto, saltar=()):
-    """Los textos sueltos dentro del gráfico se mueven con el trazado: su esquina conserva su sitio respecto al
-    trazado (lo que señalan) y su tamaño en pt."""
+def recolocar_formas(formas, viejo_trazado, viejo_tam, dentro, ancho, alto, saltar=(), centro=False, lineas=False):
+    """Los textos sueltos dentro del gráfico se mueven con el trazado: su esquina (o, con `centro`, su centro)
+    conserva su sitio respecto al trazado (lo que señalan) y su tamaño en pt. Con `lineas`, también las líneas del
+    autor, que se estiran con el trazado de extremo a extremo (las de los promedios del G_IA2025_3.2 c, que se
+    quedaban sobre otras barras)."""
     fx, fy, fw, fh = viejo_trazado
     w0, h0 = viejo_tam
     movidos = []
+    mapa = lambda x, y: (dentro[0] + (x - fx) / fw * dentro[2], dentro[1] + (y - fy) / fh * dentro[3])
     for a in re.findall(r'<cdr:relSizeAnchor\b.*?</cdr:relSizeAnchor>', formas, re.S):
-        if a in saltar or not texto_forma(a).strip():
+        if a in saltar:
             continue
         x0, y0, x1, y1 = caja_rel(a)
-        u, v = (x0 - fx) / fw, (y0 - fy) / fh
-        nx, ny = dentro[0] + u * dentro[2], dentro[1] + v * dentro[3]
-        formas, _ = colocar_rel(formas, a, nx, ny, nx + (x1 - x0) * w0, ny + (y1 - y0) * h0, ancho, alto)
+        if lineas and "<cdr:cxnSp" in a:
+            (nx0, ny0), (nx1, ny1) = mapa(x0, y0), mapa(x1, y1)
+            formas, _ = colocar_rel(formas, a, nx0, ny0, nx1, ny1, ancho, alto)
+            movidos.append("línea")
+            continue
+        if not texto_forma(a).strip():
+            continue
+        if centro:
+            cx, cy = mapa((x0 + x1) / 2, (y0 + y1) / 2)
+            mw, mh = (x1 - x0) * w0 / 2, (y1 - y0) * h0 / 2
+            formas, _ = colocar_rel(formas, a, cx - mw, cy - mh, cx + mw, cy + mh, ancho, alto)
+        else:
+            nx, ny = mapa(x0, y0)
+            formas, _ = colocar_rel(formas, a, nx, ny, nx + (x1 - x0) * w0, ny + (y1 - y0) * h0, ancho, alto)
         movidos.append(html.unescape(texto_forma(a)).strip()[:30])
     return formas, movidos
 
@@ -2128,13 +2710,15 @@ def filas_categorias(xml, trazado, paso_pt):
     retícula que ocupan debajo del eje: la palabra más larga tiene que caber en su hueco; cada etiqueta se
     parte por palabras."""
     medir = medidor()
-    eje = next((e.group(0) for e in re.finditer(r'<c:catAx>.*?</c:catAx>', xml, re.S)
+    # (también los ejes de fechas: el 2.3 salía cortado, «m…», con sus fechas verticales)
+    eje = next((e.group(0) for e in re.finditer(r'<c:(catAx|dateAx)>.*?</c:\1>', xml, re.S)
                 if re.search(r'<c:axPos val="[bt]"/>', e.group(0)) and '<c:delete val="1"/>' not in e.group(0)), "")
     if es_vertical(eje) and medir:
         # Verticales (paso 1): ocupan a lo alto lo que mide su línea más larga, con el cuerpo que ya tienen
         cuerpo = re.search(r'<c:txPr>.*?<a:defRPr\b[^>]*\bsz="(\d+)"', eje, re.S)
         sz = int(cuerpo.group(1)) if cuerpo else 700
-        largo = max([medir(l, sz / 100) for e in etiquetas_categorias(xml) for l in e.split("\n")] or [0])
+        textos = [l for e in etiquetas_categorias(xml) for l in e.split("\n")] or textos_eje_numerico(xml, eje)
+        largo = max([medir(l, sz / 100) for l in textos] or [0])
         # Con varios niveles (y sin juntarlos), cada nivel de más va debajo, en horizontal («1990-2018»): si
         # no se cuentan, Excel sube el trazado para que quepan y las unidades quedan dentro («G_DO2608_01»)
         niveles = niveles_categorias(xml) if '<c:noMultiLvlLbl val="1"/>' not in xml else 1
@@ -2198,6 +2782,170 @@ def sin_titulo(marco_grafico, marco_titulo):
     return base(marco_titulo, CUERPO_TITULO) - base(marco_grafico, 7)
 
 
+# Leyendas de los paneles lado a lado (decisiones del usuario, 2026-11-27)
+LEYENDA_BAJO_PANEL = 3 * MM          # del final del panel (sus categorías) a la leyenda de debajo
+MUESTRA_DESDE_BORDE = 3              # pt que deja Excel dentro del cuadro de la leyenda, a cada lado (medido)
+PRIMERA_MUESTRA = 5.3                # pt del borde del cuadro (con el ancho de medidas_leyenda_horizontal) a la primera
+                                     # muestra en Excel: su margen más lo que reparte del hueco que sobra (medido en el 3.2;
+                                     # más justo, la serie invisible de las muestras anchas salta a otra fila)
+PRIMERA_MUESTRA_POR_ENTRADAS = {1: 6.0, 2: 6.3}  # lo mismo con 1 o 2 entradas (medido en el 8.4 d y c)
+PRIMERA_MUESTRA_VARIAS_FILAS = 7.25  # y con una entrada por fila en varias filas (8.4 b, con HOLGURA_VARIAS_FILAS)
+HOLGURA_LEYENDA_COMUN = 12          # pt de más en la leyenda común centrada (8.2: sin ellos, Excel escondía una entrada)
+HOLGURA_VARIAS_FILAS = 8             # pt de más en las leyendas de varias filas: si no, Excel parte el texto (8.4 b)
+SUBTITULO_BAJO_TITULO = 2.5 * MM     # del título de la fila a los subtítulos de sus paneles («1  Número…», 8.1)
+ENTRE_ENTRADAS_HORIZONTAL = 4       # pt entre las entradas de una leyenda en horizontal (medido en Excel)
+MUESTRA_HORIZONTAL_LINEA = 21        # pt de la muestra y su separación hasta el texto, con muestras de línea
+MUESTRA_HORIZONTAL_BARRA = 10        # y con muestras de barra
+FILAS_TARTA_CON_LEYENDA = 8          # el anillo con su leyenda a la derecha, en media página, algo más pequeño
+TARTA_DESDE_COLUMNA = 4 * MM         # sitio a la izquierda del anillo para sus etiquetas
+
+
+def nombres_leyenda(xml):
+    return tuple(re.sub(r"\s+", " ", n).strip().lower() for n, _ in entradas_leyenda(xml))
+
+
+def firma_leyenda(xml):
+    """Las entradas visibles de la leyenda con su nombre y su tipo (línea, trama o marcador), en orden. Dos paneles
+    comparten leyenda solo si coinciden en las dos cosas: el paso 5 da el mismo estilo (color, trama, línea) a la
+    serie del mismo nombre y el mismo tipo, así que también coinciden los colores (petición del usuario,
+    2026-11-27)."""
+    if es_tarta(xml):
+        # En las tartas la leyenda son las categorías; el color va por su orden
+        return tuple((n, "porción") for n in nombres_leyenda(xml))
+    leyenda = re.search(r'<c:legend>.*?</c:legend>', xml, re.S)
+    borradas = set(re.findall(r'<c:legendEntry><c:idx val="(\d+)"/><c:delete val="1"/>', leyenda.group(0))) if leyenda else set()
+    tipo = {t: g.group(1) for g in GRUPOS.finditer(xml) for t in re.findall(r'<c:ser>.*?</c:ser>', g.group(0), re.S)}
+    firma = []
+    for k, ser in enumerate(orden_leyenda(xml)):
+        if str(k) in borradas or not re.search(r'<c:tx>.*?<c:v>[^<]*</c:v>.*?</c:tx>', ser, re.S) or es_muestra(ser):
+            continue
+        valores = re.search(r'<c:(?:val|yVal)>.*?</c:(?:val|yVal)>', ser, re.S)
+        if valores and not re.search(r'<c:pt idx="\d+">\s*<c:v>[^<]+</c:v>', valores.group(0)):
+            continue
+        nombre = re.sub(r"\s+", " ", nombre_serie(ser)).strip().lower()
+        firma.append((nombre, clase_serie(tipo.get(ser, ""), ser) or tipo.get(ser, "")))
+    return tuple(firma)
+
+
+def medidas_leyenda_horizontal(xml, ancho_max, medir, con_borde=False):
+    """Ancho y alto (pt) de una leyenda con las entradas una detrás de otra (las que no caben, en otra fila, en
+    columnas del ancho de la mayor). Con `con_borde`, también a cuántos pt del borde izquierdo del cuadro dibuja
+    Excel la primera muestra."""
+    # Medido en los PDF de Excel (3.2 y 8.4, 2026-11-27): Excel centra las entradas en el cuadro (el hueco que sobra
+    # se reparte entre los bordes y los huecos entre entradas); cada una ocupa su muestra y la separación hasta el
+    # texto (unos 21 pt con muestra de línea), su texto (como lo medimos) y unos 4 pt hasta la siguiente. Más justo
+    # que esto, la serie invisible de las muestras anchas salta a otra fila; y con una entrada por fila, Excel
+    # parte su texto si no le dejamos unos pt de más (HOLGURA_VARIAS_FILAS)
+    entradas = entradas_leyenda(xml) or [("Serie", False)]
+    con_lineas = any(l for _, l in entradas)
+    muestra = MUESTRA_HORIZONTAL_LINEA if con_lineas else MUESTRA_HORIZONTAL_BARRA
+    anchos = [muestra + medir(n, 7) * 1.01 for n, _ in entradas]
+    justo = sum(anchos) + (len(anchos) - 1) * ENTRE_ENTRADAS_HORIZONTAL + 2 * MUESTRA_DESDE_BORDE
+    if justo <= ancho_max:
+        medidas = justo, 7 * INTERLINEA + 4, 1
+        borde = PRIMERA_MUESTRA_POR_ENTRADAS.get(len(anchos), PRIMERA_MUESTRA)
+    else:
+        mayor = max(anchos) + ENTRE_ENTRADAS_HORIZONTAL
+        por_fila = max(1, int((ancho_max - 2 * MUESTRA_DESDE_BORDE - HOLGURA_VARIAS_FILAS + ENTRE_ENTRADAS_HORIZONTAL)
+                              // mayor))
+        filas = math.ceil(len(anchos) / por_fila)
+        medidas = (por_fila * mayor - ENTRE_ENTRADAS_HORIZONTAL + 2 * MUESTRA_DESDE_BORDE + HOLGURA_VARIAS_FILAS,
+                   filas * (7 * INTERLINEA + 2) + 4, filas)
+        borde = (PRIMERA_MUESTRA_VARIAS_FILAS if por_fila == 1 else
+                 PRIMERA_MUESTRA_POR_ENTRADAS.get(por_fila, PRIMERA_MUESTRA) + 1)
+    return (*medidas, borde) if con_borde else medidas
+
+
+def medidas_leyenda_vertical(xml, ancho_max, medir):
+    """Ancho y alto (pt) de una leyenda con las entradas una debajo de otra, en `ancho_max` pt."""
+    entradas = entradas_leyenda(xml) or [("Serie", False)]
+    con_lineas = any(l for _, l in entradas)
+    disponible = ancho_max - texto_desde(con_lineas) - HUECO_DERECHA_LEYENDA
+    partidos = [partir_lineas(n, disponible, 7, medir) for n, _ in entradas]
+    ancho = max(w * TEXTO_EXCEL_MAS_ANCHO for p in partidos for w in p) + CLAVE_LEYENDA + \
+        (CLAVE_LINEA_DE_MAS if con_lineas else 0) + 2 + HOLGURA_LEYENDA
+    return min(ancho_max, ancho), alto_entradas(partidos)
+
+
+def poner_leyenda(xml, ancho, alto, x, y, w, h, posicion):
+    """La leyenda en (x, y) pt, de w × h pt, dentro del gráfico de ancho × alto pt, con la posición de Excel dada
+    («b»: entradas en horizontal; «r»: una debajo de otra)."""
+    lay = ('<c:layout><c:manualLayout><c:xMode val="edge"/><c:yMode val="edge"/>'
+           f'<c:x val="{max(0, x) / ancho:.6f}"/><c:y val="{max(0, y) / alto:.6f}"/><c:w val="{min(w, ancho) / ancho:.6f}"/>'
+           f'<c:h val="{min(h, alto - y) / alto:.6f}"/></c:manualLayout></c:layout>')
+
+    def cambiar(m):
+        bloque = re.sub(r'<c:layout>.*?</c:layout>|<c:layout/>', "", m.group(0), count=1, flags=re.S)
+        bloque = re.sub(r'<c:legendPos val="\w+"/>', f'<c:legendPos val="{posicion}"/>', bloque, count=1)
+        entradas = list(re.finditer(r'<c:legendEntry>.*?</c:legendEntry>', bloque, re.S))
+        if entradas:
+            return bloque[:entradas[-1].end()] + lay + bloque[entradas[-1].end():]
+        return re.sub(r'(<c:legendPos val="\w+"/>)', lambda p: p.group(1) + lay, bloque, count=1)
+    return re.sub(r'<c:legend>.*?</c:legend>', cambiar, xml, count=1, flags=re.S)
+
+
+def sin_trazado(xml):
+    """Un gráfico que solo es leyenda: su trazado, invisible (un punto en una esquina) y sin etiquetas de datos (en el
+    2.1 la tarta del gráfico de la leyenda salía en miniatura con sus cifras encima de la leyenda)."""
+    lay = ('<c:layout><c:manualLayout><c:layoutTarget val="inner"/><c:xMode val="edge"/><c:yMode val="edge"/>'
+           '<c:x val="0"/><c:y val="0"/><c:w val="0.0001"/><c:h val="0.0001"/></c:manualLayout></c:layout>')
+    xml = re.sub(r'(<c:plotArea>\s*)(<c:layout>.*?</c:layout>|<c:layout/>)?', lambda m: m.group(1) + lay, xml, count=1, flags=re.S)
+    xml = re.sub(r'<c:dLbls>.*?</c:dLbls>', "", xml, flags=re.S)
+    # Sin ejes (el del 8.1 enseñaba «-3.500» al lado de la leyenda)
+    xml = re.sub(r'<c:delete val="0"/>', '<c:delete val="1"/>', xml)
+
+    # Y los datos fuera de la escala, para que no se dibuje ni un punto (8.1: un marcador junto a la leyenda)
+    def fuera(m):
+        h = hijos(m.group(0))
+        escala = hijos(hijo(h, "scaling") or "<c:scaling></c:scaling>")
+        orient = hijo(escala, "orientation") or '<c:orientation val="minMax"/>'
+        poner(h, ORDEN_EJE["valAx"], "scaling", f'<c:scaling>{orient}<c:max val="1000000001"/><c:min val="1000000000"/></c:scaling>')
+        return "<c:valAx>" + "".join(t for _, t in h) + "</c:valAx>"
+    return re.sub(r'<c:valAx>.*?</c:valAx>', fuera, xml, flags=re.S)
+
+
+def plan_leyendas_fila(z, relaciones, partes, fila, sueltas, medir):
+    """Qué se hace con la leyenda de cada panel de una fila: «suelta» (la común va en gráficos aparte, debajo),
+    «comun» (la lleva el primer panel, a lo ancho de las dos columnas y centrada), «quitar» (la común ya va en
+    otro), «propia» (debajo de su panel, una entrada bajo otra), «derecha» (tarta: a la derecha del anillo) o
+    None (sin leyenda)."""
+    xmls = {}
+    for ig in fila:
+        rid = re.search(r'<c:chart\b[^>]*\br:id="([^"]+)"', partes[ig]).group(1)
+        xmls[ig] = z.read(relaciones[rid][1]).decode("utf-8")
+    con = [ig for ig in fila if re.search(r'<c:legend>', xmls[ig]) and entradas_leyenda(xmls[ig])]
+    plan = {ig: None for ig in fila}
+    if sueltas:
+        for ig in con:
+            plan[ig] = "quitar"
+        return plan
+    if not con:
+        return plan
+    firmas = {ig: firma_leyenda(xmls[ig]) for ig in fila}
+    if len({firmas[ig] for ig in con}) == 1:
+        # Los paneles sin leyenda: sus series, del mismo tipo y en el mismo orden (el paso 5 les da los colores por
+        # orden y tipo: así son los de la leyenda común; 8.2 b)
+        tipos_comun = tuple(t for _, t in firmas[con[0]])
+        sin = [ig for ig in fila if ig not in con and firmas[ig]]
+        if all(tuple(t for _, t in firmas[ig]) == tipos_comun for ig in sin):
+            plan[con[0]] = "comun"
+            for ig in con[1:]:
+                plan[ig] = "quitar"
+            return plan
+    for ig in con:
+        plan[ig] = "derecha" if es_tarta(xmls[ig]) else "propia"
+    return plan
+
+
+def avisos_leyendas_fila(plan, fila):
+    """Aviso si en una fila hay paneles sin leyenda que no comparten la de otro (sus colores no coinciden)."""
+    if any(v in ("propia", "derecha") for v in plan.values()) and any(plan[ig] is None for ig in fila):
+        return ("Aviso: en una fila de paneles lado a lado hay paneles sin leyenda cuyas series no coinciden (en nombre, "
+                "tipo u orden, y por tanto en colores) con las de la leyenda de otro panel: cada uno se queda con lo suyo; "
+                "revisa si hace falta poner una leyenda al panel que no la tiene")
+    return None
+
+
 def paso2(trabajo, pid=None):
     """Tamaño y colocación de los paneles, uno debajo de otro como en «Graficos Illus BdE»: el área de trazado
     en la primera columna de la retícula y la leyenda en la segunda; 9 filas de alto desde arriba hasta las
@@ -2245,8 +2993,32 @@ def paso2(trabajo, pid=None):
                 titulos_panel.append((caja(partes[i])[1], i))
         if not graficos:
             raise Fallo("No hay gráficos en la hoja «Gráfico»")
-        graficos.sort()
-        if len(graficos) > 3:
+        # De arriba abajo y, a la misma altura (paneles del autor lado a lado que se apilan), de izquierda a derecha
+        graficos.sort(key=lambda g: (round(g[0] / (10 * 36000)), caja(partes[g[1]])[0]))
+        # Paneles lado a lado: por filas, cada panel en una de las dos columnas iguales de la retícula de los recuadros
+        lado = filas_segun_modo(z, ruta, dibujo, estado.get("paneles", "auto"), es_recuadro(trabajo))
+        if lado and abs(w1 - w2) > 0.05 * w1:
+            detalle.append("Aviso: los paneles van lado a lado, pero la retícula no es la de los recuadros (dos columnas "
+                           "iguales): rehaz el paso 1 («Retícula, pastilla y textos») con esta versión de la app")
+            lado = None
+        if lado:
+            filas_l, sueltas_l = lado
+            columnas_l = [(x1, w1), (x2, w2)]
+            # Los textos sueltos (unidades, texto del centro de una tarta…) van con el panel en cuya caja caen, no solo
+            # con el más cercano a lo alto: en una fila hay dos a la misma altura (2.1: el «%» y el «4,5» del panel b)
+            paneles_l = [ig for f in filas_l for ig in f]
+            for i, (t, g) in list(tipos.items()):
+                if t not in ("interior", "unidades") or g is None:
+                    continue
+                xt, yt, wt, ht = caja(partes[i])
+                cx_t, cy_t = xt + wt / 2, yt + ht / 2
+                dentro_de = [ig for ig in paneles_l if caja(partes[ig])[0] <= cx_t <= caja(partes[ig])[0] + caja(partes[ig])[2]]
+                if dentro_de:
+                    tipos[i] = (t, min(dentro_de, key=lambda ig: abs(caja(partes[ig])[1] + caja(partes[ig])[3] / 2 - cy_t)))
+            detalle.append(f"Paneles lado a lado: {len(filas_l)} fila{'s' if len(filas_l) > 1 else ''} de "
+                           + ", ".join(str(len(f)) for f in filas_l) + " paneles"
+                           + (f"; {sum(len(v) for v in sueltas_l.values())} gráfico(s) que solo son leyenda" if sueltas_l else ""))
+        elif len(graficos) > 3:
             detalle.append(f"Aviso: hay {len(graficos)} gráficos; la distribución de Illus prevé hasta 3 paneles")
 
         # Líneas del título del gráfico (Roboto Medium 8,5 pt en su marco)
@@ -2283,16 +3055,89 @@ def paso2(trabajo, pid=None):
         # Cada título de panel va con el gráfico que empieza más cerca de él (el autor a veces lo pone encima
         # del marco del gráfico, unos milímetros por debajo de su borde)
         de_panel = {}
+        candidatos_tp = [ig for f in filas_l for ig in f] if lado else [ig for _, ig, _ in graficos]
+        titulo_fila = {}
+        if lado:
+            # Con título de fila («8.1.a …», a lo ancho) y subtítulos numerados por panel («1  Número…», «2  Importe…»)
+            libres_t = list(titulos_panel)
+            for k, f in enumerate(filas_l):
+                arriba_f = min(caja(partes[ig])[1] for ig in f)
+                cerca = [(y, i) for y, i in libres_t if arriba_f - 25 * 36000 <= y <= arriba_f + 15 * 36000]
+                subs = [(y, i) for y, i in cerca if RE_SUBPANEL.match(texto_forma(partes[i]))]
+                nums = [(y, i) for y, i in cerca if (y, i) not in subs]
+                if subs and nums:
+                    titulo_fila[k] = min(nums)[1]
+                    libres_t.remove(min(nums))
+            titulos_panel = [t for t in titulos_panel if t[1] not in titulo_fila.values()]
+        lineas_fila = {}
         for y, i in sorted(titulos_panel):
-            libres = [(abs(yg - y), ig) for yg, ig, _ in graficos if ig not in de_panel]
+            # (lado a lado, también por la columna: los títulos de una fila están a la misma altura)
+            # (también en horizontal, en todos los modos: un 2.9 del autor lado a lado que se apila tiene los dos
+            # títulos y los dos gráficos a la misma altura y se cruzaban)
+            libres = [(abs(caja(partes[ig])[1] - y) + abs(caja(partes[ig])[0] - caja(partes[i])[0]), ig)
+                      for ig in candidatos_tp if ig not in de_panel]
             if libres:
                 de_panel[min(libres)[1]] = i
+        if lado:
+            # En cada fila, los paneles empiezan debajo del título más largo: así sus ejes quedan a la misma altura
+            # (8.2: el título del b en dos líneas)
+            for k, f in enumerate(filas_l):
+                lineas_fila[k] = max([max(1, lineas_parrafos(textos_lineas(partes[de_panel[ig]]),
+                                                             (x2 + w2 - x1 if len(f) == 1 else columnas_l[j % 2][1]) / EMU_PT,
+                                                             8, medir)) for j, ig in enumerate(f) if ig in de_panel] or [1])
 
         ancho_util = x2 + w2 - x1
         ancho_graf = ancho_util
         W = ancho_graf / EMU_PT
         fondo = None
-        for n, (_, ig, rid) in enumerate(graficos, 1):
+        rid_de = {ig: rid for _, ig, rid in graficos}
+        if lado:
+            orden = [(None, ig, rid_de[ig], k, j) for k, f in enumerate(filas_l) for j, ig in enumerate(f)]
+            orden = [(n, *o[1:]) for n, o in enumerate(orden, 1)]
+            plan_l, fondo_filas = {}, {}
+            # Los paneles de una fila, del mismo alto y con el final del trazado a la misma altura: las filas y el sitio
+            # de las categorías, los del que más necesite (así las leyendas de debajo empiezan en la misma línea; 3.2,
+            # como en el .ai; petición del usuario, 2026-11-27)
+            igualar_fila = {}
+            for k, f in enumerate(filas_l):
+                maximos = []
+                for j, ig in enumerate(f):
+                    xg = z.read(relaciones[rid_de[ig]][1]).decode("utf-8")
+                    if es_tarta(xg) or es_horizontal(xg):
+                        continue
+                    ancho_c = (x2 + w2 - x1) if len(f) == 1 else columnas_l[j % 2][1]
+                    tr = ancho_c / EMU_PT - ancho_numeros_eje(xg, medir)
+                    _, _, _, fc, ac = filas_categorias(xg, tr, paso_pt)
+                    maximos.append((max(FILAS_PANEL, FILAS_MIN_TRAZADO + fc), ac))
+                if len(maximos) > 1:
+                    igualar_fila[k] = (max(m[0] for m in maximos), max(m[1] for m in maximos))
+            for k, f in enumerate(filas_l):
+                plan_f = plan_leyendas_fila(z, relaciones, partes, f, sueltas_l.get(k), medir)
+                plan_l.update(plan_f)
+                aviso_f = avisos_leyendas_fila(plan_f, f)
+                if aviso_f:
+                    detalle.append(aviso_f.replace("en una fila", f"en la fila {k + 1}"))
+            completo = (x1, x2 + w2 - x1)
+        else:
+            orden = [(n, ig, rid, None, None) for n, (_, ig, rid) in enumerate(graficos, 1)]
+        for n, ig, rid, fila_k, col_j in orden:
+            es_primero = (n == 1) if fila_k is None else (fila_k == 0)
+            modo_ley, extra_ley = None, 0
+            if fila_k is not None:
+                # Lado a lado: el panel en su columna (como si fuera la columna 1) y la fila empieza donde acabó la
+                # anterior
+                x1, w1 = columnas_l[col_j % 2]
+                if len(filas_l[fila_k]) == 1:
+                    # Solo en su fila (número impar de paneles; sobre todo en los recuadros): a todo el ancho de la
+                    # retícula (petición del usuario, 2026-11-27)
+                    x1, w1 = completo
+                ancho_util = ancho_graf = w1
+                fondo = fondo_filas.get(fila_k - 1)
+                modo_ley = plan_l.get(ig)
+                if modo_ley == "comun":
+                    # La leyenda común, debajo de los dos paneles y centrada: el gráfico del primero se ensancha
+                    ancho_graf = completo[1]
+                W = ancho_graf / EMU_PT
             linea = f"Panel {n}:"
             ruta_graf = relaciones[rid][1]
             xml = z.read(ruta_graf).decode("utf-8")
@@ -2312,24 +3157,44 @@ def paso2(trabajo, pid=None):
                 a = partes[it]
                 l, t, r, b = margenes(a)
                 lineas_tp = max(1, lineas_parrafos(textos_lineas(a), ancho_util / EMU_PT, 8, medir))
-                if n == 1:
+                if es_primero:
                     arriba = fondo_pastilla + crece + PASTILLA_A_TITULO_PANEL
                 else:
                     arriba = fondo + ENTRE_PANELES
-                final_tp = arriba + lineas_tp * INTERLINEA_TITULO_PANEL
+                tf = titulo_fila.get(fila_k) if fila_k is not None else None
+                if tf is not None:
+                    # Título de la fila, a lo ancho de las dos columnas; los subtítulos de los paneles, debajo
+                    af = partes[tf]
+                    lf, tf_m, rf, bf = margenes(af)
+                    lineas_f = max(1, lineas_parrafos(textos_lineas(af), completo[1] / EMU_PT, 8, medir))
+                    if col_j == 0:
+                        partes[tf] = colocar(af, completo[0] - lf, round(arriba * EMU_PT) - tf_m, completo[1] + lf + rf,
+                                             tf_m + bf + round(lineas_f * INTERLINEA_TITULO_PANEL * EMU_PT))
+                        linea += f" título de la fila a {arriba / MM:.1f} mm, a lo ancho;".replace(".", ",")
+                    arriba += lineas_f * INTERLINEA_TITULO_PANEL + SUBTITULO_BAJO_TITULO
+                final_tp = arriba + max(lineas_tp, lineas_fila.get(fila_k, 1) if fila_k is not None else 1) * INTERLINEA_TITULO_PANEL
                 alto_tp = t + b + round(lineas_tp * INTERLINEA_TITULO_PANEL * EMU_PT)
                 partes[it] = colocar(a, x1 - l, round(arriba * EMU_PT) - t, ancho_util + l + r, alto_tp)
                 inicio = final_tp + TITULO_PANEL_A_GRAFICO - subida
                 techo_panel = final_tp
                 linea += f" título a {arriba / MM:.1f} mm ({lineas_tp} línea{'s' if lineas_tp > 1 else ''});".replace(".", ",")
             else:
-                inicio = (INICIO_SIN_TITULO_PANEL + crece if n == 1 else fondo + ENTRE_PANELES) - subida
-                techo_panel = fondo_pastilla + crece if n == 1 else fondo + ENTRE_PANELES / 2
+                inicio = (INICIO_SIN_TITULO_PANEL + crece if es_primero else fondo + ENTRE_PANELES) - subida
+                techo_panel = fondo_pastilla + crece if es_primero else fondo + ENTRE_PANELES / 2
+                # Un solo gráfico sin título de panel: unidades, gráfico y leyenda 3 mm más abajo (petición del
+                # usuario, 2026-11-27, Memoria de Supervisión)
+                if len(graficos) == 1:
+                    inicio += BAJADA_SOLO_SIN_TITULO
+                    techo_panel += BAJADA_SOLO_SIN_TITULO
+                    linea += f" un solo gráfico sin título de panel: {BAJADA_SOLO_SIN_TITULO / MM:g} mm más abajo;"
 
             # Sin leyenda (el autor la ha quitado o escondido): el trazado ocupa las dos columnas, como en el
             # TERMINADO del 2.6, y la leyenda se deja como está
             motivo = sin_leyenda(xml, caja(partes[ig])[2] / EMU_PT)
-            if motivo and horizontal:
+            if fila_k is not None:
+                # Lado a lado la leyenda se trata aparte (debajo de la fila, debajo del panel o a la derecha de la tarta)
+                motivo = None if modo_ley == "derecha" else (motivo or "lado a lado")
+            elif motivo and horizontal:
                 # Barras horizontales: el trazado se queda en la columna 1 (sus unidades acaban al final de ella)
                 detalle.append(f"Aviso: el panel {n} va sin leyenda (el autor {motivo}): barras horizontales, el "
                                "trazado se queda en la columna 1. Comprueba que lo que representa se explica en el "
@@ -2342,19 +3207,37 @@ def paso2(trabajo, pid=None):
             if tarta:
                 # Tarta: 9 filas de diámetro, centrada en la columna 1; las etiquetas, por fuera
                 numeros, sz, nota, lineas_cat, filas_cat, alto_cat = 0, 700, None, 0, 0, 0
-                filas = FILAS_PANEL
+                filas = FILAS_TARTA_CON_LEYENDA if modo_ley == "derecha" else FILAS_PANEL
                 diametro = filas * paso_pt
                 alto_panel = MEDIA_ETIQUETA + diametro + ETIQUETA_TARTA
                 trazado = diametro
             else:
                 # Alto: 9 filas hasta el final de las categorías (el trazado, como mínimo 7)
                 numeros = ancho_categorias_izquierda(xml, medir) if horizontal else ancho_numeros_eje(xml, medir)
+                if not horizontal and numeros == AIRE_TRAZADO_SIN_EJE:
+                    linea += " sin eje vertical con cifras: el trazado empieza al principio de la columna 1;"
+                if modo_ley == "propia" and not horizontal:
+                    # Su leyenda empieza en el eje vertical y Excel no deja la primera muestra pegada al borde
+                    numeros = max(numeros, medidas_leyenda_horizontal(xml, w1 / EMU_PT, medir, con_borde=True)[3])
                 trazado = (ancho_util if motivo and not horizontal else w1) / EMU_PT - numeros
+                derecha = 0 if horizontal else ancho_numeros_derecha(xml, medir)
+                if derecha:
+                    trazado -= derecha
+                    linea += (f" eje de la derecha: el trazado se estrecha {derecha / MM:.1f} mm para que sus números "
+                              "quepan en la columna 1;").replace(".", ",")
                 sz, nota, lineas_cat, filas_cat, alto_cat = filas_categorias(xml, trazado, paso_pt)
                 if horizontal:
                     # El gráfico acaba al final de la última cifra del eje (que sobresale medio ancho del trazado)
                     sobresale = media_ultima_cifra(xml, medir)
                     trazado -= sobresale
+                else:
+                    # Líneas y áreas con las categorías sobre las marcas: la última categoría (y la etiqueta de su
+                    # punto) va centrada en el borde derecho del trazado y sobresale la mitad: el trazado se acorta
+                    # para que acabe en la columna (G_IA2025_2.6, «2025» y «22,4», petición del usuario, 2026-11-26)
+                    sobresale = media_ultima_categoria(xml, (sz or 700) / 100, medir, W)
+                    if sobresale:
+                        trazado -= sobresale
+                        linea += f" trazado {sobresale / MM:.1f} mm más corto: la última categoría acaba en la columna;".replace(".", ",")
                 if horizontal and unidades:
                     # Las unidades del eje de valores, debajo de sus números
                     alto_cat += UNIDADES_BAJO_NUMEROS + ALTO_UNIDADES
@@ -2366,6 +3249,20 @@ def paso2(trabajo, pid=None):
                     numeros += ancho_girado + TITULO_GIRADO_A_CATEGORIAS
                     trazado -= ancho_girado + TITULO_GIRADO_A_CATEGORIAS
                 filas = max(FILAS_PANEL, FILAS_MIN_TRAZADO + filas_cat)
+                if fila_k is not None and fila_k in igualar_fila:
+                    filas_f, alto_cat_f = igualar_fila[fila_k]
+                    if filas_f > filas or alto_cat_f > alto_cat + 0.01:
+                        linea += " del mismo alto que los demás paneles de la fila;"
+                    filas, alto_cat = max(filas, filas_f), max(alto_cat, alto_cat_f)
+                # Si la leyenda (en la columna 2) no cabe en el alto del panel, el panel crece las filas que falten
+                # (G_IA2025_1.22, panel a: seis entradas, dos de dos líneas; si no, Excel las monta)
+                if not motivo and not horizontal and medir and re.search(r'<c:legend>', xml):
+                    necesario = alto_leyenda_necesario(xml, ANCHO_LEYENDA(w2), medir)
+                    filas_ley = math.ceil((necesario - LETRA_VISIBLE) / paso_pt - 1e-6)
+                    if filas_ley > filas:
+                        linea += (f" el panel crece a {filas_ley} filas para que quepa la leyenda "
+                                  f"({necesario / MM:.1f} mm);").replace(".", ",")
+                        filas = filas_ley
                 alto_panel = filas * paso_pt + LETRA_VISIBLE
             # Tarta: si sus etiquetas no caben por arriba sin líneas guía, el anillo (con sus 9 filas) baja una
             # fila de la retícula, como mucho FILAS_BAJADA_TARTA, y se queda con la primera que vale
@@ -2374,6 +3271,10 @@ def paso2(trabajo, pid=None):
                 inicio = inicio0 + bajada * paso_pt
                 # Unidades: su línea de base, 2 mm por encima del borde de arriba del trazado
                 ini_unidades = inicio + MEDIA_ETIQUETA - UNIDADES_A_GRAFICO - BASE_UNIDADES
+                if tarta:
+                    # En una tarta el trazado empieza muy arriba: las unidades, al menos debajo del título del panel
+                    # (2.1 b: el «%» se montaba en el título)
+                    ini_unidades = max(ini_unidades, techo_panel + 1 * MM)
                 arriba_marco = min(ini_unidades, inicio) if unidades_arriba else inicio
                 if tarta:
                     # Las etiquetas de arriba necesitan sitio por encima del anillo: el marco sube hasta la
@@ -2382,12 +3283,19 @@ def paso2(trabajo, pid=None):
                 H = inicio + alto_panel - arriba_marco
                 if not tarta:
                     break
-                dentro = ((w1 / EMU_PT - diametro) / 2, inicio - arriba_marco + MEDIA_ETIQUETA, diametro, diametro)
+                if modo_ley == "derecha":
+                    # Lado a lado con su leyenda: el anillo a la izquierda de su media página y la leyenda a la derecha
+                    dentro = (TARTA_DESDE_COLUMNA, inicio - arriba_marco + MEDIA_ETIQUETA, diametro, diametro)
+                    x_ley = TARTA_DESDE_COLUMNA + diametro + LEYENDA_A_LA_IZQUIERDA + 3 * MM
+                    leyenda_t = (x_ley, dentro[1] + diametro / 2, w1 / EMU_PT - x_ley, True)
+                else:
+                    dentro = ((w1 / EMU_PT - diametro) / 2, inicio - arriba_marco + MEDIA_ETIQUETA, diametro, diametro)
+                    leyenda_t = None if motivo else ((x2 - x1) / EMU_PT - LEYENDA_A_LA_IZQUIERDA, None, ANCHO_LEYENDA(w2), True)
                 centro = dentro[1] + diametro / 2
-                xml_t = disposicion(xml, W, H, dentro, None if motivo else
-                                    ((x2 - x1) / EMU_PT - LEYENDA_A_LA_IZQUIERDA, centro, w2 / EMU_PT, True), medir)
-                xml_t, notas_et, guias = etiquetas_tarta(xml_t, W, H, dentro, medir, None if motivo else
-                                                         (x2 - x1) / EMU_PT - LEYENDA_A_LA_IZQUIERDA)
+                if leyenda_t and leyenda_t[1] is None:
+                    leyenda_t = (leyenda_t[0], centro, leyenda_t[2], True)
+                xml_t = disposicion(xml, W, H, dentro, leyenda_t, medir)
+                xml_t, notas_et, guias = etiquetas_tarta(xml_t, W, H, dentro, medir, leyenda_t[0] if leyenda_t else None)
                 fallos = len(guias) + sum(nt.startswith("Aviso: ") for nt in notas_et)
                 pruebas.append((fallos, bajada, inicio, ini_unidades, arriba_marco, H, dentro, centro, xml_t, notas_et, guias))
                 if not fallos:
@@ -2402,7 +3310,13 @@ def paso2(trabajo, pid=None):
                     detalle.append(f"Aviso: panel {n}: " + nt.split("Aviso: ", 1)[1] if nt.startswith("Aviso: ")
                                    else f"Panel {n}: {nt}")
             else:
-                # Solo barras: la serie invisible que da muestras anchas en la leyenda (antes de medirla)
+                # Solo barras: la serie invisible que da muestras anchas en la leyenda (antes de medirla); si el autor
+                # ya puso la suya («linea» del 3.6), se convierte en la de la app
+                xml, de_autor = muestra_del_autor(xml)
+                if de_autor is not None:
+                    detalle.append(f"Aviso: panel {n}: la serie «{de_autor}» (un dato o solo ceros, sin marcador) es la línea que puso "
+                                   "el autor para ensanchar las muestras de la leyenda: pasa a ser la de la app, invisible "
+                                   "y sin nombre en la leyenda; comprueba que no era una serie de datos")
                 anchas = None if motivo else muestras_anchas(xml)
                 if anchas:
                     xml = anchas
@@ -2410,8 +3324,30 @@ def paso2(trabajo, pid=None):
                                    "vean las tramas de las barras (serie de línea blanca sin datos al final de la leyenda)")
                 dentro = (numeros, inicio - arriba_marco + MEDIA_ETIQUETA, trazado,
                           alto_panel - MEDIA_ETIQUETA - alto_cat)
+                if modo_ley in ("comun", "propia"):
+                    # Lado a lado: la leyenda debajo del panel; el gráfico crece hacia abajo lo que ocupe
+                    if modo_ley == "comun":
+                        lw_l, lh_l, _ = medidas_leyenda_horizontal(xml, completo[1] / EMU_PT - HOLGURA_LEYENDA_COMUN, medir)
+                        # Centrada: unos pt de más no la mueven y evitan que Excel pase la última entrada a otra
+                        # fila, que no se ve (8.2: «Compras en TPV» desaparecía)
+                        lw_l += HOLGURA_LEYENDA_COMUN
+                        lx_l = (completo[1] / EMU_PT - lw_l) / 2
+                    else:
+                        # Cada panel con su leyenda: a la izquierda, empezando en su eje vertical, y las entradas de
+                        # izquierda a derecha y después hacia abajo (el orden natural; petición del usuario, 2026-11-27).
+                        lw_l, lh_l, _, borde = medidas_leyenda_horizontal(xml, w1 / EMU_PT - max(0, numeros - PRIMERA_MUESTRA),
+                                                                          medir, con_borde=True)
+                        lx_l = max(0, numeros - borde)
+                    extra_ley = LEYENDA_BAJO_PANEL + lh_l
+                    H += extra_ley
                 xml = disposicion(xml, W, H, dentro, None if motivo else
-                                  ((x2 - x1) / EMU_PT - LEYENDA_A_LA_IZQUIERDA, inicio - arriba_marco, w2 / EMU_PT), medir)
+                                  ((x2 - x1) / EMU_PT - LEYENDA_A_LA_IZQUIERDA, inicio - arriba_marco, ANCHO_LEYENDA(w2)), medir)
+                if modo_ley in ("comun", "propia"):
+                    ly_l = inicio - arriba_marco + alto_panel + LEYENDA_BAJO_PANEL
+                    xml = poner_leyenda(xml, W, H, lx_l, ly_l, lw_l, lh_l, "b")
+                    linea += (" leyenda común debajo de los paneles, centrada, con las entradas en horizontal;"
+                              if modo_ley == "comun" else " leyenda debajo del panel, desde su eje vertical, con las "
+                              "entradas de izquierda a derecha y después hacia abajo;")
             # Cuerpo de las categorías con el ancho nuevo (regla del paso 2)
             xml = re.sub(r'<c:catAx>.*?</c:catAx>',
                          lambda m: re.sub(r'(<c:txPr>.*?</c:txPr>)', lambda t: fijar_letra(t.group(1), sz, ROBOTO),
@@ -2458,6 +3394,22 @@ def paso2(trabajo, pid=None):
             if crecidas:
                 linea += f" {crecidas} etiqueta(s) de datos agrandada(s) para que se vea todo su texto;"
             cambios[ruta_graf] = xml.encode("utf-8")
+            # Textos y líneas del autor dentro del gráfico (no barras horizontales, que ya lo hacen arriba): se mueven
+            # con el trazado nuevo (G_IA2025_3.2 c: los promedios y sus líneas se quedaban sobre otras barras)
+            viejo = trazado_rel(xml_antes)
+            if formas and viejo and not tarta and not horizontal:
+                actuales = re.findall(r'<cdr:relSizeAnchor\b.*?</cdr:relSizeAnchor>', formas, re.S)
+                saltar = [a for a in actuales if girado(a) or es_unidad_grafico(a, xml_antes) or a in unidades_arriba]
+                gx0, gy0, gw0, gh0 = caja(partes[ig])
+                formas, movidos = recolocar_formas(formas, viejo, (gw0 / EMU_PT, gh0 / EMU_PT), dentro, W, H, saltar,
+                                                   centro=True, lineas=True)
+                if movidos:
+                    cambios[ruta_formas] = formas.encode("utf-8")
+                    textos_m = [m for m in movidos if m != "línea"]
+                    n_lineas = movidos.count("línea")
+                    linea += (" se mueven con el trazado: " + ", ".join(f"«{m}»" for m in textos_m)
+                              + (f"{' y ' if textos_m else ''}{n_lineas} línea{'s' if n_lineas > 1 else ''} del autor"
+                                 if n_lineas else "") + ";")
             for u in unidades_arriba:
                 formas = colocar_unidades(formas, u, numeros, ini_unidades - arriba_marco, W, H, medir)
             if tarta and guias:
@@ -2493,6 +3445,54 @@ def paso2(trabajo, pid=None):
                 viejo = (gx + (f.get("x", 0.1) + f.get("w", 0.8) / 2) * gw, gy + (f.get("y", 0.1) + f.get("h", 0.8) / 2) * gh)
                 nuevo_c = (x1 + (dentro[0] + diametro / 2) * EMU_PT, (arriba_marco + dentro[1] + diametro / 2) * EMU_PT)
                 mover = (round(nuevo_c[0] - viejo[0]), round(nuevo_c[1] - viejo[1]))
+            if tarta:
+                # Texto del centro (cifra y texto, en una caja o en varias, en la hoja o dentro del gráfico): una sola caja
+                # con la cifra a 24 pt y el texto debajo a 7 pt, centrados en la tarta (petición del usuario, 2026-11-27)
+                centro_hoja = sorted((caja(partes[i])[1], i) for i, (t, g) in tipos.items() if t == "interior" and g == ig
+                                     and abs(caja(partes[i])[0] + caja(partes[i])[2] / 2 - viejo[0]) < gw / 4
+                                     and abs(caja(partes[i])[1] + caja(partes[i])[3] / 2 - viejo[1]) < gh / 4
+                                     and texto_forma(partes[i]).strip())
+                centro_graf = []
+                if formas and lay:
+                    cxr, cyr = f.get("x", 0.1) + f.get("w", 0.8) / 2, f.get("y", 0.1) + f.get("h", 0.8) / 2
+                    for an in re.findall(r'<cdr:relSizeAnchor\b.*?</cdr:relSizeAnchor>', formas, re.S):
+                        x0r, y0r, x1r, y1r = caja_rel(an)
+                        if (texto_forma(an).strip() and not girado(an) and abs((x0r + x1r) / 2 - cxr) < 0.25
+                                and abs((y0r + y1r) / 2 - cyr) < 0.25 and an not in unidades):
+                            centro_graf.append((y0r, an))
+                    centro_graf.sort(key=lambda p: p[0])
+                textos_c = [html.unescape(texto_forma(partes[i])) for _, i in centro_hoja] + \
+                           [html.unescape(texto_forma(an)) for _, an in centro_graf]
+                if len(textos_c) > 1 or centro_graf:
+                    junto = " ".join(t.strip() for t in textos_c)
+                    ancho_c, alto_c = medidas_centro_tarta(junto, medir)
+                    cxp, cyp = dentro[0] + diametro / 2, dentro[1] + diametro / 2 - SUBIDA_CENTRO_TARTA
+                    if centro_hoja:
+                        # Se queda la primera caja de la hoja; las demás (y las del gráfico) se quitan
+                        i0 = centro_hoja[0][1]
+                        a = re.sub(r'<xdr:txBody>.*?</xdr:txBody>', lambda m: cuerpo_centro_tarta(junto, "xdr"),
+                                   partes[i0], count=1, flags=re.S)
+                        partes[i0] = colocar(a, round(nuevo_c[0] - ancho_c * EMU_PT / 2),
+                                             round(nuevo_c[1] - (alto_c / 2 + SUBIDA_CENTRO_TARTA) * EMU_PT),
+                                             round(ancho_c * EMU_PT), round(alto_c * EMU_PT))
+                        for _, i in centro_hoja[1:]:
+                            partes[i] = ""
+                            tipos.pop(i, None)
+                        for _, an in centro_graf:
+                            formas = formas.replace(an, "", 1)
+                        tipos.pop(i0, None)
+                    else:
+                        an0 = centro_graf[0][1]
+                        nueva = re.sub(r'<cdr:txBody>.*?</cdr:txBody>', lambda m: cuerpo_centro_tarta(junto, "cdr", True),
+                                       an0, count=1, flags=re.S)
+                        formas = formas.replace(an0, nueva, 1)
+                        formas, _ = colocar_rel(formas, nueva, cxp - ancho_c / 2, cyp - alto_c / 2, cxp + ancho_c / 2,
+                                                cyp + alto_c / 2, W, H)
+                        for _, an in centro_graf[1:]:
+                            formas = formas.replace(an, "", 1)
+                    if ruta_formas and formas:
+                        cambios[ruta_formas] = formas.encode("utf-8")
+                    linea += f" «{junto}» centrado en la tarta (cifra 24 pt Roboto Black, texto 7 pt debajo);"
             for ii in [i for i, (t, g) in tipos.items() if t == "interior" and g == ig]:
                 xi, yi, wi, hi = caja(partes[ii])
                 if tarta and abs(xi + wi / 2 - viejo[0]) < gw / 4 and abs(yi + hi / 2 - viejo[1]) < gh / 4:
@@ -2506,8 +3506,36 @@ def paso2(trabajo, pid=None):
                 partes[ii] = colocar(partes[ii], xi + mover[0], yi + mover[1], wi, hi)
                 linea += (f" «{html.unescape(texto_forma(partes[ii])).strip()}» se mueve con el "
                           f"{'centro de la tarta' if tarta else 'gráfico'};")
+            if modo_ley == "quitar":
+                # La leyenda común va en otro gráfico de la fila: esta, fuera
+                xml = re.sub(r'<c:legend>.*?</c:legend>', "", xml, count=1, flags=re.S)
+                cambios[ruta_graf] = xml.encode("utf-8")
+                detalle.append(f"Aviso: panel {n}: leyenda quitada: la común de la fila ya va debajo de los paneles")
             partes[ig] = colocar(partes[ig], x1, round(arriba_marco * EMU_PT), ancho_graf, round(H * EMU_PT))
-            fondo = inicio + alto_panel
+            fondo = inicio + alto_panel + extra_ley
+            if fila_k is not None:
+                fondo_filas[fila_k] = max(fondo_filas.get(fila_k, 0), fondo)
+                if col_j == len(filas_l[fila_k]) - 1 and sueltas_l.get(fila_k):
+                    # Las leyendas que son un gráfico aparte: debajo de la fila, juntas y centradas
+                    y_l = fondo_filas[fila_k] + LEYENDA_BAJO_PANEL
+                    medidas = []
+                    for il in sueltas_l[fila_k]:
+                        rl = re.search(r'<c:chart\b[^>]*\br:id="([^"]+)"', partes[il]).group(1)
+                        xl = z.read(relaciones[rl][1]).decode("utf-8")
+                        medidas.append((il, relaciones[rl][1], xl, *medidas_leyenda_horizontal(xl, completo[1] / EMU_PT, medir)))
+                    total = sum(m[3] for m in medidas)
+                    xs = completo[0] + round((completo[1] / EMU_PT - total) / 2 * EMU_PT)
+                    alto_l = max(m[4] for m in medidas)
+                    for il, rgl, xl, lw_s, lh_s, _ in medidas:
+                        xl = poner_leyenda(xl, lw_s, alto_l, 0, 0, lw_s, alto_l, "b")
+                        xl = sin_trazado(xl)
+                        cambios[rgl] = xl.encode("utf-8")
+                        partes[il] = colocar(partes[il], xs, round(y_l * EMU_PT), round(lw_s * EMU_PT), round(alto_l * EMU_PT))
+                        xs += round(lw_s * EMU_PT)
+                    fondo_filas[fila_k] = y_l + alto_l
+                    detalle.append(f"Fila {fila_k + 1}: leyenda común (gráfico aparte) debajo de los paneles, centrada, "
+                                   f"a {y_l / MM:.1f} mm".replace(".", ","))
+                fondo = fondo_filas[fila_k]
             if tarta:
                 linea += (f" tarta a {(inicio + MEDIA_ETIQUETA) / MM:.1f} mm, {filas} filas de diámetro "
                           f"({diametro / MM:.1f} mm), centrada en la columna 1; leyenda centrada a su altura").replace(".", ",")
@@ -2519,6 +3547,10 @@ def paso2(trabajo, pid=None):
                 linea += f" — {nota}"
             detalle.append(linea)
 
+        if lado:
+            # FUENTES, a lo ancho de las dos columnas, debajo de la última fila
+            x1, ancho_util = completo
+            fondo = max(fondo_filas.values())
         if fuentes is not None:
             a = partes[fuentes]
             l, t, r, _ = margenes(a)
@@ -2641,7 +3673,45 @@ def valores_por_eje(xml):
                 for parte in partes:
                     for bloque in re.findall(rf'<c:{parte}>.*?</c:{parte}>', s, re.S):
                         datos.setdefault(i, []).extend(numeros(bloque))
+            # Apiladas: lo que llega a cada categoría es la suma (las positivas hacia arriba y las negativas hacia
+            # abajo; G_IA2025_2.1, áreas apiladas hasta 0,9 con series de 0,2)
+            if re.search(r'<c:grouping val="stacked"/>', g.group(0)):
+                arriba, abajo = {}, {}
+                for s in series:
+                    val = re.search(r'<c:val>.*?</c:val>', s, re.S)
+                    for k, v in re.findall(r'<c:pt idx="(\d+)">\s*<c:v>([^<]+)</c:v>', val.group(0) if val else ""):
+                        try:
+                            x = float(v)
+                        except ValueError:
+                            continue
+                        (arriba if x >= 0 else abajo)[k] = (arriba if x >= 0 else abajo).get(k, 0) + x
+                datos.setdefault(i, []).extend(list(arriba.values()) + list(abajo.values()))
     return datos
+
+
+def divisiones_al_eje_de_valores(xml):
+    """Las líneas de división van con el eje de valores (las verticales en barras horizontales, como en el TERMINADO
+    «GIng_DO2626_05 HORIZONTAL» y el .ai). Si el autor las puso en el eje de categorías visible y el de valores que
+    cruza con él no las tiene, pasan a ese (G_MemoriaSupervision_3.4: líneas entre categorías). Devuelve el xml y un
+    aviso (o None)."""
+    ejes = {valor(re.search(r'<c:axId\b[^>]*/>', e.group(0)).group(0)): e for e in EJES.finditer(xml)}
+    for i, e in ejes.items():
+        if e.group(1) not in ("catAx", "dateAx") or '<c:delete val="1"/>' in e.group(0) or "<c:majorGridlines" not in e.group(0):
+            continue
+        h = hijos(e.group(0))
+        otro = ejes.get(valor(hijo(h, "crossAx")))
+        if not otro or otro.group(1) != "valAx" or '<c:delete val="1"/>' in otro.group(0) or "<c:majorGridlines" in otro.group(0):
+            continue
+        lineas = hijo(h, "majorGridlines")
+        poner(h, ORDEN_EJE[e.group(1)], "majorGridlines", None)
+        poner(h, ORDEN_EJE[e.group(1)], "minorGridlines", None)
+        h2 = hijos(otro.group(0))
+        poner(h2, ORDEN_EJE["valAx"], "majorGridlines", lineas)
+        xml = xml.replace(e.group(0), f"<c:{e.group(1)}>" + "".join(t for _, t in h) + f"</c:{e.group(1)}>", 1)
+        xml = xml.replace(otro.group(0), "<c:valAx>" + "".join(t for _, t in h2) + "</c:valAx>", 1)
+        return xml, ("Aviso: las ⟪líneas de división⟫ estaban en el eje de categorías: pasan al eje de valores "
+                     "(como en la guía y el .ai)")
+    return xml, None
 
 
 def formato_ejes(xml):
@@ -2649,6 +3719,9 @@ def formato_ejes(xml):
     cero; marcas de graduación; etiquetas en Bajo y a distancia 100; el máximo y el mínimo fijos, en un tramo
     del eje (el gráfico se cierra con una línea de división). Devuelve el xml y lo hecho, para el detalle."""
     cuentas = []
+    xml, movidas = divisiones_al_eje_de_valores(xml)
+    if movidas:
+        cuentas.append(movidas)
     # Ejes de dispersión: los dos de valores de un grupo scatterChart. En un gráfico combinado la dispersión puede
     # ir sobre un eje de categorías (columnas y puntos): entonces no es un gráfico de dispersión
     tipos = {valor(re.search(r'<c:axId\b[^>]*/>', e.group(0)).group(0)): e.group(1) for e in EJES.finditer(xml)}
@@ -2676,9 +3749,26 @@ def formato_ejes(xml):
                   else "eje de series")
         hecho = []
         if valor(hijo(h, "delete")) == "1":
-            # Oculto: no se toca (en el TERMINADO quedan como los dejó el autor)
+            # Oculto: no se toca (en el TERMINADO quedan como los dejó el autor), salvo sus líneas de división: sin eje
+            # no van (G_MemoriaSupervision_3.2, como en el .ai; decisión del usuario, 2026-11-27)
+            divisiones = sum(hijo(h, d) is not None for d in ("majorGridlines", "minorGridlines"))
+            if divisiones:
+                poner(h, ORDEN_EJE[tipo], "majorGridlines", None)
+                poner(h, ORDEN_EJE[tipo], "minorGridlines", None)
+                cuentas.append(f"Aviso: el {nombre} va oculto: quitadas sus ⟪líneas de división⟫ (sin eje no van)")
+                return f"<c:{tipo}>" + "".join(t for _, t in h) + f"</c:{tipo}>"
             cuentas.append(nombre + " (oculto): sin tocar")
             return a
+        if valor(hijo(h, "tickLblPos")) == "none":
+            # Sin cifras: el autor lo tiene para apoyar algo (series vacías, otra escala), no para verlo. Sin línea ni
+            # marcas: con el estilo restablecido se perdía su línea invisible y salía gris con marcas (G_IA2025_1.14)
+            poner(h, orden, "majorTickMark", '<c:majorTickMark val="none"/>')
+            poner(h, orden, "minorTickMark", '<c:minorTickMark val="none"/>')
+            sppr = hijo(h, "spPr")
+            poner(h, orden, "spPr", con_linea(sppr.replace("<c:spPr/>", "<c:spPr></c:spPr>") if sppr
+                                              else "<c:spPr><a:noFill/></c:spPr>", '<a:ln><a:noFill/></a:ln>'))
+            cuentas.append(nombre + " sin cifras: sin línea ni marcas")
+            return f"<c:{tipo}>" + "".join(t for _, t in h) + f"</c:{tipo}>"
         dispersion = valor(hijo(h, "axId")) in de_dispersion
 
         # Línea del eje y de sus líneas de división
@@ -2732,15 +3822,29 @@ def formato_ejes(xml):
         poner(h, orden, "minorTickMark", f'<c:minorTickMark val="{secundaria}"/>')
         hecho.append(f"marcas {nombres_marca[marca]}" + (f" y secundarias {nombres_marca[secundaria]}"
                                                          if secundaria != "none" else ""))
-        if tipo == "catAx" and horizontal and valor(hijo(h, "tickMarkSkip")) not in (None, "1"):
-            hecho.append(f"una marca por valor (antes cada {valor(hijo(h, 'tickMarkSkip'))})")
-            poner(h, orden, "tickMarkSkip", '<c:tickMarkSkip val="1"/>')
+        # Marcas: una por valor; pero si las etiquetas van saltadas («una cada 4»), las marcas con ellas: con 104
+        # trimestres, una marca por valor llena el eje (G_IA2025_3.1 b, petición del usuario, 2026-11-26; el .ai, una
+        # por año)
+        salto_etiquetas = valor(hijo(h, "tickLblSkip"))
+        marcas_con = salto_etiquetas if salto_etiquetas not in (None, "1") else "1"
+        if tipo == "catAx" and horizontal and (valor(hijo(h, "tickMarkSkip")) or "1") != marcas_con:
+            hecho.append(f"una marca cada {marcas_con} valor{'es' if marcas_con != '1' else ''}" +
+                         (" (con las etiquetas)" if marcas_con != "1" else "") +
+                         f" (antes cada {valor(hijo(h, 'tickMarkSkip')) or '1'})")
+            poner(h, orden, "tickMarkSkip", f'<c:tickMarkSkip val="{marcas_con}"/>')
 
         # Etiquetas: en Bajo (las de los ejes horizontales y, en dispersión, también las del vertical) y a
         # distancia 100 del eje
         if horizontal or dispersion:
-            poner(h, orden, "tickLblPos", '<c:tickLblPos val="low"/>')
-            hecho.append("etiquetas en Bajo")
+            # «Bajo» es el lado del mínimo del eje que cruza: si ese eje va invertido (categorías de arriba abajo,
+            # «maxMin»), el mínimo queda arriba y las cifras subían; entonces «Alto», que queda abajo
+            # (G_MemoriaSupervision_3.4, barras horizontales)
+            if otro.get("orientacion") == "maxMin":
+                poner(h, orden, "tickLblPos", '<c:tickLblPos val="high"/>')
+                hecho.append("etiquetas en Alto (el otro eje va invertido: así quedan abajo / a la izquierda)")
+            else:
+                poner(h, orden, "tickLblPos", '<c:tickLblPos val="low"/>')
+                hecho.append("etiquetas en Bajo")
         if tipo in ("catAx", "dateAx"):
             if valor(hijo(h, "lblOffset")) not in (None, "100"):
                 hecho.append(f"etiquetas a distancia 100 del eje (antes {valor(hijo(h, 'lblOffset'))})")
@@ -2789,7 +3893,10 @@ def paso3(trabajo, pid=None):
             ruta_graf = relaciones[rid][1]
             xml, cuentas = formato_ejes(z.read(ruta_graf).decode("utf-8"))
             cambios[ruta_graf] = xml.encode("utf-8")
+            avisos_ejes = [c for c in cuentas if c.startswith("Aviso: ")]
+            cuentas = [c for c in cuentas if not c.startswith("Aviso: ")]
             detalle.append(f"Panel {i}: " + ("; ".join(cuentas) if cuentas else "sin ejes"))
+            detalle += [f"Aviso: panel {i}: " + c[len("Aviso: "):] for c in avisos_ejes]
     detalle.append("Ejes 0,5 pt en blanco oscuro 50 % (matiz 5); líneas de división 0,3 pt en blanco oscuro 35 % "
                    "(matiz 4); sin relieve y unión angular")
     return nuevo_paso(trabajo, "Ejes", cambios, detalle)
@@ -2808,7 +3915,7 @@ RE_TRIMESTRE = re.compile(
     r'(?<![\w/])(?:(?P<a1>(?:19|20)\d{2})\s*[-/ ]?\s*)?'
     r'(?:(?P<n1>[1-4])\s*(?:er|º|o|ª)?\.?\s*(?:TR|Tr|tr|TRIM\.?|Trim\.?|trim\.?|[Tt]rimestre|TRIMESTRE|T|Q)'
     r'|(?:TR|T|Q)\s*(?P<n2>[1-4])'
-    r'|(?P<r>IV|III|II|I)\s*(?:TR|Tr|TRIM\.?|Trim\.?|trim\.?|[Tt]rimestre|TRIMESTRE|T))'
+    r'|(?P<r>IV|III|II|I)\s*(?P<rt>TR|Tr|TRIM\.?|Trim\.?|trim\.?|[Tt]rimestre|TRIMESTRE|T))'
     r'(?:\s*[-/ ]?\s*(?P<a2>(?:19|20)\d{2}|\d{2})(?!\d))?(?![\w])')
 ROMANO_TRIMESTRE = {"1": "I", "2": "II", "3": "III", "4": "IV", "I": "I", "II": "II", "III": "III", "IV": "IV"}
 NUMERO_TRIMESTRE = {"I": "1", "II": "2", "III": "3", "IV": "4"}
@@ -2816,6 +3923,9 @@ NUMERO_TRIMESTRE = {"I": "1", "II": "2", "III": "3", "IV": "4"}
 
 def trimestres(texto, idioma):
     def cambiar(m):
+        # «IT» a secas, sin año, es Italia (G_IA2025_3.2 c: salía «I TR»), no el primer trimestre
+        if m.group(0) == "IT":
+            return m.group(0)
         n = m.group("n1") or m.group("n2") or NUMERO_TRIMESTRE[m.group("r")]
         anio = m.group("a1") or m.group("a2")
         base = f"{ROMANO_TRIMESTRE[n]} TR" if idioma != "en" else f"Q{n}"
@@ -2881,6 +3991,89 @@ def cambiar_categorias(z, xml, hojas, funcion):
     return xml, [f"«{a}» → «{n}»".replace("\n", "⏎") for a, n in cambios.items()], formulas
 
 
+def poner_celda_texto(hoja, ref, texto):
+    """La celda `ref` con el texto (la crea, con su fila si hace falta, en su sitio)."""
+    c = celda(hoja, ref)
+    if c:
+        return poner_texto_celda(hoja, c, texto)
+    col, fila = re.match(r'([A-Z]+)(\d+)', ref).groups()
+    nueva = f'<c r="{ref}" t="inlineStr"><is><t xml:space="preserve">{html.escape(texto, quote=False)}</t></is></c>'
+    f = re.search(rf'<row r="{fila}"(?=[\s>/])[^>]*?(?:/>|>.*?</row>)', hoja, re.S)
+    if not f:
+        siguiente = next((m for m in re.finditer(r'<row r="(\d+)"', hoja) if int(m.group(1)) > int(fila)), None)
+        fila_xml = f'<row r="{fila}">{nueva}</row>'
+        if siguiente:
+            return hoja[:siguiente.start()] + fila_xml + hoja[siguiente.start():]
+        return hoja.replace("</sheetData>", fila_xml + "</sheetData>", 1).replace("<sheetData/>", f"<sheetData>{fila_xml}</sheetData>", 1)
+    fx = f.group(0)
+    if fx.endswith("/>"):
+        nueva_fila = fx[:-2] + ">" + nueva + "</row>"
+    else:
+        despues = next((m for m in re.finditer(r'<c r="([A-Z]+)\d+"', fx) if columna_num(m.group(1)) > columna_num(col)), None)
+        nueva_fila = fx[:despues.start()] + nueva + fx[despues.start():] if despues else fx[:-6] + nueva + "</row>"
+    return hoja[:f.start()] + nueva_fila + hoja[f.end():]
+
+
+def trimestres_en_dos_niveles(z, xml, hojas):
+    """Categorías de una sola columna como «I TR 2022», «II TR», «III TR», «IV TR», «I TR 2023»… (el año solo en el
+    primer trimestre): en dos niveles, como en el .ai (G_IA2025_1.33 panel c, petición del usuario, 2026-11-26): los
+    trimestres en la columna del autor y los años en la de su izquierda, si está vacía; el eje los pone debajo,
+    centrados bajo sus trimestres, y todo en horizontal. Devuelve el xml y un aviso (cambia las celdas del autor)."""
+    cat = re.search(r'<c:cat>\s*<c:strRef>\s*<c:f>([^<]*)</c:f>.*?</c:cat>', xml, re.S)
+    if not cat:
+        return xml, None
+    f = html.unescape(cat.group(1))
+    rango = re.fullmatch(r"((?:'[^']+'|[^!]+))!\$?([A-Z]+)\$?(\d+):\$?([A-Z]+)\$?(\d+)", f)
+    if not rango or rango.group(2) != rango.group(4) or columna_num(rango.group(2)) < 2:
+        return xml, None
+    puntos = {int(i): html.unescape(v) for i, v in re.findall(r'<c:pt idx="(\d+)">\s*<c:v>([^<]*)</c:v>', cat.group(0))}
+    trimestre = r'(?:I{1,3}|IV)\s*TR|Q[1-4]'
+    partes = {}
+    for i, v in puntos.items():
+        m = re.fullmatch(rf'\s*({trimestre})(?:\s+((?:19|20)\d{{2}}))?\s*', v.replace("\n", " "))
+        if not m:
+            return xml, None
+        partes[i] = (m.group(1), m.group(2))
+    anos = [i for i, (_, a) in partes.items() if a]
+    if not anos or len(anos) == len(partes):
+        return xml, None
+    hoja_nombre, col, r1, r2 = rango.group(1), rango.group(2), int(rango.group(3)), int(rango.group(5))
+    izq = columna_letras(columna_num(col) - 1)
+    try:
+        ruta_hoja = hoja_de(z, hoja_nombre.strip("'"))
+    except Fallo:
+        return xml, None
+    hoja = hojas.get(ruta_hoja) or z.read(ruta_hoja).decode("utf-8")
+    compartidos = textos_compartidos(z)
+    for r in range(r1, r2 + 1):
+        c = celda(hoja, f"{izq}{r}")
+        if c and (texto_de_celda(c, compartidos) or "").strip():
+            return xml, (f"Aviso: las categorías llevan el año solo en el primer trimestre («{puntos[anos[0]]}»); no se "
+                         f"han puesto en dos niveles porque la columna {izq} no está vacía: revisar a mano")
+    for i, (t, a) in partes.items():
+        fila = r1 + i
+        c = celda(hoja, f"{col}{fila}")
+        if c and a:
+            hoja = poner_texto_celda(hoja, c, t)
+        if a:
+            hoja = poner_celda_texto(hoja, f"{izq}{fila}", a)
+    hojas[ruta_hoja] = hoja
+    n = r2 - r1 + 1
+    hoja_ref = hoja_nombre
+    nueva_f = f"{hoja_ref}!${izq}${r1}:${col}${r2}"
+    interior = "".join(f'<c:pt idx="{i}"><c:v>{html.escape(t, quote=False)}</c:v></c:pt>' for i, (t, _) in sorted(partes.items()))
+    exterior = "".join(f'<c:pt idx="{i}"><c:v>{a}</c:v></c:pt>' for i, (_, a) in sorted(partes.items()) if a)
+    nueva_cat = (f'<c:cat><c:multiLvlStrRef><c:f>{html.escape(nueva_f, quote=False)}</c:f><c:multiLvlStrCache>'
+                 f'<c:ptCount val="{n}"/><c:lvl>{interior}</c:lvl><c:lvl>{exterior}</c:lvl></c:multiLvlStrCache>'
+                 '</c:multiLvlStrRef></c:cat>')
+    # Todas las series que usan esas categorías
+    xml = re.sub(r'<c:cat>\s*<c:strRef>\s*<c:f>' + re.escape(cat.group(1)) + r'</c:f>.*?</c:cat>', lambda m: nueva_cat, xml, flags=re.S)
+    xml = xml.replace('<c:noMultiLvlLbl val="1"/>', '<c:noMultiLvlLbl val="0"/>')
+    return xml, (f"Aviso: categorías en dos niveles: los trimestres en la columna {col} («{puntos[anos[0]]}» → "
+                 f"«⟪{partes[anos[0]][0]}⟫») y los años en la {izq}, debajo y centrados bajo sus trimestres (como en "
+                 "el .ai); cambiadas las celdas del autor ⟦celdas:" + hoja_nombre.strip("'") + f"|{izq}{r1}:{col}{r2}⟧")
+
+
 def textos_trimestres(xml, idioma):
     """Trimestres en los textos de un dibujo (hoja o gráfico) o de los títulos del gráfico: en cada <a:t>."""
     hechos = []
@@ -2932,6 +4125,89 @@ def escala_eje(valores, minimo=None, maximo=None, unidad=None):
         if unidad or (amax - amin) / u <= 9 + 1e-9:
             return amin, amax, u
     return None
+
+
+def avisos_escala(xml, h, ide, datos, todos, fmin, fmax, unidad):
+    """Avisos de la escala de un eje de valores visible que hacen el gráfico más pequeño de lo que podría ser
+    (petición del usuario, 2026-11-27, G_MemoriaSupervision_2.6): tramos vacíos, solo un extremo fijado o el eje sin
+    los datos (que van en un eje oculto de otra escala)."""
+    avisos = []
+    c = lambda x: cifra(round(x, 2)).replace(".", ",").replace("-", "−")
+    # El eje que se ve no tiene datos: las series van en un eje oculto con otra escala (2.6 a)
+    if not datos.get(ide):
+        for e2 in re.finditer(r'<c:valAx>.*?</c:valAx>', xml, re.S):
+            h2 = hijos(e2.group(0))
+            o = valor(hijo(h2, "axId"))
+            if o == ide or valor(hijo(h2, "delete")) != "1" or not datos.get(o):
+                continue
+            if valor(hijo(h2, "axPos")) in ("b", "t") or valor(hijo(h, "axPos")) in ("b", "t"):
+                continue
+            esc2 = hijos(hijo(h2, "scaling") or "<c:scaling></c:scaling>")
+            n2 = lambda n: float(valor(hijo(esc2, n))) if hijo(esc2, n) else None
+            u2 = float(valor(hijo(h2, "majorUnit"))) if hijo(h2, "majorUnit") else None
+            oculto = escala_eje(datos[o], n2("min"), n2("max"), u2)
+            visible = escala_eje(datos[o], fmin, fmax, unidad)
+            if oculto and visible and (abs(oculto[0] - visible[0]) > 1e-9 or abs(oculto[1] - visible[1]) > 1e-9):
+                avisos.append(f"Aviso: el ⟪eje de valores que se ve no tiene datos⟫ ({c(visible[0])} a {c(visible[1])}): las "
+                              f"series van en el eje oculto, de {c(oculto[0])} a {c(oculto[1])}; los números del eje no "
+                              "corresponden a dónde se dibujan los datos: igualar las dos escalas a mano")
+            break
+        return avisos
+    if not todos:
+        return avisos
+    # Solo un extremo fijado y el salto automático: el otro extremo y los saltos los elige Excel según el alto del
+    # gráfico y pueden dejar tramos vacíos (2.6 b: mínimo −60 fijo; Excel puso saltos de 50 y llegó a 90 con los datos
+    # en 49; el .ai, de −60 a 60 con saltos de 20)
+    if (fmin is None) != (fmax is None) and unidad is None:
+        justo = escala_eje(todos, fmin, fmax, None)
+        # Con el extremo libre en 0 (datos de un solo signo) Excel lo pone ahí: no queda hueco
+        libre = justo[1] if justo and fmin is not None else (justo[0] if justo else None)
+        if justo and abs(libre) > 1e-12:
+            fijo = f"el mínimo ({c(fmin)})" if fmin is not None else f"el máximo ({c(fmax)})"
+            otro = "el máximo" if fmin is not None else "el mínimo"
+            # La app la fija (decisión del usuario, 2026-11-27: mejor que solo avisar)
+            avisos.append(("fijar", justo))
+            avisos.append(f"Aviso: eje de valores ⟪fijado de {c(justo[0])} a {c(justo[1])} con saltos de {c(justo[2])}⟫: el "
+                          f"autor solo fijó {fijo} y {otro} y los saltos los elegía Excel según el alto del gráfico, con "
+                          f"tramos vacíos (los datos van de {c(min(todos))} a {c(max(todos))})")
+            return avisos
+    e = escala_eje(todos, fmin, fmax, unidad)
+    if e:
+        aviso = tramos_vacios(todos, *e, fmin is not None, fmax is not None)
+        if aviso:
+            avisos.append(aviso)
+    return avisos
+
+
+def tramos_vacios(valores, amin, amax, u, min_fijo, max_fijo):
+    """Aviso si el mínimo o el máximo que fijó el autor deja al menos un tramo entero del eje sin datos (más allá del
+    aire normal): el gráfico podría verse más grande (petición del usuario, 2026-11-27, G_MemoriaSupervision_2.6 b:
+    mínimo −60 con el dato más bajo en −22,6). Solo avisa: a veces el autor iguala la escala de varios paneles."""
+    if not valores or not u or not (min_fijo or max_fijo):
+        return None
+    dmin, dmax = min(valores), max(valores)
+    if dmax - dmin < 1e-12:
+        return None   # un solo valor: series auxiliares (la línea de ceros del 1.21), no datos
+    # Lo que pondría Excel solo (con su propio salto)
+    ideal = escala_eje(valores)
+    c = lambda x: cifra(round(x, 2)).replace(".", ",").replace("-", "−")
+    partes = []
+    # Abajo: no cuenta el 0 con todos los datos positivos (la base del eje)
+    # Los tramos, con el salto que pondría Excel solo (2.6 b: con el −60 del autor el salto es 20 y sobra uno de 10)
+    if ideal:
+        u = ideal[2]
+    if min_fijo and not (amin == 0 and dmin >= 0) and ideal and ideal[0] - amin >= u - 1e-9:
+        n = int((ideal[0] - amin) / u + 1e-9)
+        partes.append(f"por abajo llega a {c(amin)} y el dato más bajo es {c(dmin)} ({n} tramo{'s' if n > 1 else ''} "
+                      f"vacío{'s' if n > 1 else ''}: el mínimo podría ser {c(ideal[0])})")
+    if max_fijo and not (amax == 0 and dmax <= 0) and ideal and amax - ideal[1] >= u - 1e-9:
+        n = int((amax - ideal[1]) / u + 1e-9)
+        partes.append(f"por arriba llega a {c(amax)} y el dato más alto es {c(dmax)} ({n} tramo{'s' if n > 1 else ''} "
+                      f"vacío{'s' if n > 1 else ''}: el máximo podría ser {c(ideal[1])})")
+    if not partes:
+        return None
+    return ("Aviso: el gráfico ⟪puede aumentar de tamaño⟫: el eje de valores " + "; ".join(partes) +
+            ". Comprueba si el autor lo fijó para igualar la escala con otro panel")
 
 
 def decimales(x):
@@ -3034,16 +4310,140 @@ def poner_rotacion(eje, rot):
     return eje
 
 
+MESES_EJE = {"es": ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"],
+             "en": ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]}
+# Saltos «redondos» entre etiquetas verticales: meses (trimestre, semestre, año), años y el resto
+SALTOS_EJE = {"months": [1, 3, 6, 12], "years": [1, 2, 5, 10], None: [1, 2, 3, 4, 5, 6, 10, 12, 20, 25, 50]}
+
+
+def textos_eje_numerico(xml, texto_eje):
+    """Los textos de un eje de categorías de fechas o números, como los escribe su formato (para medirlos)."""
+    cat = re.search(r'<c:cat>.*?</c:cat>', xml, re.S)
+    nf = re.search(r'<c:numFmt formatCode="([^"]*)"', texto_eje)
+    codigo = html.unescape(nf.group(1)) if nf else ""
+    if (not nf or 'sourceLinked="1"' in nf.group(0)) and cat:
+        cache = re.search(r'<c:formatCode>([^<]*)</c:formatCode>', cat.group(0))
+        codigo = html.unescape(cache.group(1)) if cache else codigo
+    limpio = re.sub(r'\[[^\]]*\]|"[^"]*"', "", codigo.lower())
+    if "mmm" in limpio:
+        idioma = "en" if "10409" in codigo else "es"
+        return [m + ("-00" if "y" in limpio else "") for m in MESES_EJE[idioma]] + (["sept-00"] if idioma == "es" else [])
+    if "y" in limpio and "m" not in limpio and "d" not in limpio:
+        return ["2000" if "yyy" in limpio else "00"]
+    # Números: como los escribe el formato del eje («#,##0» → «-43», «3.100»), no el valor en bruto (1.8, 2.4)
+    primera = re.sub(r'"[^"]*"|\[[^\]]*\]', "", codigo.split(";")[0])
+    decimales = len(re.search(r'\.(0+)', primera).group(1)) if re.search(r'\.(0+)', primera) else (
+        None if "general" in primera.lower() or not primera else 0)
+
+    def escrito(v):
+        if decimales is None:
+            return cifra(round(v, 2)).replace(".", ",")
+        t = f"{v:,.{decimales}f}" if "," in primera else f"{v:.{decimales}f}"
+        return t.replace(",", " ").replace(".", ",").replace(" ", ".")
+    return ([escrito(v) for v in numeros(cat.group(0))] if cat else []) or ["0000"]
+
+
+def direccion_fechas(xml, eje, trazado, medir):
+    """Etiquetas de fechas o números en el eje horizontal (guía, pág. 11): nunca en oblicuo. En horizontal si caben
+    todas; si no, verticales de abajo arriba y, si el autor no fijó el salto, una cada 3 meses, 6, 12… (la menor
+    que deja aire entre ellas; en el .ai del G_IA2025_1.31, una por trimestre). Devuelve el xml y una nota."""
+    texto_eje = eje.group(0)
+    tipo = eje.group(1)
+    cat = re.search(r'<c:cat>.*?</c:cat>', xml, re.S)
+    cuenta = re.search(r'<c:ptCount val="(\d+)"', cat.group(0)) if cat else None
+    n = int(cuenta.group(1)) if cuenta else 0
+    if n < 2:
+        return xml, None
+    sz = re.search(r'<a:defRPr\b[^>]*\bsz="(\d+)"', texto_eje)
+    sz = int(sz.group(1)) / 100 if sz else 7
+    muestras = textos_eje_numerico(xml, texto_eje)
+    codigo = html.unescape(re.search(r'<c:numFmt formatCode="([^"]*)"', texto_eje).group(1)) \
+        if re.search(r'<c:numFmt formatCode="', texto_eje) else ""
+    limpio = re.sub(r'\[[^\]]*\]|"[^"]*"', "", codigo.lower())
+    ancho = max(medir(t, sz) for t in muestras)
+    hueco = trazado / n
+    base = re.search(r'<c:baseTimeUnit val="(\w+)"/>', texto_eje)
+    base = base.group(1) if base and tipo == "dateAx" else None
+    unidad = re.search(r'<c:majorUnit val="([\d.]+)"/>', texto_eje)
+    salto_lbl = re.search(r'<c:tickLblSkip val="(\d+)"/>', texto_eje)
+    fijo = float(unidad.group(1)) if unidad and tipo == "dateAx" else (int(salto_lbl.group(1)) if salto_lbl else None)
+    # Distancia entre etiquetas: en un eje de fechas, el salto va en días, meses o años, no en puntos (1.1 y 1.12:
+    # datos diarios, una etiqueta cada 3 o 4 meses, en horizontal en el .ai)
+    separacion = hueco * (fijo or 1)
+    if tipo == "dateAx":
+        dias = {"days": 1, "months": 30.44, "years": 365.25}
+        fechas = numeros(cat.group(0))
+        escala = re.search(r'<c:scaling>.*?</c:scaling>', texto_eje, re.S)
+        lim = lambda n, defecto: float(re.search(rf'<c:{n} val="([\d.]+)"/>', escala.group(0)).group(1)) \
+            if escala and re.search(rf'<c:{n} val="', escala.group(0)) else defecto
+        inicio, fin = lim("min", min(fechas, default=0)), lim("max", max(fechas, default=0))
+        tramo = max(fin - inicio, 1)
+        unidad_base = dias.get(base or "days", 1)
+        u_salto = re.search(r'<c:majorTimeUnit val="(\w+)"/>', texto_eje)
+        if fijo:
+            separacion = trazado * fijo * dias.get(u_salto.group(1), 1) / tramo if u_salto else None
+        else:
+            separacion = trazado * unidad_base / (tramo + unidad_base)
+        hueco = trazado * unidad_base / (tramo + unidad_base)
+        # Salto del autor sin unidad, o datos diarios sin salto: Excel elige qué fechas pone; en horizontal (sin
+        # inclinar), como en el .ai del 1.1 y el 1.12
+        if separacion is None or (not fijo and (base or "days") == "days"):
+            separacion = float("inf")
+    if ancho <= separacion - HOLGURA_PT:
+        rot = rot_de(texto_eje)
+        if rot == "0":
+            return xml, None
+        nota = "etiquetas del eje horizontal en horizontal (estaban giradas)" if rot else None
+        return xml.replace(texto_eje, poner_rotacion(eje_con_txpr(texto_eje), "0"), 1), nota
+    nuevo = poner_rotacion(eje_con_txpr(texto_eje), ROT_VERTICAL)
+    nota = "etiquetas del eje horizontal en vertical, de abajo arriba (no caben en horizontal; nunca en oblicuo)"
+    if not fijo:
+        alto = sz * INTERLINEA * 1.2
+        lista = SALTOS_EJE.get(base, SALTOS_EJE[None]) if tipo == "dateAx" else SALTOS_EJE[None]
+        salto = next((k for k in lista if hueco * k >= alto), lista[-1])
+        if salto > 1:
+            h = hijos(nuevo)
+            if tipo == "dateAx":
+                poner(h, ORDEN_EJE["dateAx"], "majorUnit", f'<c:majorUnit val="{salto}"/>')
+                if base:
+                    poner(h, ORDEN_EJE["dateAx"], "majorTimeUnit", f'<c:majorTimeUnit val="{base}"/>')
+            else:
+                poner(h, ORDEN_EJE["catAx"], "tickLblSkip", f'<c:tickLblSkip val="{salto}"/>')
+            nuevo = f"<c:{tipo}>" + "".join(t for _, t in h) + f"</c:{tipo}>"
+            que = {"months": "meses", "years": "años"}.get(base, "categorías")
+            nota += f", una cada {salto} {que}"
+    return xml.replace(texto_eje, nuevo, 1), nota
+
+
+def rot_de(eje):
+    r = re.search(r'<a:bodyPr\b[^>]*\brot="(-?\d+)"', eje)
+    return r.group(1) if r else None
+
+
+def eje_con_txpr(eje):
+    """El eje con txPr (sin él no hay dónde poner la rotación)."""
+    if "<c:txPr>" in eje:
+        return eje
+    tipo = re.match(r'<c:(\w+)>', eje).group(1)
+    h = hijos(eje)
+    poner(h, ORDEN_EJE[tipo], "txPr", '<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr/></a:pPr>'
+                                     '<a:endParaRPr lang="es-ES"/></a:p></c:txPr>')
+    return f"<c:{tipo}>" + "".join(t for _, t in h) + f"</c:{tipo}>"
+
+
 def direccion_categorias(z, xml, trazado, hojas, medir):
     """Etiquetas del eje horizontal (guía, pág. 11): horizontales si caben (nunca en oblicuo); si no caben ni a
     6 pt, verticales de abajo arriba y, si el hueco deja, en 2 o 3 líneas (saltos en las celdas). Devuelve el
     xml y una nota (o un aviso si no se puede sin cortar texto)."""
-    eje = next((e for e in re.finditer(r'<c:catAx>.*?</c:catAx>', xml, re.S)
+    # (también los ejes de fechas: el 1.31 panel b salía en oblicuo)
+    eje = next((e for e in re.finditer(r'<c:(catAx|dateAx)>.*?</c:\1>', xml, re.S)
                 if re.search(r'<c:axPos val="[bt]"/>', e.group(0)) and '<c:delete val="1"/>' not in e.group(0)), None)
     if not eje:
         return xml, None
     etiquetas = etiquetas_categorias(xml)
     rot = re.search(r'<a:bodyPr\b[^>]*\brot="(-?\d+)"', eje.group(0))
+    if not etiquetas and medir and trazado:
+        return direccion_fechas(xml, eje, trazado, medir)
     if not etiquetas or not medir:
         # Numéricas o fechas: Excel salta etiquetas si no caben; solo se quita la inclinación
         if rot and rot.group(1) not in ("0", ROT_VERTICAL):
@@ -3052,7 +4452,9 @@ def direccion_categorias(z, xml, trazado, hojas, medir):
     hueco = trazado / len(etiquetas)
     palabras = [p for e in etiquetas for p in e.split()]
     larga = max(palabras, key=lambda p: medir(p, 6)) if palabras else ""
-    if medir(larga, 6) <= hueco - HOLGURA_PT:
+    # Primero en horizontal: Excel las deja enteras con unos 3 pt libres en el hueco (G_MemoriaSupervision_3.5:
+    # «provisiones», 30,7 pt a 6 pt en 33,7, entra; venía en oblicuo y salía girada; en el .ai va en horizontal)
+    if medir(larga, 6) <= hueco - HOLGURA_HORIZONTAL:
         if rot and rot.group(1) != "0":
             return xml.replace(eje.group(0), poner_rotacion(eje.group(0), "0"), 1), "etiquetas del eje horizontal en horizontal (estaban giradas)"
         # Explícito: así Excel no las inclina por su cuenta
@@ -3083,6 +4485,80 @@ def direccion_categorias(z, xml, trazado, hojas, medir):
     if formulas:
         nota += f" — Aviso: {formulas} etiqueta(s) salen de fórmulas: los saltos de línea solo quedan en su valor guardado"
     return xml, nota
+
+
+def escala_visible(xml, eje, datos):
+    """(mínimo, máximo, salto, formato) con los que se ve un eje de valores: lo fijado por el autor o lo de Excel."""
+    h = hijos(eje)
+    escala = hijos(hijo(h, "scaling") or "<c:scaling></c:scaling>")
+    num = lambda n: float(valor(hijo(escala, n))) if hijo(escala, n) else None
+    unidad = float(valor(hijo(h, "majorUnit"))) if hijo(h, "majorUnit") else None
+    e = escala_eje(datos.get(valor(hijo(h, "axId")), []), num("min"), num("max"), unidad)
+    nf = re.search(r'<c:numFmt formatCode="([^"]*)" sourceLinked="(\d)"/>', eje)
+    if not nf or nf.group(2) == "1":
+        ide = valor(hijo(h, "axId"))
+        g = next((g.group(0) for g in GRUPOS.finditer(xml) if ide in re.findall(r'<c:axId val="(\d+)"/>', g.group(0))), "")
+        cache = re.search(r'<c:val>.*?<c:formatCode>([^<]*)</c:formatCode>', g, re.S)
+        codigo = html.unescape(cache.group(1)) if cache else "General"
+    else:
+        codigo = html.unescape(nf.group(1))
+    return (e, codigo) if e else None
+
+
+def quitar_eje_derecho_duplicado(xml):
+    """Eje de valores de la derecha que es copia exacta del de la izquierda (misma escala, salto y formato): repite la
+    información y en el .ai no está (G_IA2025_2.1, petición del usuario, 2026-11-26). Se borra, con su escala fijada
+    igual que la del izquierdo para que sus series no se muevan. Devuelve el xml y un aviso."""
+    ejes = [e.group(0) for e in re.finditer(r'<c:valAx>.*?</c:valAx>', xml, re.S)]
+    visible = lambda e: '<c:delete val="1"/>' not in e and '<c:tickLblPos val="none"/>' not in e
+    izq = next((e for e in ejes if '<c:axPos val="l"/>' in e and visible(e)), None)
+    der = next((e for e in ejes if '<c:axPos val="r"/>' in e and visible(e)), None)
+    if not izq or not der:
+        return xml, None
+    datos = valores_por_eje(xml)
+    a, b = escala_visible(xml, izq, datos), escala_visible(xml, der, datos)
+    if not a or not b:
+        return xml, None
+    # El salto automático depende del alto del gráfico y la estimación falla (2.1: Excel pone 0,1 en los dos): basta
+    # con que coincidan mínimo, máximo y formato si el salto del derecho lo elige Excel
+    (amin, amax, u), fa = a
+    (bmin, bmax, v), fb = b
+    salto_auto = "<c:majorUnit " not in der
+    if (amin, amax, fa) != (bmin, bmax, fb) or (u != v and not salto_auto):
+        return xml, None
+    h = hijos(der)
+    escala = hijos(hijo(h, "scaling") or "<c:scaling></c:scaling>")
+    orientacion = hijo(escala, "orientation") or '<c:orientation val="minMax"/>'
+    poner(h, ORDEN_EJE["valAx"], "scaling", f'<c:scaling>{orientacion}<c:max val="{cifra(amax)}"/>'
+                                            f'<c:min val="{cifra(amin)}"/></c:scaling>')
+    poner(h, ORDEN_EJE["valAx"], "delete", '<c:delete val="1"/>')
+    poner(h, ORDEN_EJE["valAx"], "majorUnit", f'<c:majorUnit val="{cifra(u)}"/>')
+    xml = xml.replace(der, "<c:valAx>" + "".join(t for _, t in h) + "</c:valAx>", 1)
+    c = lambda x: cifra(x).replace(".", ",")
+    return xml, (f"Aviso: el ⟪eje de la derecha⟫ era copia exacta del de la izquierda ({c(amin)} a {c(amax)}, "
+                 f"saltos de {c(u)}): quitado, repite la información (en el .ai no está); sus series siguen con "
+                 "la misma escala")
+
+
+def ancho_numeros_derecha(xml, medir):
+    """Lo que ocupan a la derecha del trazado los números de un eje de valores de la derecha que se vea (doble
+    escala): el trazado se estrecha para que quepan dentro de la columna 1 (G_IA2025_2.1)."""
+    datos = valores_por_eje(xml)
+    for e in re.findall(r'<c:valAx>.*?</c:valAx>', xml, re.S):
+        if '<c:axPos val="r"/>' not in e or '<c:delete val="1"/>' in e or '<c:tickLblPos val="none"/>' in e:
+            continue
+        vista = escala_visible(xml, e, datos)
+        if not vista:
+            return medir("100", 7) + 8
+        (amin, amax, u), codigo = vista
+        factor = factor_unidades(e)
+        amin, amax, u = amin / factor, amax / factor, u / factor if u else u
+        primera = re.sub(r'"[^"]*"|\[[^\]]*\]', "", codigo.split(";")[0])
+        dec = len(re.search(r'\.(0+)', primera).group(1)) if re.search(r'\.(0+)', primera) else (
+            max(0, -math.floor(math.log10(u))) if u and u < 1 else 0)
+        textos = [f"{v:,.{dec}f}".replace(",", " ").replace(".", ",").replace(" ", ".") for v in (amin, amax)]
+        return max(medir(t, 7) for t in textos) + 8
+    return 0
 
 
 def textos_especiales(z, xml, idioma, hojas, estilos, trazado, medir):
@@ -3118,7 +4594,7 @@ def textos_especiales(z, xml, idioma, hojas, estilos, trazado, medir):
             except (OverflowError, ValueError):
                 pass
         if 9 in meses:
-            notas.append("Aviso: el eje de fechas tiene septiembre y Excel para Mac lo escribe «sept» (la guía pide "
+            notas.append("Aviso: el eje de fechas tiene septiembre y Excel para Mac lo escribe «⟪sept⟫» (la guía pide "
                          "3 letras, mmm-aa): si sale en el eje, hay que corregirlo a mano en el PDF")
 
     # Números de los ejes de valores
@@ -3133,6 +4609,25 @@ def textos_especiales(z, xml, idioma, hojas, estilos, trazado, medir):
         escala = hijos(hijo(h, "scaling") or "<c:scaling></c:scaling>")
         num = lambda n: float(valor(hijo(escala, n))) if hijo(escala, n) else None
         unidad = float(valor(hijo(h, "majorUnit"))) if hijo(h, "majorUnit") else None
+        # Con datos en un eje de valores oculto (el secundario borrado del 1.1 b, «China»), el visible los enseña
+        # también: cuentan
+        ocultos = [valor(re.search(r'<c:axId\b[^>]*/>', e2.group(0)).group(0)) for e2 in re.finditer(r'<c:valAx>.*?</c:valAx>', xml, re.S)
+                   if '<c:delete val="1"/>' in e2.group(0)]
+        todos = datos.get(ide, []) + [v for o in ocultos if o != ide for v in datos.get(o, [])]
+        for av in avisos_escala(xml, h, ide, datos, todos, num("min"), num("max"), unidad):
+            if isinstance(av, tuple):
+                # Escala justa en un eje con un solo extremo fijado (G_MemoriaSupervision_2.6 b)
+                jmin, jmax, ju = av[1]
+                orientacion = hijo(escala, "orientation") or '<c:orientation val="minMax"/>'
+                poner(h, ORDEN_EJE["valAx"], "scaling", f'<c:scaling>{orientacion}<c:max val="{cifra(jmax)}"/>'
+                                                        f'<c:min val="{cifra(jmin)}"/></c:scaling>')
+                poner(h, ORDEN_EJE["valAx"], "majorUnit", f'<c:majorUnit val="{cifra(ju)}"/>')
+                eje = "<c:valAx>" + "".join(t for _, t in h) + "</c:valAx>"
+                h = hijos(eje)
+                escala = hijos(hijo(h, "scaling"))
+                unidad = ju
+            else:
+                notas.append(av)
         e = escala_eje(datos.get(ide, []), num("min"), num("max"), unidad)
         if not e:
             return eje
@@ -3167,7 +4662,16 @@ def textos_especiales(z, xml, idioma, hojas, estilos, trazado, medir):
         notas.append(f"números del eje de valores {codigo} (saltos de {texto_u}; antes {actual})")
         return f"<c:{m.group(1)}>" + "".join(t for _, t in h) + f"</c:{m.group(1)}>"
     xml = re.sub(r'<c:(valAx)>.*?</c:\1>', numeros, xml, flags=re.S)
+    xml, nota = quitar_eje_derecho_duplicado(xml)
+    if nota:
+        notas.append(nota)
 
+    # Saltos de línea y espacios sobrantes al principio o al final de las categorías («Jefatura⏎ »): Excel los cuenta
+    # como una línea más y corta la etiqueta («Jefatura…», G_MemoriaSupervision_1.1)
+    xml, limpias, _ = cambiar_categorias(z, xml, hojas, lambda t: re.sub(r'^[\s\u00a0]+|[\s\u00a0]+$', "", t))
+    if limpias:
+        notas.append(f"Aviso: categorías con saltos de línea o espacios sobrantes al principio o al final, quitados "
+                     f"(Excel las cortaba): " + ", ".join(limpias[:4]) + (" …" if len(limpias) > 4 else ""))
     # Trimestres en las categorías y en los títulos del gráfico
     xml, cambios, _ = cambiar_categorias(z, xml, hojas, lambda t: trimestres(t, idioma))
     if cambios:
@@ -3175,6 +4679,10 @@ def textos_especiales(z, xml, idioma, hojas, estilos, trazado, medir):
     xml, hechos = textos_trimestres(xml, idioma)
     if hechos:
         notas.append("trimestres: " + ", ".join(hechos[:4]))
+    # Trimestres con el año solo en el primero: en dos niveles (año debajo, abarcando sus trimestres)
+    xml, nota = trimestres_en_dos_niveles(z, xml, hojas)
+    if nota:
+        notas.append(nota)
     # Dirección de las etiquetas del eje horizontal
     xml, nota = direccion_categorias(z, xml, trazado, hojas, medir)
     if nota:
@@ -3192,6 +4700,87 @@ ORDEN_DLBL = ["idx", "delete", "layout", "tx", "numFmt", "spPr", "txPr", "dLblPo
 SEPARADOR_ETIQUETAS = ": "   # guía, pág. 16: texto y número separados por dos puntos y un espacio
 
 
+def valores_con_etiqueta(ser, h):
+    """{idx: valor} de los puntos de la serie que enseñan su valor en la etiqueta (`h`, los hijos de su dLbls)."""
+    val = re.search(r'<c:(?:val|yVal)>.*?</c:(?:val|yVal)>', ser, re.S)
+    if not val:
+        return {}
+    puntos = {int(i): float(v) for i, v in re.findall(r'<c:pt idx="(\d+)">\s*<c:v>(-?[\d.Ee+-]+)</c:v>', val.group(0))}
+    todas = valor(hijo(h, "showVal")) == "1"
+    sueltas = {int(valor(hijo(hijos(t), "idx"))): t for n, t in h if n == "dLbl"}
+    con = {}
+    for i, v in puntos.items():
+        t = sueltas.get(i)
+        if t is None:
+            si = todas
+        else:
+            si = '<c:delete val="1"/>' not in t and ('showVal val="1"' in t or (todas and 'showVal val="0"' not in t))
+        if si:
+            con[i] = v
+    return con
+
+
+def eje_valores_de(xml, ser):
+    """El eje de valores de la serie (su texto, o "")."""
+    grupo = next((g.group(0) for g in GRUPOS.finditer(xml) if ser in g.group(0)), "")
+    ids = re.findall(r'<c:axId val="(\d+)"/>', grupo)
+    return next((e for e in re.findall(r'<c:valAx>.*?</c:valAx>', xml, re.S)
+                 if re.search(r'<c:axId val="(\d+)"/>', e).group(1) in ids), "")
+
+
+def decimal_cero(xml, ser, h):
+    """(formato sin decimales, formato de antes, cifra de ejemplo) si las etiquetas de la serie llevan decimales y en
+    todas sus cifras, como las escribe Excel (con las unidades del eje), salen 0 («3.817,0»); None si no."""
+    nf = re.search(r'<c:numFmt formatCode="([^"]*)"', hijo(h, "numFmt") or "")
+    if not nf:
+        return None
+    codigo = html.unescape(nf.group(1))
+    limpio = re.sub(r'"[^"]*"|\[[^\]]*\]', "", codigo)
+    dec = re.search(r'\.(0+)', limpio.split(";")[0])
+    if not dec or re.search(r'[dmyhs@]', limpio, re.I):
+        return None
+    con = valores_con_etiqueta(ser, h)
+    if not con:
+        return None
+    d = len(dec.group(1))
+    f = 100 if "%" in limpio.split(";")[0] else 1
+    vistos = [v * f / factor_unidades(eje_valores_de(xml, ser)) for v in con.values()]
+    if any(abs(round(v, d) - round(v)) > 1e-9 for v in vistos):
+        return None
+    sin = re.sub(r'(0)\.0+', r'\1', codigo)
+    if sin == codigo:
+        return None
+    ejemplo = max(vistos, key=abs)
+    texto = f"{ejemplo:,.{d}f}".replace(",", " ").replace(".", ",").replace(" ", ".") + ("\u00a0%" if f == 100 else "")
+    return sin, codigo, texto
+
+
+def decimal_irrelevante(xml, ser, h, nombre):
+    """(nombre, cifra de ejemplo, decimales) si las etiquetas de la serie llevan decimales y todas sus cifras pasan de la centena (como las escribe
+    Excel, con las unidades del eje): el decimal no aporta nada (petición del usuario, 2026-11-27; 8.2: «9.725,4»).
+    Solo avisa: los decimales los decide la guía."""
+    nf = re.search(r'<c:numFmt formatCode="([^"]*)"', hijo(h, "numFmt") or "")
+    codigo = html.unescape(nf.group(1)) if nf else ""
+    primera = re.sub(r'"[^"]*"|\[[^\]]*\]', "", codigo.split(";")[0])
+    dec = re.search(r'\.(0+)', primera)
+    if not dec or "%" in primera:
+        return None
+    con = valores_con_etiqueta(ser, h)
+    if not con:
+        return None
+    grupo = next((g.group(0) for g in GRUPOS.finditer(xml) if ser in g.group(0)), "")
+    ids = re.findall(r'<c:axId val="(\d+)"/>', grupo)
+    eje_v = next((e for e in re.findall(r'<c:valAx>.*?</c:valAx>', xml, re.S)
+                  if re.search(r'<c:axId val="(\d+)"/>', e).group(1) in ids), "")
+    vistos = [v / factor_unidades(eje_v) for v in con.values()]
+    if min(abs(v) for v in vistos) < 100:
+        return None
+    d = len(dec.group(1))
+    ejemplo = max(vistos, key=abs)
+    texto = f"{ejemplo:,.{d}f}".replace(",", " ").replace(".", ",").replace(" ", ".")
+    return nombre.strip(), texto, d
+
+
 def decimales_etiquetas(valores, pct=False):
     """Decimales de las etiquetas según la guía (pág. 10): ninguno si todos son ceros, uno si los hay y dos
     si son centésimas (si con uno alguna cifra que no es cero se quedaría en 0,0)."""
@@ -3201,6 +4790,10 @@ def decimales_etiquetas(valores, pct=False):
         return 0
     if any(v and round(v, 1) == 0 for v in vs):
         return 2
+    # Cifras distintas que con un decimal se escribirían igual (0,84 y 0,80 → 0,8): dos, para que se distingan
+    # (G_IA2025_1.17, petición del usuario, 2026-11-26: el autor lo quería así)
+    if len({round(v, 1) for v in vs}) < len({round(v, 2) for v in vs}):
+        return 2
     return 1
 
 
@@ -3208,29 +4801,60 @@ RE_FORMA_ETIQUETA = re.compile(r'<(c|c15):spPr\b[^>]*>.*?</\1:spPr>', re.S)
 RE_RELLENO = re.compile(r'<a:(solidFill|gradFill|pattFill|blipFill)\b.*?</a:\1>|<a:(solidFill|gradFill|pattFill|blipFill)\b[^>]*/>', re.S)
 
 
+SIN_FONDO = '<c:spPr><a:noFill/><a:ln><a:noFill/></a:ln></c:spPr>'
+ORDEN_DLBLS = ["dLbl", "delete", "numFmt", "spPr", "txPr", "dLblPos", "showLegendKey", "showVal", "showCatName",
+               "showSerName", "showPercent", "showBubbleSize", "separator", "showLeaderLines", "leaderLines", "extLst"]
+ORDEN_DLBL = ["idx", "delete", "layout", "tx", "numFmt", "spPr", "txPr", "dLblPos", "showLegendKey", "showVal",
+              "showCatName", "showSerName", "showPercent", "showBubbleSize", "separator", "extLst"]
+ORDEN_PLOTAREA_FIN = ["spPr", "extLst"]
+
+
+def sin_relleno_ni_borde(sppr):
+    """La misma forma (c:spPr o c15:spPr) sin relleno y sin borde, conservando lo demás (geometría, efectos).
+    None si ya estaba así."""
+    cuerpo = sppr[sppr.index(">") + 1:sppr.rindex("<")] if not sppr.endswith("/>") else ""
+    borde = re.search(r'<a:ln\b[^>]*/>|<a:ln\b.*?</a:ln>', cuerpo, re.S)
+    sin_ln = re.sub(r'<a:ln\b[^>]*/>|<a:ln\b.*?</a:ln>', "", cuerpo, flags=re.S)
+    rellenos = list(RE_RELLENO.finditer(sin_ln))
+    ya_sin_relleno = "<a:noFill/>" in sin_ln and not rellenos
+    if ya_sin_relleno and borde and "<a:noFill/>" in borde.group(0):
+        return None
+    nuevo = RE_RELLENO.sub("", sin_ln).replace("<a:noFill/>", "")
+    # El relleno va tras la geometría (xfrm, custGeom/prstGeom) y antes de la línea
+    geo = list(re.finditer(r'<a:xfrm\b.*?</a:xfrm>|<a:(custGeom|prstGeom)\b.*?</a:\1>|<a:prstGeom\b[^>]*/>', nuevo, re.S))
+    corte = geo[-1].end() if geo else 0
+    nuevo = nuevo[:corte] + '<a:noFill/><a:ln><a:noFill/></a:ln>' + nuevo[corte:]
+    apertura = sppr[:sppr.index(">") + 1].replace("/>", ">")
+    cierre = re.match(r'<(\w+:spPr)', sppr).group(1)
+    return f"{apertura}{nuevo}</{cierre}>"
+
+
 def etiquetas_sin_marco(xml):
     """Etiquetas de datos sin borde ni fondo, en todas las publicaciones (petición del usuario, 2026-11-25: en el
     G_IA2025_1.1 el autor las puso en recuadros blancos con borde gris; en el .ai van sin nada). Se toca la forma
-    de las etiquetas (c:spPr y la c15:spPr de las etiquetas con forma), no sus líneas guía. Devuelve (xml, cuántas
-    formas se han cambiado)."""
+    de las etiquetas (c:spPr y la c15:spPr de las etiquetas con forma), no sus líneas guía. Si no tienen forma
+    propia se les pone una sin relleno ni borde: con el estilo del gráfico restablecido, Excel les da fondo
+    blanco y borde gris (G_IA2025_1.1 MODIFICADO, 2026-11-26). Devuelve (xml, cuántas formas se han cambiado)."""
     cuenta = 0
 
     def forma(m):
         nonlocal cuenta
-        sppr = m.group(0)
-        cuerpo = sppr[sppr.index(">") + 1:sppr.rindex("<")]
-        sin_ln = re.sub(r'<a:ln\b[^>]*/>|<a:ln\b.*?</a:ln>', "", cuerpo, flags=re.S)
-        rellenos = [f for f in RE_RELLENO.finditer(sin_ln)]
-        borde = re.search(r'<a:ln\b[^>]*/>|<a:ln\b.*?</a:ln>', cuerpo, re.S)
-        if not rellenos and (not borde or "<a:noFill/>" in borde.group(0)):
-            return sppr
-        nuevo = RE_RELLENO.sub("", sin_ln)
-        # El relleno va tras la geometría (xfrm, custGeom/prstGeom) y antes de la línea
-        geo = list(re.finditer(r'<a:xfrm\b.*?</a:xfrm>|<a:(custGeom|prstGeom)\b.*?</a:\1>|<a:prstGeom\b[^>]*/>', nuevo, re.S))
-        corte = geo[-1].end() if geo else 0
-        nuevo = nuevo[:corte] + '<a:noFill/><a:ln><a:noFill/></a:ln>' + nuevo[corte:]
+        nueva = sin_relleno_ni_borde(m.group(0))
+        if nueva is None:
+            return m.group(0)
         cuenta += 1
-        return sppr[:sppr.index(">") + 1] + nuevo + sppr[sppr.rindex("<"):]
+        return nueva
+
+    def con_forma(elemento, etiqueta, orden):
+        """El dLbls o dLbl con su c:spPr (sin relleno ni borde) aunque no la tuviera; los borrados no."""
+        nonlocal cuenta
+        h = hijos(elemento)
+        if valor(hijo(h, "delete")) in ("1", "true") or hijo(h, "spPr") is not None:
+            return elemento
+        apertura = elemento[:elemento.index(">") + 1]
+        poner(h, orden, "spPr", SIN_FONDO)
+        cuenta += 1
+        return apertura + "".join(t for _, t in h) + f"</c:{etiqueta}>"
 
     def bloque(m):
         texto = m.group(0)
@@ -3242,9 +4866,38 @@ def etiquetas_sin_marco(xml):
             return f"\x00{len(guias) - 1}\x00"
         texto = re.sub(r'<(c|c15):leaderLines\b.*?</\1:leaderLines>', guardar, texto, flags=re.S)
         texto = RE_FORMA_ETIQUETA.sub(forma, texto)
-        return re.sub(r'\x00(\d+)\x00', lambda g: guias[int(g.group(1))], texto)
+        texto = re.sub(r'\x00(\d+)\x00', lambda g: guias[int(g.group(1))], texto)
+        texto = re.sub(r'<c:dLbl>.*?</c:dLbl>', lambda d: con_forma(d.group(0), "dLbl", ORDEN_DLBL), texto, flags=re.S)
+        return con_forma(texto, "dLbls", ORDEN_DLBLS)
     xml = re.sub(r'<c:dLbls>.*?</c:dLbls>', bloque, xml, flags=re.S)
     return xml, cuenta
+
+
+def areas_sin_fondo(xml):
+    """Área del gráfico y área de trazado sin relleno ni borde, en todas las publicaciones: escrito siempre, porque
+    si no hay forma Excel pone la del estilo del gráfico (fondo blanco y borde gris con el estilo restablecido,
+    G_IA2025_1.1 MODIFICADO, petición del usuario, 2026-11-26). Devuelve (xml, lista de lo cambiado)."""
+    hechos = []
+    m = re.search(r'</c:chart>(\s*<c:spPr\b.*?</c:spPr>|\s*<c:spPr/>)?', xml, re.S)
+    if m:
+        if m.group(1):
+            nueva = sin_relleno_ni_borde(m.group(1).strip())
+            if nueva:
+                xml = xml[:m.start(1)] + nueva + xml[m.end(1):]
+                hechos.append("área del gráfico")
+        else:
+            xml = xml[:m.end()] + SIN_FONDO + xml[m.end():]
+            hechos.append("área del gráfico")
+    pa = re.search(r'<c:plotArea>.*</c:plotArea>', xml, re.S)
+    if pa:
+        h = hijos(pa.group(0))
+        actual = hijo(h, "spPr")
+        nueva = SIN_FONDO if actual is None else sin_relleno_ni_borde(actual)
+        if nueva:
+            poner(h, ORDEN_PLOTAREA_FIN, "spPr", nueva)
+            xml = xml.replace(pa.group(0), "<c:plotArea>" + "".join(t for _, t in h) + "</c:plotArea>", 1)
+            hechos.append("área de trazado")
+    return xml, hechos
 
 
 def orto_texto(texto, idioma):
@@ -3268,6 +4921,17 @@ def orto_texto(texto, idioma):
     return re.sub(r"(?<=\S) {2,}(?=\S)", " ", texto)
 
 
+def texto_de_etiqueta(texto, idioma):
+    """El texto de una etiqueta de datos: en minúscula si viene entero en mayúsculas (las reglas de las leyendas), con
+    coma decimal en castellano («(29.0%)» → «(29,0 %)») y las reglas de FUENTES (G_IA2025_1.31, petición del usuario,
+    2026-11-26)."""
+    texto = en_minuscula(texto, idioma)
+    if idioma != "en":
+        # Punto decimal: no el de millares (tres cifras detrás)
+        texto = re.sub(r'(?<![\d.,])(\d+)\.(\d{1,2}|\d{4,})(?![\d.,])', r'\1,\2', texto)
+    return orto_texto(texto, idioma)
+
+
 def etiquetas_ortotipografia(z, xml, hojas, idioma):
     """Las reglas de FUENTES (`orto_texto`) en el texto de las etiquetas de datos: el escrito en la etiqueta y el que
     sale de un rango de celdas («Valor de las celdas»: en la caché y en sus celdas, porque Excel lo repone de ellas).
@@ -3276,7 +4940,7 @@ def etiquetas_ortotipografia(z, xml, hojas, idioma):
 
     def t(m):
         antes = html.unescape(m.group(2))
-        nuevo = orto_texto(antes, idioma)
+        nuevo = texto_de_etiqueta(antes, idioma)
         if nuevo != antes:
             hechos.append(f"«{antes.strip()[:30]}» → «{nuevo.strip()[:30]}»")
         return m.group(1) + html.escape(nuevo, quote=False) + m.group(3)
@@ -3293,7 +4957,7 @@ def etiquetas_ortotipografia(z, xml, hojas, idioma):
 
         def punto(m):
             antes = html.unescape(m.group(3))
-            nuevo = orto_texto(antes, idioma)
+            nuevo = texto_de_etiqueta(antes, idioma)
             if nuevo != antes:
                 cambios[int(m.group(1))] = (antes, nuevo)
                 hechos.append(f"«{antes.strip()[:30]}» → «{nuevo.strip()[:30]}»")
@@ -3370,10 +5034,19 @@ def etiquetas_que_caben(xml, W, H, medir):
 def etiquetas_datos(xml):
     """Etiquetas de datos de las series: decimales de la guía (pág. 10: los mismos que en los ejes) y, si
     llevan texto y número, separados por «: » (pág. 16). Devuelve el xml y las notas."""
-    notas = []
+    notas, sobran = [], []
 
     def mostrar(h, nombre):
         return valor(hijo(h, nombre)) == "1"
+
+    # Los valores con etiqueta de todo el gráfico (el panel): las cifras de series distintas que se confundirían con
+    # un decimal también cuentan (G_IA2025_3.6, panel a: 0,885 y 0,933 → 0,9 y 0,9)
+    del_panel = []
+    for s_ in re.findall(r'<c:ser>.*?</c:ser>', xml, re.S):
+        d_ = re.search(r'<c:dLbls>.*?</c:dLbls>', s_, re.S)
+        v_ = re.search(r'<c:(?:val|yVal)>.*?</c:(?:val|yVal)>', s_, re.S)
+        if d_ and v_ and 'showVal val="1"' in d_.group(0):
+            del_panel += numeros(v_.group(0))
 
     def separador(h, orden, texto_extra):
         texto = mostrar(h, "showCatName") or mostrar(h, "showSerName") or texto_extra
@@ -3392,6 +5065,13 @@ def etiquetas_datos(xml):
         h = hijos(dl.group(0))
         rango = 'showDataLabelsRange val="1"' in dl.group(0)
         cambios = []
+        # El formato con el que el autor veía las etiquetas (el suyo o, enlazado, el de los datos)
+        nf_autor = re.search(r'<c:numFmt formatCode="([^"]*)" sourceLinked="(\d)"/>', hijo(h, "numFmt") or "")
+        if nf_autor and nf_autor.group(2) == "0":
+            formato_autor = html.unescape(nf_autor.group(1))
+        else:
+            cache_a = re.search(r'<c:(?:val|yVal)>.*?<c:formatCode>([^<]*)</c:formatCode>', ser, re.S)
+            formato_autor = html.unescape(cache_a.group(1)) if cache_a else "General"
         # Separador, en el conjunto y en las etiquetas sueltas
         if separador(h, ORDEN_DLBLS, rango):
             cambios.append(f"separador «{SEPARADOR_ETIQUETAS.strip()} »")
@@ -3415,7 +5095,7 @@ def etiquetas_datos(xml):
             limpio = re.sub(r'\[[^\]]*\]', '', actual.lower())
             if actual.lower() == "general" or not re.search(r'"|[dmyhs@]', limpio):
                 pct = "%" in limpio
-                d = decimales_etiquetas(valores, pct)
+                d = max(decimales_etiquetas(valores, pct), decimales_etiquetas(del_panel, pct) if del_panel else 0)
                 codigo = "#,##0" + ("." + "0" * d if d else "") + ("%" if pct else "")
                 if codigo != actual or not nf or nf.group(2) != "0":
                     nuevo = f'<c:numFmt formatCode="{html.escape(codigo)}" sourceLinked="0"/>'
@@ -3423,14 +5103,46 @@ def etiquetas_datos(xml):
                     for e in h:
                         if e[0] == "dLbl" and "<c:numFmt " in e[1]:
                             e[1] = re.sub(r'<c:numFmt [^>]*/>', nuevo, e[1], count=1)
+                        elif e[0] == "dLbl" and 'showVal val="1"' in e[1] and '<c:delete val="1"/>' not in e[1] \
+                                and "<c:tx>" not in e[1]:
+                            # Etiqueta suelta con formato propio pero sin formato de número: Excel la escribía con
+                            # todos sus decimales (0,933 en el 3.6)
+                            hl = hijos(e[1])
+                            poner(hl, ORDEN_DLBL, "numFmt", nuevo)
+                            e[1] = "<c:dLbl>" + "".join(t for _, t in hl) + "</c:dLbl>"
                     if codigo != actual:
                         cambios.append(f"{codigo} (antes {actual})")
+        # Decimales que salen 0 en todas las cifras de la serie («130,0», «3.817,0»): fuera, con aviso (petición del
+        # usuario, 2026-11-27)
+        cero = decimal_cero(xml, ser, h)
+        if cero:
+            codigo_sin, antes_c, ejemplo = cero
+            nuevo = f'<c:numFmt formatCode="{html.escape(codigo_sin)}" sourceLinked="0"/>'
+            poner(h, ORDEN_DLBLS, "numFmt", nuevo)
+            for e in h:
+                if e[0] == "dLbl" and "<c:numFmt " in e[1]:
+                    e[1] = re.sub(r'<c:numFmt [^>]*/>', nuevo, e[1], count=1)
+            # Si así queda como lo tenía el autor (la guía le había puesto el decimal), ni cambio ni aviso
+            cambios = [c for c in cambios if not c.startswith(f"{antes_c} (antes ")]
+            if codigo_sin != formato_autor:
+                cambios.append(f"{codigo_sin} (antes {formato_autor})")
+                notas.append(f"Aviso: etiquetas de «{nombre.strip()}»: el decimal salía 0 en todas sus cifras («{ejemplo}»): "
+                             f"quitado ({antes_c} → {codigo_sin})")
+        sobra = decimal_irrelevante(xml, ser, h, nombre)
+        if sobra:
+            sobran.append(sobra)
         if not cambios:
             return ser
         notas.append(f"etiquetas de «{nombre}»: " + ", ".join(cambios))
         return ser.replace(dl.group(0), "<c:dLbls>" + "".join(t for _, t in h) + "</c:dLbls>", 1)
 
     xml = re.sub(r'<c:ser>.*?</c:ser>', serie, xml, flags=re.S)
+    if sobran:
+        # Un aviso por panel con todas sus series (8.1: eran 13 avisos)
+        varios = max(d for _, _, d in sobran) > 1
+        notas.append("Aviso: etiquetas de " + ", ".join(f"«{n}» («{t}»)" for n, t, _ in sobran)
+                     + f": todas sus cifras pasan de 100 y llevan decimal{'es' if varios else ''}, que no aporta"
+                     + f"{'n' if varios else ''} nada; ¿quitarlo{'s' if varios else ''}?")
     return xml, notas
 
 
@@ -3466,6 +5178,24 @@ def sin_porcentaje(codigo):
     return "#,##0" + ("." + d.group(1) if d else "")
 
 
+def etiquetas_con_porcentaje(xml):
+    """¿Alguna serie enseña sus valores con formato de porcentaje (el de sus etiquetas o, si va enlazado, el de sus
+    datos)?"""
+    for ser in re.findall(r'<c:ser>.*?</c:ser>', xml, re.S):
+        dl = re.search(r'<c:dLbls>.*?</c:dLbls>', ser, re.S)
+        if not dl or '<c:showVal val="1"/>' not in dl.group(0):
+            continue
+        nf = re.search(r'<c:numFmt formatCode="([^"]*)" sourceLinked="(\d)"/>', re.sub(r'<c:dLbl>.*?</c:dLbl>', "", dl.group(0), flags=re.S))
+        if nf and nf.group(2) == "0":
+            codigo = html.unescape(nf.group(1))
+        else:
+            cache = re.search(r'<c:val>.*?<c:formatCode>([^<]*)</c:formatCode>', ser, re.S)
+            codigo = html.unescape(cache.group(1)) if cache else ""
+        if "%" in re.sub(r'"[^"]*"|\\%', "", codigo):
+            return True
+    return False
+
+
 def tarta_paso1(z, xml, hojas, estilos):
     """Tartas en el paso 1: anillo al 80 %, líneas del subgráfico y etiquetas sin «%» (los datos de la hoja se
     multiplican por 100, si no son fórmulas). Devuelve xml, estilos, notas y si se ha quitado el %."""
@@ -3494,32 +5224,11 @@ def tarta_paso1(z, xml, hojas, estilos):
         if "<c:dLbls>" in ser else []
     if not any("%" in re.sub(r'"[^"]*"', "", html.unescape(f)) for f in formatos):
         return xml, estilos, notas, quitado
-    f = re.search(r'<c:val>\s*<c:numRef>\s*<c:f>([^<]*)</c:f>', ser)
-    if not f:
-        return xml, estilos, notas + ["Aviso: las etiquetas llevan % pero sus datos no están en la hoja: se deja el %"], quitado
-    refs = celdas_de_rango(html.unescape(f.group(1)))
-    nombre = refs[0][0]
-    ruta_hoja = hoja_de(z, nombre)
-    hoja = hojas.get(ruta_hoja) or z.read(ruta_hoja).decode("utf-8")
-    celdas_ = [celda(hoja, r) for _, r in refs]
-    if any(c is None or "<f" in c.group(0) for c in celdas_):
-        return xml, estilos, notas + ["Aviso: las etiquetas llevan % pero sus datos salen de fórmulas: se deja el %"], quitado
-    for _, ref in refs:
-        c = celda(hoja, ref)
-        v = re.search(r'<v>([^<]*)</v>', c.group(0))
-        if v:
-            hoja = hoja[:c.start()] + c.group(0).replace(v.group(0), f"<v>{cifra(float(v.group(1)) * 100)}</v>", 1) + hoja[c.end():]
-    estilos, hoja = poner_formato_celdas(estilos, hoja, [r for _, r in refs], "#,##0.00")
-    hojas[ruta_hoja] = hoja
-    nueva = re.sub(r'(<c:val>.*?</c:val>)', lambda m: re.sub(
-        r'<c:v>([^<]*)</c:v>', lambda v: f"<c:v>{cifra(float(v.group(1)) * 100)}</c:v>",
-        re.sub(r'<c:formatCode>[^<]*</c:formatCode>', '<c:formatCode>General</c:formatCode>', m.group(1))), ser, count=1, flags=re.S)
-    nueva = re.sub(r'<c:numFmt formatCode="([^"]*)" sourceLinked="0"/>',
-                   lambda m: f'<c:numFmt formatCode="{html.escape(sin_porcentaje(html.unescape(m.group(1))))}" sourceLinked="0"/>'
-                   if "%" in html.unescape(m.group(1)) else m.group(0), nueva)
-    xml = xml.replace(ser, nueva, 1)
-    notas.append(f"etiquetas sin «%» ({sin_porcentaje(html.unescape(formatos[0]))}): datos de {nombre} × 100; «%» como unidad")
-    return xml, estilos, notas, True
+    # Etiquetas con %: en todos los gráficos circulares (decisión del usuario, 2026-11-26, G_IA2025_1.9; sustituye a
+    # la de pasar los datos a 0-100): los datos del autor no se tocan, las etiquetas se quedan con su %, «%» como
+    # unidad (quitado = True) y aviso para quitar el % de las cifras en Illustrator
+    return xml, estilos, notas + ["Aviso: eliminar el «⟪%⟫» de las cifras en Illustrator (gráfico circular: los datos "
+                                  "del autor no se tocan; «%» como unidad)"], True
 
 
 # Texto del centro de una tarta, como en el TERMINADO del 2.3: la cifra en Roboto Black 24 pt (negrita) y el
@@ -3530,6 +5239,41 @@ TEXTO_CENTRO_TARTA = (ROBOTO, 700, False)
 # (ascendente − altura de las cifras, 0,928 − 0,711 del cuerpo) que la del texto (7 pt) bajo su línea de base
 # (descendente, 0,244): el cuadro sube la mitad de la diferencia (≈ 1,75 pt; medido en Excel, 5 px a 2200)
 SUBIDA_CENTRO_TARTA = (24 * (0.928 - 0.711) - 7 * 0.244) / 2
+
+
+A_NS = ' xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"'
+
+
+def partes_centro_tarta(texto):
+    """(cifra, texto) del centro de una tarta: la cifra del principio («135», «4,5», «9.140») y lo que sigue, en una
+    línea («Total», «billones de euros»). Sin cifra al principio: (None, texto)."""
+    t = re.sub(r'\s+', " ", html.unescape(texto)).strip()
+    m = re.match(r'([\d][\d.,]*)\s*(.*)$', t)
+    return (m.group(1), m.group(2).strip()) if m else (None, t)
+
+
+def cuerpo_centro_tarta(texto, ns, con_ns_a=False):
+    """El txBody del texto del centro de una tarta (petición del usuario, 2026-11-27, todas las publicaciones): la
+    cifra en Roboto Black 24 pt y, debajo, el texto en Roboto Regular 7 pt; las dos líneas centradas; la caja sin
+    márgenes ni ajuste, con el texto en su centro. `ns`: «xdr» (hoja) o «cdr» (dentro del gráfico)."""
+    cifra, resto = partes_centro_tarta(texto)
+    na = A_NS if con_ns_a else ""
+
+    def parrafo(t, fuente, sz, negrita):
+        return (f'<a:p{na}><a:pPr algn="ctr"/><a:r><a:rPr lang="es-ES" sz="{sz}" b="{1 if negrita else 0}">'
+                f'<a:solidFill><a:srgbClr val="000000"/></a:solidFill><a:latin typeface="{fuente}"/>'
+                f'<a:ea typeface="{fuente}"/></a:rPr><a:t>{html.escape(t, quote=False)}</a:t></a:r></a:p>')
+    cuerpo = (parrafo(cifra, *CIFRA_CENTRO_TARTA) if cifra else "") + (parrafo(resto, *TEXTO_CENTRO_TARTA) if resto else "")
+    return (f'<{ns}:txBody><a:bodyPr{na} wrap="none" lIns="0" tIns="0" rIns="0" bIns="0" anchor="ctr" anchorCtr="0" '
+            f'rtlCol="0"/><a:lstStyle{na}/>{cuerpo}</{ns}:txBody>')
+
+
+def medidas_centro_tarta(texto, medir):
+    """Ancho y alto (pt) del texto del centro de una tarta."""
+    cifra, resto = partes_centro_tarta(texto)
+    ancho = max([medir(cifra, 24) if cifra and medir else 0, medir(resto, 7) if resto and medir else 0] + [10]) + 4
+    alto = (24 * INTERLINEA if cifra else 0) + (7 * INTERLINEA if resto else 0)
+    return ancho, alto
 
 
 def texto_centro_tarta(ancla):
@@ -3883,13 +5627,64 @@ def ultima_fila_con_datos(hoja, col, fila1, fila2):
 
 
 def orden_leyenda(xml):
-    """Las series en el orden de la leyenda: por grupos, como van en el gráfico, y dentro de cada grupo por su
-    «order». El idx de <c:legendEntry> es la posición en esta lista, no el idx de la serie."""
+    """Las series en el orden de la leyenda: por grupos y, dentro de cada grupo, como van escritas en el gráfico
+    (no por su «order»: en el G_IA2025_1.33 panel a no coinciden y Excel sigue el orden escrito: «CLU-manufacturas»
+    antes que «Bienes intermedios», order 1 y 0). El idx de <c:legendEntry> es la posición en esta lista, no el
+    idx de la serie."""
     lista = []
     for g in GRUPOS.finditer(xml):
-        sers = re.findall(r'<c:ser>.*?</c:ser>', g.group(0), re.S)
-        lista += sorted(sers, key=lambda t: int(valor(hijo(hijos(t), "order")) or 0))
+        lista += re.findall(r'<c:ser>.*?</c:ser>', g.group(0), re.S)
     return lista
+
+
+def es_constante_base(ser, bases=(100, 50), xml=None):
+    """¿Serie con todos sus valores iguales a 100 o 50 (una línea de referencia dibujada como serie)? Con `xml`, solo
+    si ese valor cae entre los datos de las demás series (en el 2.5, «linea_100» es un auxiliar del autor fuera del eje,
+    que va de -4 a 6: no se ve y no es una línea base)."""
+    val = re.search(r'<c:val>.*?</c:val>', ser, re.S)
+    vals = numeros(val.group(0)) if val else []
+    if len(vals) < 2:
+        return False
+    base = next((b for b in bases if all(abs(v - b) < 1e-9 for v in vals)), None)
+    if base is None:
+        return False
+    if xml is None:
+        return True
+    otros = [v for t in re.findall(r'<c:ser>.*?</c:ser>', xml, re.S) if t != ser
+             for v in numeros((re.search(r'<c:(?:val|yVal)>.*?</c:(?:val|yVal)>', t, re.S) or re.match("", "")).group(0))]
+    if not otros:
+        return False
+    lo, hi = min(otros), max(otros)
+    margen = (hi - lo) * 0.1
+    return lo - margen <= base <= hi + margen
+
+
+def linea_base_del_autor(xml, base):
+    """Una serie de líneas del autor con todos sus valores iguales a `base`: la convierte en la línea base de la app
+    (nombre «Base N», gris de los ejes, sin marcadores, oculta en la leyenda). Devuelve el xml y su nombre (o None)."""
+    for g in GRUPOS.finditer(xml):
+        if g.group(1) not in ("lineChart", "line3DChart"):
+            continue
+        for ser in re.findall(r'<c:ser>.*?</c:ser>', g.group(0), re.S):
+            if not es_constante_base(ser, (base,), xml):
+                continue
+            nombre = nombre_serie(ser)
+            h = hijos(ser)
+            poner(h, ORDEN_SERIE["lineChart"], "tx", f'<c:tx><c:v>Base {base}</c:v></c:tx>')
+            poner(h, ORDEN_SERIE["lineChart"], "spPr", f'<c:spPr>{LINEA_BASE}</c:spPr>')
+            poner(h, ORDEN_SERIE["lineChart"], "marker", '<c:marker><c:symbol val="none"/></c:marker>')
+            poner(h, ORDEN_SERIE["lineChart"], "dLbls", None)
+            nueva = "<c:ser>" + "".join(t for _, t in h) + "</c:ser>"
+            xml = xml.replace(ser, nueva, 1)
+            pos = next(k for k, t in enumerate(orden_leyenda(xml)) if t == nueva)
+            if not re.search(rf'<c:legendEntry><c:idx val="{pos}"/><c:delete val="1"/>', xml):
+                entrada = f'<c:legendEntry><c:idx val="{pos}"/><c:delete val="1"/></c:legendEntry>'
+                if re.search(r'<c:legendPos\b[^>]*/>', xml):
+                    xml = re.sub(r'(<c:legend>\s*<c:legendPos\b[^>]*/>)', lambda m: m.group(1) + entrada, xml, count=1)
+                else:
+                    xml = xml.replace("<c:legend>", "<c:legend>" + entrada, 1)
+            return xml, nombre
+    return xml, None
 
 
 def anadir_linea_base(xml, base, ref, n, idx):
@@ -3978,10 +5773,62 @@ def meter_en_grupo_de_lineas(xml, serie, par):
     return xml[:fin] + grupo + xml[fin:]
 
 
+def muestra_del_autor(xml):
+    """El autor (o el estudio) ya puso la serie de línea que ensancha las muestras de las barras (G_IA2025_3.6,
+    «linea»: línea blanca y texto blanco en la leyenda, que se pierden al restablecer el estilo): una serie de línea
+    con un dato como mucho, en un gráfico con barras, no dibuja nada. Se convierte en la de la app (sin nombre y
+    línea blanca), que no cuenta para los estilos. Devuelve (xml, nombre que tenía) o (xml, None)."""
+    if not any(g.group(1) in TIPOS_BARRAS for g in GRUPOS.finditer(xml)):
+        return xml, None
+    for g in GRUPOS.finditer(xml):
+        if g.group(1) not in TIPOS_LINEA:
+            continue
+        for ser in re.findall(r'<c:ser>.*?</c:ser>', g.group(0), re.S):
+            if es_muestra(ser):
+                return xml, None
+            val = re.search(r'<c:(?:val|yVal)>.*?</c:(?:val|yVal)>', ser, re.S)
+            datos = re.findall(r'<c:pt idx="\d+">\s*<c:v>[^<]+</c:v>', val.group(0)) if val else []
+            # Sin marcador: con uno, un solo dato sí se ve (los extremos de los intervalos del 1.28 y 1.29, rayas)
+            marcador = hijo(hijos(ser), "marker")
+            if not marcador or valor(hijo(hijos(marcador), "symbol")) != "none":
+                continue
+            # Más de un dato: solo si todos son 0 y la serie no tiene nombre (G_IA2025_3.7: celda del nombre vacía y
+            # ceros; se llevaba el negro y descolocaba los colores de las barras)
+            if len(datos) > 1:
+                tx = re.search(r'<c:tx>.*?</c:tx>', ser, re.S)
+                sin_nombre = not (tx and re.search(r'<c:v>\s*\S[^<]*</c:v>', tx.group(0)))
+                if not (sin_nombre and all(abs(v) < 1e-12 for v in numeros(val.group(0)))):
+                    continue
+            nombre = nombre_serie(ser)
+            h = hijos(ser)
+            orden = ORDEN_SERIE[g.group(1)]
+            poner(h, orden, "tx", f"<c:tx><c:v>{NOMBRE_MUESTRA}</c:v></c:tx>")
+            poner(h, orden, "spPr", f"<c:spPr>{LINEA_MUESTRA}</c:spPr>")
+            poner(h, orden, "marker", '<c:marker><c:symbol val="none"/></c:marker>')
+            poner(h, orden, "dLbls", None)
+            # Sin datos, como la muestra de la app: con sus ceros la línea blanca taparía el eje en 0 (1.21)
+            campo = "yVal" if hijo(h, "yVal") else "val"
+            poner(h, orden, campo, f'<c:{campo}><c:numLit><c:formatCode>General</c:formatCode><c:ptCount val="1"/>'
+                                   f'</c:numLit></c:{campo}>')
+            nueva = "<c:ser>" + "".join(t for _, t in h) + "</c:ser>"
+            return xml.replace(ser, nueva, 1), nombre
+    return xml, None
+
+
 def muestras_anchas(xml):
     """Añade la serie de línea invisible que ensancha las muestras de la leyenda (None si no hace falta)."""
     if any(es_muestra(s) for s in re.findall(r'<c:ser>.*?</c:ser>', xml, re.S)) or not solo_barras_en_leyenda(xml):
         return None
+    # Con una serie de solo marcadores en un grupo de líneas (los extremos de un intervalo, 1.28 panel b), la línea de
+    # la muestra en ese grupo hace que Excel deje de dibujar los marcadores y su entrada: no se añade
+    for g in GRUPOS.finditer(xml):
+        if g.group(1) == "lineChart":
+            for ser in re.findall(r'<c:ser>.*?</c:ser>', g.group(0), re.S):
+                sppr = hijo(hijos(ser), "spPr") or ""
+                marcador = hijo(hijos(ser), "marker")
+                if re.search(r'<a:ln\b[^>]*>\s*<a:noFill/>', sppr) and marcador and \
+                        valor(hijo(hijos(marcador), "symbol")) not in (None, "none"):
+                    return None
     barras = next(g for g in GRUPOS.finditer(xml) if g.group(1) in TIPOS_BARRAS)
     horizontal = valor(hijo(hijos(barras.group(0)), "barDir")) == "bar"
     sers = re.findall(r'<c:ser>.*?</c:ser>', xml, re.S)
@@ -4156,8 +6003,7 @@ def series_divisorias(xml):
                       "errBars", "cat", "val", "shape", "extLst"], "spPr", relleno)
             # Los puntos con formato propio (dPt), igual
             h = [[n, re.sub(r'<c:spPr>.*?</c:spPr>', relleno, t, flags=re.S) if n == "dPt" else t] for n, t in h]
-            nombre = re.search(r'<c:tx>.*?<c:v>([^<]*)</c:v>', ser, re.S)
-            hechos.append(f"«{html.unescape(nombre.group(1)) if nombre else 'serie'}» (columnas como línea divisoria)")
+            hechos.append(f"«{nombre_serie(ser)}» (columnas como línea divisoria)")
             return "<c:ser>" + "".join(t for _, t in h) + "</c:ser>"
         return re.sub(r'<c:ser>.*?</c:ser>', serie, g.group(0), flags=re.S)
     return re.sub(r'<c:barChart>.*?</c:barChart>', grupo, xml, flags=re.S), hechos
@@ -4219,13 +6065,33 @@ def paso4(trabajo, pid=None):
             unidades += [html.unescape(texto_forma(partes[i])).strip() for i, (t, g) in tipos.items() if t == "unidades" and g == ig]
             hallado = next(((u, RE_BASE.search(u)) for u in unidades if RE_BASE.search(u)), None)
             if not hallado:
-                detalle.append(f"Panel {n}: sin dato de referencia en las unidades, sin línea base")
+                # Sin referencia en las unidades, pero con una serie del autor todo 100 o 50: es su línea base
+                del_autor = None
+                for b in (100, 50):
+                    xml, del_autor = linea_base_del_autor(xml, b)
+                    if del_autor:
+                        cambios[ruta_graf] = xml.encode("utf-8")
+                        detalle.append(f"Aviso: panel {n}: la serie «⟪{del_autor}⟫» del autor (todo {b}) es una línea de "
+                                       "referencia: pasa a ser la línea base de la guía (gris como los ejes, 0,5 pt), "
+                                       "fuera de la leyenda y de la secuencia de colores; las unidades no indican la base")
+                        break
+                if not del_autor:
+                    detalle.append(f"Panel {n}: sin dato de referencia en las unidades, sin línea base")
                 continue
             texto, m = hallado
             base = int(next(g for g in m.groups() if g))
             corto = texto.replace("\n", " ")[:60]
             if re.search(rf'<c:tx><c:v>Base {base}</c:v></c:tx>', xml):
                 detalle.append(f"Panel {n}: ya tiene la línea base {base}")
+                continue
+            # El autor ya dibujó la línea de referencia como una serie más (todo {base}: «cien» del G_IA2025_3.2 a,
+            # que salía como una línea de datos en la leyenda): pasa a ser la línea base de la guía
+            xml, del_autor = linea_base_del_autor(xml, base)
+            if del_autor:
+                cambios[ruta_graf] = xml.encode("utf-8")
+                detalle.append(f"Aviso: panel {n}: la serie «⟪{del_autor}⟫» del autor (todo {base}) es la línea de referencia "
+                               f"de «{corto}»: pasa a ser la línea base de la guía (gris como los ejes, 0,5 pt), fuera de la "
+                               "leyenda y de la secuencia de colores")
                 continue
             # Los datos de las series: hoja, primera fila y última con datos
             refs = re.findall(r"<c:val>\s*<c:numRef>\s*<c:f>(?:'([^']+)'|([^!<]+))!\$([A-Z]+)\$(\d+):\$([A-Z]+)\$(\d+)</c:f>", xml)
@@ -4307,6 +6173,41 @@ ESTILOS_SERIES = {
 }
 ANCHO_LINEA_SERIE = 28575    # 2,25 pt (decisión del usuario; el del TERMINADO del 2.6)
 MARCADOR_SOLO = ("circle", 5)   # series que son solo marcadores: círculo sólido de 5 pt sin borde (TERMINADO 2.6)
+# La forma del marcador es la del autor; si la dejó en automático, la que pone Excel según el número de la serie
+# (la primera, rombo: G_IA2025_1.31, como en el .ai). Tamaño 5, sólido, sin borde y color de la secuencia
+# (decisión del usuario, 2026-11-26). Círculo solo si no hay ninguna forma que respetar
+MARCADORES_AUTOMATICOS = ["diamond", "square", "triangle", "x", "star", "circle", "plus"]
+
+
+# Las formas de raya (sin superficie) a 5 pt casi no se ven: 7 pt, como los extremos de los intervalos de la guía
+# (G_IA2025_1.35 c: rayas de 10 pt del autor)
+TAMANO_RAYA = 7
+
+
+def tamano_marcador(forma):
+    return TAMANO_RAYA if forma in ("dash", "x", "plus", "star") else MARCADOR_SOLO[1]
+
+
+def tamano_del_autor(ser):
+    m = hijo(hijos(ser), "marker")
+    t = valor(hijo(hijos(m), "size")) if m else None
+    return int(t) if t else None
+
+
+NOMBRES_MARCADOR = {"diamond": "rombo", "square": "cuadrado", "triangle": "triángulo", "circle": "círculo",
+                    "x": "aspa", "star": "asterisco", "plus": "cruz", "dash": "raya", "dot": "punto"}
+
+
+def forma_marcador(ser):
+    """(símbolo, ¿automático?) de una serie de marcadores, como se ve en el Excel del autor."""
+    h = hijos(ser)
+    simbolo = valor(hijo(hijos(hijo(h, "marker")), "symbol")) if hijo(h, "marker") else None
+    if simbolo and simbolo not in ("none", "auto"):
+        return simbolo, False
+    if simbolo == "none":
+        return MARCADOR_SOLO[0], False
+    idx = int(valor(hijo(h, "idx")) or 0)
+    return MARCADORES_AUTOMATICOS[idx % len(MARCADORES_AUTOMATICOS)], True
 MAXIMO_ESTILOS = 7
 # Marcadores de las líneas con muchos puntos (petición del usuario): no se quitan, se espacian para que no se
 # agolpen; como mucho uno cada ESPACIO_MARCADORES a lo ancho del trazado. Las líneas de un mismo panel se
@@ -4351,8 +6252,22 @@ def marcador(simbolo, tamano, color):
             f'<a:srgbClr val="{color}"/></a:solidFill>{SIN_LINEA}</c:spPr></c:marker>')
 
 
+# Recta de referencia en una dispersión (la diagonal de 45°, dos puntos): negra de 1 pt, sin marcadores, como en el
+# .ai (G_IA2025_1.31, panel a; petición del usuario, 2026-11-26). Ocupa su lugar en el orden de estilos
+ANCHO_RECTA_REFERENCIA = 12700
+
+
+def es_recta_referencia(tipo, ser):
+    if tipo != "scatterChart":
+        return False
+    y = re.search(r'<c:yVal>.*?</c:yVal>', ser, re.S)
+    return bool(y) and len(re.findall(r'<c:pt idx="\d+">\s*<c:v>[^<]+</c:v>', y.group(0))) == 2
+
+
 def nombre_serie(ser):
-    m = re.search(r'<c:tx>.*?<c:v>([^<]*)</c:v>', ser, re.S)
+    # Dentro de <c:tx>: si su caché está vacía, no seguir hasta la primera categoría («2000» en el G_IA2025_3.7)
+    tx = re.search(r'<c:tx>.*?</c:tx>', ser, re.S)
+    m = re.search(r'<c:v>([^<]*)</c:v>', tx.group(0)) if tx else None
     return html.unescape(m.group(1)) if m else "serie sin nombre"
 
 
@@ -4440,7 +6355,48 @@ def intervalos(xml):
         detalle.append(f"intervalo: línea de máximos y mínimos negra de 1 pt (remate plano, unión en ángulo); "
                        f"«{nombre_serie(series[alta])}» y «{nombre_serie(series[baja])}» (máximo y mínimo): "
                        "marcador raya negro de 7 pt, sin línea")
+    # Intervalos hechos con barras de error (G_IA2025_1.28, panel b, 2026-11-26): una serie sin línea con barras de
+    # error que unen un extremo con el otro y las series de los extremos (sin línea, con marcador). Igual que con
+    # las líneas de máximos y mínimos: la barra, negra de 1 pt; los extremos, raya negra de 7 pt (pág. 16); sin los
+    # remates de la barra de error, que ya marcan las rayas
+    for g in list(re.finditer(r'<c:(lineChart|scatterChart)>.*?</c:\1>', xml, re.S)):
+        grupo = g.group(0)
+        if "<c:errBars>" not in grupo:
+            continue
+        series = re.findall(r'<c:ser>.*?</c:ser>', grupo, re.S)
+
+        def sin_linea(ser):
+            sppr = hijo(hijos(ser), "spPr") or ""
+            return bool(re.search(r'<a:ln\b[^>]*>\s*<a:noFill/>', sppr))
+        de_intervalo = [ser for ser in series if sin_linea(ser) and ("<c:errBars>" in ser or (
+            hijo(hijos(ser), "marker") and valor(hijo(hijos(hijo(hijos(ser), "marker")), "symbol")) not in (None, "none")))]
+        if not any("<c:errBars>" in ser for ser in de_intervalo):
+            continue
+        nuevo, nombres_i = grupo, []
+        orden = ORDEN_SERIE[g.group(1)]
+        for ser in de_intervalo:
+            h = hijos(ser)
+            poner(h, orden, "spPr", f'<c:spPr><a:ln w="{ANCHO_LINEA_SERIE}"><a:noFill/></a:ln></c:spPr>')
+            poner(h, orden, "marker", MARCADOR_INTERVALO)
+            nueva = "<c:ser>" + "".join(t for _, t in h) + "</c:ser>"
+
+            def barra(m):
+                b = hijos(m.group(0))
+                poner(b, ORDEN_ERRBARS, "noEndCap", '<c:noEndCap val="1"/>')
+                poner(b, ORDEN_ERRBARS, "spPr", f"<c:spPr>{LINEA_INTERVALO}</c:spPr>")
+                return "<c:errBars>" + "".join(t for _, t in b) + "</c:errBars>"
+            nueva = re.sub(r'<c:errBars>.*?</c:errBars>', barra, nueva, flags=re.S)
+            nuevo = nuevo.replace(ser, nueva, 1)
+            extremos.add(idx_serie(ser))
+            nombres_i.append(nombre_serie(ser))
+        xml = xml.replace(grupo, nuevo, 1)
+        detalle.append("intervalo con barras de error: barra negra de 1 pt (remate plano, unión en ángulo, sin remates "
+                       "propios); " + ", ".join(f"«{n}»" for n in dict.fromkeys(nombres_i))
+                       + " (extremos): marcador raya negro de 7 pt, sin línea")
     return xml, detalle, extremos
+
+
+ORDEN_ERRBARS = ["errDir", "errBarType", "errValType", "noEndCap", "plus", "minus", "val", "spPr", "extLst"]
 
 
 def es_sombreado(tipo, grupo, ser):
@@ -4547,12 +6503,57 @@ def series_de_grafico(xml, excluir=()):
         for s in re.finditer(r'<c:ser>.*?</c:ser>', g.group(0), re.S):
             ser = s.group(0)
             clase = None if idx_serie(ser) in excluir else clase_serie(tipo, ser, '<c:scatterStyle val="marker"/>' in g.group(0))
-            orden = int(valor(hijo(hijos(ser), "order")) or 0)
-            grupos.append({"tipo": tipo, "ser": ser, "clase": clase, "orden": orden, "oculta": ser in ocultas})
+            # Series sin ningún dato (el autor dejó el rango vacío, «Línea 4» del 1.12): no se ven, no cuentan
+            valores = re.search(r'<c:(?:val|yVal)>.*?</c:(?:val|yVal)>', ser, re.S)
+            if clase and valores and not re.search(r'<c:pt idx="\d+">\s*<c:v>[^<]+</c:v>', valores.group(0)):
+                clase = None
+            # El orden escrito en el gráfico, que es el que sigue Excel (G_IA2025_1.33 panel a: «order» no coincide)
+            orden = len(grupos)
+            # Barras apiladas con parte positiva y negativa: primero las que suben desde el eje y luego las que bajan
+            # (G_IA2025_1.27, petición del usuario, 2026-11-26: como en el .ai)
+            apilado = re.search(r'<c:grouping val="(?:stacked|percentStacked)"/>', g.group(0))
+            vals = numeros(re.search(r'<c:val>.*?</c:val>', ser, re.S).group(0)) if "<c:val>" in ser else []
+            abajo = 1 if apilado and vals and sum(v < 0 for v in vals) > sum(v > 0 for v in vals) else 0
+            grupos.append({"tipo": tipo, "ser": ser, "clase": clase, "orden": orden, "oculta": ser in ocultas, "abajo": abajo,
+                           "apilado": bool(apilado)})
     peso = {"linea": 0, "trama": 1, "marcador": 2}
-    usadas = [s for s in grupos if s["clase"] and not s["oculta"]]
-    usadas.sort(key=lambda s: (peso[s["clase"]], 0 if s["tipo"] == "areaChart" else 1, s["orden"]))
-    return usadas, [s for s in grupos if s["clase"] and s["oculta"]]
+    # Las series ocultas en la leyenda se ven en el gráfico: líneas y tramas llevan su estilo en el orden de la guía
+    # (G_IA2025_1.22, panel b: «Total», oculta en la leyenda, se quedaba con el naranja de Excel y la guía la pone
+    # negra). Los marcadores ocultos siguen aparte (gemelos de otro visible, intervalos)
+    usadas = [s for s in grupos if s["clase"] and (not s["oculta"] or s["clase"] != "marcador")]
+    usadas.sort(key=lambda s: (peso[s["clase"]], 0 if s["tipo"] == "areaChart" else 1, s["abajo"], s["orden"]))
+    return usadas, [s for s in grupos if s["clase"] == "marcador" and s["oculta"]]
+
+
+def luminancia(hexa):
+    r, g, b = (int(hexa[i:i + 2], 16) / 255 for i in (0, 2, 4))
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+TRAMAS_CON_ETIQUETA_BLANCA = {"7DB749"}   # además de las oscuras: la verde de la guía
+
+
+def etiquetas_claras(ser, estilo, apilado=False):
+    """Etiquetas dentro de una barra con trama oscura (la negra de la guía): en blanco, que en negro no se leen
+    (G_IA2025_1.27, petición del usuario, 2026-11-26). Las de fuera de la barra («outEnd») siguen en negro. Devuelve
+    (serie, ¿cambiada?)."""
+    _, frente, fondo = estilo["trama"]
+    # También sobre la trama verde de la guía (7DB749; petición del usuario, 2026-11-27, G_MemoriaSupervision_7.3)
+    if (luminancia(frente) + luminancia(fondo)) / 2 >= 0.4 and frente.upper() not in TRAMAS_CON_ETIQUETA_BLANCA:
+        return ser, False
+    dl = re.search(r'<c:dLbls>.*?</c:dLbls>', ser, re.S)
+    if not dl or 'showVal val="1"' not in dl.group(0):
+        return ser, False
+    # Dentro de la barra: centro o extremos interiores; sin posición, Excel las pone dentro solo en las apiladas (en
+    # las agrupadas, encima: en blanco no se verían, 3.6 panel b)
+    pos = re.search(r'<c:dLblPos val="(\w+)"/>', re.sub(r'<c:dLbl>.*?</c:dLbl>', "", dl.group(0), flags=re.S))
+    if not (pos.group(1) in ("ctr", "inEnd", "inBase") if pos else apilado):
+        return ser, False
+    nuevo = re.sub(r'(<a:defRPr\b[^>]*>\s*<a:solidFill>)\s*<a:srgbClr val="[0-9A-Fa-f]{6}"/>',
+                   r'\1<a:srgbClr val="FFFFFF"/>', dl.group(0))
+    if nuevo == dl.group(0):
+        return ser, False
+    return ser.replace(dl.group(0), nuevo, 1), True
 
 
 def con_estilo(s, estilo):
@@ -4571,27 +6572,41 @@ def con_estilo(s, estilo):
         poner(h, orden, "marker", marcador(simbolo, tamano, color))
     else:
         poner(h, orden, "spPr", f'<c:spPr><a:ln w="{ANCHO_LINEA_SERIE}"><a:noFill/></a:ln></c:spPr>')
-        poner(h, orden, "marker", marcador(*MARCADOR_SOLO, color))
+        forma = forma_marcador(ser)[0]
+        poner(h, orden, "marker", marcador(forma, tamano_marcador(forma), color))
     return "<c:ser>" + "".join(t for _, t in h) + "</c:ser>"
 
 
 def puntos_tarta(ser, tipo, estilos):
-    """Cada sector con la trama que le toca, en el orden de la leyenda (las categorías)."""
+    """Cada sector con la trama que le toca, en el orden de la leyenda (las categorías). Los sectores a 0 (o sin
+    dato) no se ven y no gastan estilo: la secuencia sigue con el siguiente que se ve, como en el .ai
+    (G_MemoriaSupervision_3.1: en el panel a «Negocio» vale 0 y «Capital» va en negro; petición del usuario,
+    2026-11-27). Devuelve la serie, el número de sectores y los que valen 0."""
     h = hijos(ser)
     val = hijo(h, "val") or ""
     m = re.search(r'<c:ptCount val="(\d+)"', val)
     n = int(m.group(1)) if m else 0
+    datos = {int(i): v for i, v in re.findall(r'<c:pt idx="(\d+)">\s*<c:v>([^<]*)</c:v>', val)}
+    def vale_cero(k):
+        try:
+            return abs(float(datos.get(k, "0"))) < 1e-12
+        except ValueError:
+            return True
+    # Sin ningún dato guardado (caché vacía: el 1.2) no se sabe cuánto vale cada sector: no se salta ninguno
+    ceros = [k for k in range(n) if vale_cero(k)] if datos else []
     viejos = {valor(hijo(hijos(t), "idx")): t for nombre, t in h if nombre == "dPt"}
     h = [x for x in h if x[0] != "dPt"]
-    nuevos = []
+    nuevos, siguiente = [], 0
     for k in range(n):
         dpt = hijos(viejos[str(k)]) if str(k) in viejos else [["idx", f'<c:idx val="{k}"/>'], ["bubble3D", '<c:bubble3D val="0"/>']]
-        poner(dpt, ORDEN_DPT, "spPr", sppr_trama(estilos[k % len(estilos)]))
+        poner(dpt, ORDEN_DPT, "spPr", sppr_trama(estilos[siguiente % len(estilos)]))
+        if k not in ceros:
+            siguiente += 1
         nuevos.append("<c:dPt>" + "".join(t for _, t in dpt) + "</c:dPt>")
     orden = ORDEN_SERIE[tipo]
     pos = next((i for i, x in enumerate(h) if x[0] in orden and orden.index(x[0]) > orden.index("dPt")), len(h))
     h[pos:pos] = [["dPt", d] for d in nuevos]
-    return "<c:ser>" + "".join(t for _, t in h) + "</c:ser>", n
+    return "<c:ser>" + "".join(t for _, t in h) + "</c:ser>", n, ceros
 
 
 def puntos_serie(ser):
@@ -4621,8 +6636,20 @@ def espaciar_marcadores(ser, tipo, cada, desfase):
     return "<c:ser>" + "".join(t for _, t in h) + "</c:ser>", (n - desfase + cada - 1) // cada
 
 
-def tramas_y_lineas(xml, estilos, ancho_grafico=None, color_publicacion=None):
-    """Aplica los estilos de la guía a las series de un gráfico. Devuelve el xml y las líneas del detalle."""
+def es_promedio(nombre):
+    """Leyenda de un promedio, una media o una tendencia de otra serie («Promedio 1996-2019», «Media 2000-2019»,
+    «Tendencia España», «Average»); no las medias móviles, que son datos (G_IA2025_1.35 a y 3.1 b, peticiones del
+    usuario, 2026-11-26: que la app avise)."""
+    n = nombre.lower()
+    if re.search(r'\bmedias?\s+m[oó]vil(es)?\b|\bmoving\s+averages?\b', n):
+        return False
+    return bool(re.search(r'\b(promedios?|medias?|averages?|mean|tendencias?|trends?)\b', n))
+
+
+def tramas_y_lineas(xml, estilos, ancho_grafico=None, color_publicacion=None, fijos=None):
+    """Aplica los estilos de la guía a las series de un gráfico. Devuelve el xml y las líneas del detalle.
+    `fijos`: {nombre de serie: número de estilo} de los paneles anteriores; la serie que se llame igual lleva el mismo
+    estilo y las demás se reparten los libres (petición del usuario, 2026-11-26, G_IA2025_1.12). Se completa aquí."""
     detalle = []
     tarta = re.search(r'<c:(pieChart|doughnutChart)>.*?</c:\1>', xml, re.S)
     if tarta:
@@ -4631,9 +6658,23 @@ def tramas_y_lineas(xml, estilos, ancho_grafico=None, color_publicacion=None):
         s = re.search(r'<c:ser>.*?</c:ser>', g, re.S)
         if not s:
             return xml, ["sin series"]
-        nuevo, n = puntos_tarta(s.group(0), tipo, estilos)
+        nuevo, n, ceros = puntos_tarta(s.group(0), tipo, estilos)
         xml = xml.replace(g, g.replace(s.group(0), nuevo, 1), 1)
-        detalle.append(f"{n} sectores con las tramas 1 a {min(n, len(estilos))}, en el orden de la leyenda")
+        visibles = n - len(ceros)
+        detalle.append(f"{visibles} sectores con las tramas 1 a {min(visibles, len(estilos))}, en el orden de la leyenda")
+        if ceros:
+            cats = etiquetas_categorias(xml)
+            nombres_c = ", ".join(f"«{cats[k]}»" if k < len(cats) else f"n.º {k + 1}" for k in ceros)
+            # Fuera también de la leyenda: no se ven y su muestra repetiría el color del siguiente
+            leyenda = re.search(r'<c:legend>.*?</c:legend>', xml, re.S)
+            if leyenda:
+                ya = set(re.findall(r'<c:legendEntry><c:idx val="(\d+)"/>', leyenda.group(0)))
+                entradas = "".join(f'<c:legendEntry><c:idx val="{k}"/><c:delete val="1"/></c:legendEntry>'
+                                   for k in ceros if str(k) not in ya)
+                nueva_l = re.sub(r'(<c:legendPos\b[^>]*/>)', lambda m: m.group(1) + entradas, leyenda.group(0), count=1)
+                xml = xml.replace(leyenda.group(0), nueva_l, 1)
+            detalle.append(f"Aviso: sectores a 0 ({nombres_c}): no se ven y no gastan color (la secuencia sigue con el "
+                           "siguiente, como en el .ai)" + ("; fuera de la leyenda" if leyenda else ""))
         if n > MAXIMO_ESTILOS:
             detalle.append(f"Aviso: {n} sectores; la guía tiene {MAXIMO_ESTILOS} tramas (y recomienda 5): a partir "
                            f"del {MAXIMO_ESTILOS + 1}.º se repiten. Consultar con la unidad de edición y publicaciones")
@@ -4644,14 +6685,35 @@ def tramas_y_lineas(xml, estilos, ancho_grafico=None, color_publicacion=None):
     usadas, ocultas = series_de_grafico(xml, extremos | sombras)
     if not usadas:
         return xml, detalle or ["sin series que formatear"]
-    con_marcador = [k for k, s in enumerate(usadas)
-                    if s["clase"] == "linea" and estilos[k % len(estilos)]["linea"][2]]
-    espaciados, salto, gemelos = [], 0, {}
+    # Número de estilo de cada serie: primero las que ya lo tienen por otro panel (mismo nombre), después las demás
+    # en el orden de la guía, con los libres
+    fijos = {} if fijos is None else fijos
+    # (mismo nombre y mismo tipo: en el 1.22, «Total» son marcadores en el panel a y una línea en el b)
+    clave = lambda ser: (re.sub(r"\s+", " ", nombre_serie(ser)).strip().lower(),
+                         next((u["clase"] for u in usadas if u["ser"] == ser), None))
+    numero, ocupados = {}, set()
     for k, s in enumerate(usadas):
-        # En un intervalo, los marcadores van sobre la línea negra: no pueden ser negros
-        if extremos and s["clase"] == "marcador" and estilos[(k + salto) % len(estilos)]["linea"][0] == "000000":
-            salto += 1
-        estilo = estilos[(k + salto) % len(estilos)]
+        if clave(s["ser"]) in fijos and fijos[clave(s["ser"])] not in ocupados:
+            numero[k] = fijos[clave(s["ser"])]
+            ocupados.add(numero[k])
+    siguiente = 0
+    for k, s in enumerate(usadas):
+        if k in numero:
+            continue
+        while siguiente in ocupados or (
+                # En un intervalo, los marcadores van sobre la línea negra: no pueden ser negros
+                extremos and s["clase"] == "marcador" and estilos[siguiente % len(estilos)]["linea"][0] == "000000"):
+            siguiente += 1
+        numero[k] = siguiente
+        ocupados.add(siguiente)
+        siguiente += 1
+    for k, s in enumerate(usadas):
+        fijos.setdefault(clave(s["ser"]), numero[k])
+    con_marcador = [k for k, s in enumerate(usadas)
+                    if s["clase"] == "linea" and estilos[numero[k] % len(estilos)]["linea"][2]]
+    espaciados, gemelos = [], {}
+    for k, s in enumerate(usadas):
+        estilo = estilos[numero[k] % len(estilos)]
         limpia, n_puntos = puntos_como_su_serie(s["ser"])
         if n_puntos:
             detalle.append(f"«{nombre_serie(s['ser'])}»: {n_puntos} punto{'s' if n_puntos > 1 else ''} con el mismo "
@@ -4661,6 +6723,14 @@ def tramas_y_lineas(xml, estilos, ancho_grafico=None, color_publicacion=None):
         original = s["ser"]
         s = {**s, "ser": limpia}
         nueva = con_estilo(s, estilo)
+        recta = s["clase"] == "linea" and es_recta_referencia(s["tipo"], s["ser"])
+        if recta:
+            nueva = nueva.replace(f'<a:ln w="{ANCHO_LINEA_SERIE}"', f'<a:ln w="{ANCHO_RECTA_REFERENCIA}"', 1)
+            nueva = re.sub(r'<c:marker>.*?</c:marker>', marcador(None, 0, None), nueva, count=1, flags=re.S)
+        if s["clase"] == "trama":
+            nueva, claras = etiquetas_claras(nueva, estilo, s.get("apilado", False))
+            if claras:
+                detalle.append(f"«{nombre_serie(s['ser'])}»: etiquetas en blanco, dentro de la trama (negra o verde)")
         n = puntos_serie(s["ser"])
         if k in con_marcador and ancho_grafico and n > 1:
             caben = max(2, int(ancho_trazado(xml, ancho_grafico) / ESPACIO_MARCADORES) + 1)
@@ -4672,12 +6742,25 @@ def tramas_y_lineas(xml, estilos, ancho_grafico=None, color_publicacion=None):
         xml = xml.replace(original, nueva, 1)
         que = {"linea": "línea", "trama": "trama", "marcador": "marcador"}[s["clase"]]
         if s["clase"] == "marcador":
-            descripcion = f"círculo de 5 pt {estilo['linea'][0]}"
+            forma, auto = forma_marcador(original)
+            tam = tamano_marcador(forma)
+            descripcion = (f"{NOMBRES_MARCADOR.get(forma, forma)} de {tam} pt {estilo['linea'][0]} (la forma del autor"
+                           + (", la automática de Excel)" if auto else ")"))
+            del_autor = tamano_del_autor(original)
+            if del_autor and del_autor != tam:
+                detalle.append(f"Aviso: «{nombre_serie(s['ser'])}»: marcador de ⟪{tam} pt⟫ (el autor lo tenía de "
+                               f"{del_autor} pt)")
+        elif recta:
+            descripcion = f"recta de referencia: sólida {estilo['linea'][0]}, 1 pt, sin marcadores"
         elif s["clase"] == "linea":
             descripcion = estilo["nombre"].split(" / ")[1] + f" {estilo['linea'][0]}, 2,25 pt"
         else:
             descripcion = estilo["nombre"].split(" / ")[0]
         detalle.append(f"{k + 1}. «{nombre_serie(s['ser'])}» ({que}): {descripcion}")
+        if s["clase"] == "linea" and es_promedio(nombre_serie(s["ser"])):
+            detalle.append(f"Aviso: «{nombre_serie(s['ser'])}» es un ⟪promedio, una media o una tendencia⟫ de otra serie: por norma va "
+                           "discontinua y del color de la serie a la que se refiere; la app le ha dado el estilo que "
+                           "le toca en la secuencia: revisarla y cambiarla a mano si es el caso")
     if espaciados:
         detalle.append("Marcadores espaciados para que no se agolpen (como mucho uno cada 4 mm): " + "; ".join(espaciados))
     for s in ocultas:
@@ -4790,9 +6873,10 @@ def paso5(trabajo, pid=None):
             pas = next((a for a in partes if re.search(r'name="Pastilla', a)), "")
             m = re.search(r'<a:solidFill><a:srgbClr val="([0-9A-Fa-f]{6})"', pas)
             color = m.group(1).upper() if m else None
+        fijos = {}   # mismo nombre de serie, mismo estilo en todos los paneles
         for n, (_, rid, ancho) in enumerate(graficos, 1):
             ruta_graf = relaciones[rid][1]
-            xml, lineas = tramas_y_lineas(z.read(ruta_graf).decode("utf-8"), estilos, ancho, color)
+            xml, lineas = tramas_y_lineas(z.read(ruta_graf).decode("utf-8"), estilos, ancho, color, fijos)
             cambios[ruta_graf] = xml.encode("utf-8")
             for t, ruta_formas in rels(z, ruta_graf).values():
                 if t.endswith("/chartUserShapes"):
@@ -5019,6 +7103,95 @@ def sin_eje_vertical(trabajo, pid=None):
     if not hechos:
         raise Fallo("Ningún panel tiene barras verticales sin apilar: no hay eje vertical que quitar")
     return nuevo_paso(trabajo, SIN_EJE_VERTICAL, cambios, detalle)
+
+
+SOLO_COLUMNA_1 = "Sin leyenda: gráfico solo en la columna 1"
+
+
+def solo_columna_1(trabajo, pid=None):
+    """Herramienta (botón de «Excepciones a los gráficos», petición del usuario, 2026-11-26, G_IA2025_1.11): en los
+    paneles sin leyenda, que el paso 2 extiende a las dos columnas, el trazado vuelve a acabar al final de la
+    columna 1. El marco del gráfico no cambia; los textos sueltos del gráfico se mueven con el trazado, como en el
+    paso 2. Ni tartas ni barras horizontales (ya van en la columna 1). Deja una versión nueva."""
+    estado = leer_estado(trabajo)
+    _, pasos = nombres(trabajo)
+    base_archivo = pasos / estado["pasos"][estado["actual"]]["archivo"]
+    requiere(estado, ("Tamaño y colocación",), f"«{SOLO_COLUMNA_1}»")
+    cambios, detalle, hechos = {}, [], 0
+    medir, hojas = medidor(), {}
+    with zipfile.ZipFile(base_archivo) as z:
+        ruta = dibujo_de_hoja(z, HOJA_GRAFICO)
+        dibujo = z.read(ruta).decode("utf-8")
+        relaciones = rels(z, ruta)
+        partes = list(partes_dibujo(dibujo))
+        caja = medidas_hoja(z, dibujo)
+        (x1, w1), _ = guias_reticula(dibujo)[0]
+        graficos = sorted((caja(a)[1], i, re.search(r'<c:chart\b[^>]*\br:id="([^"]+)"', a).group(1))
+                          for i, a in enumerate(partes) if ANCLA.fullmatch(a) and "<c:chart " in a)
+        for n, (_, ig, rid) in enumerate(graficos, 1):
+            ruta_graf = relaciones[rid][1]
+            xml = z.read(ruta_graf).decode("utf-8")
+            gx, gy, gw, gh = caja(partes[ig])
+            W, H = gw / EMU_PT, gh / EMU_PT
+            if not sin_leyenda(xml, W):
+                continue
+            if es_tarta(xml) or 'barDir val="bar"' in xml:
+                detalle.append(f"Panel {n}: sin leyenda, pero ya va en la columna 1 (tarta o barras horizontales)")
+                continue
+            t = trazado_rel(xml)
+            if not t:
+                detalle.append(f"Aviso: panel {n}: sin leyenda, pero su trazado no tiene disposición fija: no se toca")
+                continue
+            fin = (x1 + w1 - gx) / gw          # final de la columna 1, en fracción del gráfico
+            # Lo que sobresale a la derecha del trazado (la última categoría o la etiqueta del último punto) también
+            # dentro de la columna (G_IA2025_2.3: «85,29» se salía)
+            sobresale = media_ultima_categoria(xml, 7, medir, W) if medir else 0
+            if t[0] + t[2] <= fin - sobresale / W + 0.002:
+                detalle.append(f"Panel {n}: sin leyenda y ya acaba en la columna 1")
+                continue
+            nuevo_w = fin - t[0] - sobresale / W
+            xml = re.sub(r'(<c:plotArea>\s*<c:layout>\s*<c:manualLayout>.*?<c:w val=")[^"]+(")',
+                         lambda m: f"{m.group(1)}{nuevo_w:.6f}{m.group(2)}", xml, count=1, flags=re.S)
+            # Las etiquetas del eje horizontal, otra vez con las reglas del paso 1 para el ancho nuevo: el cuerpo (7 pt,
+            # 6,5 o 6 si se pierde texto) y la dirección (guía, pág. 11: en vertical si no caben ni a 6 pt)
+            notas_cat = []
+
+            def cuerpo(m):
+                eje = m.group(0)
+                if not re.search(r'<c:axPos val="[bt]"/>', eje) or '<c:delete val="1"/>' in eje:
+                    return eje
+                sz, nota = cuerpo_categorias(xml, W)
+                if sz != 700:
+                    notas_cat.append(f"eje de categorías a {sz / 100:g} pt".replace(".", ",") + (f" ({nota})" if nota else ""))
+                return con_txpr(eje, ["crossAx"], sz, ROBOTO)
+            xml = re.sub(r'<c:catAx>.*?</c:catAx>', cuerpo, xml, flags=re.S)
+            xml, nota_cat = direccion_categorias(z, xml, nuevo_w * W, hojas, medir)
+            if notas_cat:
+                nota_cat = "; ".join(notas_cat + ([nota_cat] if nota_cat else []))
+            cambios[ruta_graf] = xml.encode("utf-8")
+            hechos += 1
+            linea = (f"Panel {n}: sin leyenda; el trazado acaba al final de la columna 1 "
+                     f"({t[2] * W / MM:.1f} → {nuevo_w * W / MM:.1f} mm de ancho)").replace(".", ",")
+            ruta_formas = next((d for tp, d in rels(z, ruta_graf).values() if tp.endswith("/chartUserShapes")), None)
+            if ruta_formas:
+                formas = z.read(ruta_formas).decode("utf-8")
+                actuales = re.findall(r'<cdr:relSizeAnchor\b.*?</cdr:relSizeAnchor>', formas, re.S)
+                saltar = [a for a in actuales if girado(a) or es_unidad_grafico(a, xml)]
+                dentro = (t[0] * W, t[1] * H, nuevo_w * W, t[3] * H)
+                formas, movidos = recolocar_formas(formas, t, (W, H), dentro, W, H, saltar)
+                if movidos:
+                    linea += "; se mueven con el trazado: " + ", ".join(f"«{m}»" for m in movidos)
+                cambios[ruta_formas] = formas.encode("utf-8")
+            if nota_cat and not nota_cat.startswith("Aviso"):
+                linea += "; " + nota_cat.split(" — Aviso")[0]
+            detalle.append(linea)
+            if nota_cat and "Aviso" in nota_cat:
+                detalle.append(f"Aviso: panel {n}: " + nota_cat.split("Aviso: ", 1)[1])
+        for ruta_hoja, hoja in hojas.items():
+            cambios[ruta_hoja] = hoja.encode("utf-8")
+    if not hechos:
+        raise Fallo("Ningún panel sin leyenda ocupa las dos columnas: no hay nada que estrechar")
+    return nuevo_paso(trabajo, SOLO_COLUMNA_1, cambios, detalle)
 
 
 # ---------------------------------------------------------------- comparar con el original y terminar
@@ -5312,6 +7485,141 @@ def copia_actual(trabajo):
     return max([c for c in (trabajo, b) if c.exists()], key=lambda c: c.stat().st_mtime)
 
 
+CAMBIOS_A_MANO = "Cambios a mano en Excel"
+
+
+def normalizar_visto(t):
+    """Para comparar con el texto del PDF de Excel: sin espacios ni saltos (Excel parte las líneas donde quiere) y
+    sin mayúsculas."""
+    return re.sub(r"[\s\u00a0\u202f\u2009\u200a\u00ad]+", "", html.unescape(t)).casefold()
+
+
+COMPROBACION = "Comprobación en Excel"
+
+
+def comprobar(trabajo, ruta_texto):
+    """Comprobación final (la app, al terminar el paso 5): Excel exporta la hoja del gráfico a PDF y la app pasa
+    aquí su texto. Cada entrada de las leyendas y cada categoría del eje tienen que verse enteras: Excel esconde lo que
+    no le cabe sin decir nada (8.2: «Compras en TPV» pasaba a una fila de la leyenda que no se veía; 8.4 b: «…(b)»
+    cortado con «…»; 3.5 a 7 pt: se saltaba una categoría de cada dos). Las líneas van al detalle de la versión
+    actual (petición del usuario, 2026-11-27)."""
+    trabajo, pasos = nombres(trabajo)
+    estado = leer_estado(trabajo)
+    version = pasos / estado["pasos"][estado["actual"]]["archivo"]
+    paginas = Path(ruta_texto).read_text(encoding="utf-8").split("\f")
+    esperados = []          # (panel, qué, texto)
+    with zipfile.ZipFile(version) as z:
+        ruta = dibujo_de_hoja(z, HOJA_GRAFICO)
+        dibujo = z.read(ruta).decode("utf-8")
+        # Excel exporta el libro entero (también la hoja de datos, donde salen los nombres de las series): solo
+        # cuenta la página de la hoja del gráfico, la que tiene más textos de sus formas (título, paneles, FUENTES…)
+        formas = [normalizar_visto(texto_forma(a.group(0))) for a in ANCLA.finditer(dibujo) if "<xdr:txBody>" in a.group(0)]
+        formas = [f for f in formas if len(f) > 3]
+        visto = max(paginas, key=lambda pg: sum(f in normalizar_visto(pg) for f in formas))
+        plano = normalizar_visto(visto)
+        relaciones = rels(z, ruta)
+        caja = medidas_hoja(z, dibujo)
+        anclas = [a for a in partes_dibujo(dibujo) if ANCLA.fullmatch(a)]
+        graficos = sorted((caja(a)[1], k, a) for k, a in enumerate(anclas, 1) if "<c:chart " in a)
+        for n, (_, _, a) in enumerate(graficos, 1):
+            rid = re.search(r'<c:chart\b[^>]*\br:id="([^"]+)"', a)
+            if not rid or rid.group(1) not in relaciones:
+                continue
+            xml = z.read(relaciones[rid.group(1)][1]).decode("utf-8")
+            if re.search(r'<c:legend>', xml) and not sin_leyenda(xml, caja(a)[2] / EMU_PT):
+                esperados += [(n, "leyenda", t) for t, _ in entradas_leyenda(xml) if t.strip()]
+            eje = next((e.group(0) for e in re.finditer(r'<c:catAx>.*?</c:catAx>', xml, re.S)
+                        if '<c:delete val="1"/>' not in e.group(0) and '<c:tickLblPos val="none"/>' not in e.group(0)), None)
+            if eje and not es_tarta(xml):
+                salto = re.search(r'<c:tickLblSkip val="(\d+)"/>', eje)
+                cats = etiquetas_categorias(xml)[::int(salto.group(1)) if salto else 1]
+                esperados += [(n, "categoría", t) for t in cats if t.strip()]
+    necesarios = Counter(normalizar_visto(t) for _, _, t in esperados)
+    faltan = {t for t, k in necesarios.items() if t and plano.count(t) < k}
+    lineas, vistos_aviso = [], set()
+    for n, que, t in esperados:
+        clave = normalizar_visto(t)
+        if clave in faltan and (n, clave) not in vistos_aviso:
+            vistos_aviso.add((n, clave))
+            otros = sorted({m for m, _, u in esperados if normalizar_visto(u) == clave and m != n})
+            texto = re.sub(r"\s+", " ", t).strip()
+            lineas.append(f"Aviso: panel {n}: comprobación en Excel: no se ve entera la {que} «{texto}»"
+                          + (f" (está también en el panel {', '.join(map(str, otros))}: falta en alguno)"
+                             if otros and plano.count(clave) else "")
+                          + (": Excel la esconde porque no le cabe en el cuadro de la leyenda" if que == "leyenda"
+                             else ": Excel se la salta o la corta porque no cabe"))
+    textos_hoja = normalizar_visto(" ".join(t for _, _, t in esperados))
+    for m in re.finditer(r"\u2026", visto):
+        trozo = re.sub(r"\s+", " ", visto[max(0, m.start() - 30):m.end()]).strip()
+        if "\u2026" not in textos_hoja:
+            lineas.append(f"Aviso: comprobación en Excel: Excel corta un texto con «…»: «{trozo}»")
+    if not lineas:
+        lineas = [f"{COMPROBACION}: las leyendas y las categorías se ven enteras ({len(esperados)} textos)"]
+    else:
+        lineas.insert(0, f"{COMPROBACION}: {len(lineas)} problema{'s' if len(lineas) > 1 else ''} en lo que dibuja Excel")
+    detalle = [l for l in estado["pasos"][estado["actual"]]["detalle"] if COMPROBACION.lower() not in l.lower()]
+    estado["pasos"][estado["actual"]]["detalle"] = detalle + marcar_detalle(version, lineas)
+    guardar_estado(trabajo, estado)
+    return {"trabajo": str(trabajo), **estado, "comprobacion": estado["pasos"][estado["actual"]]["detalle"][len(detalle):]}
+
+
+def a_mano(trabajo, pid=None):
+    """Antes de un paso o una herramienta (lo llama la app, tras guardar en Excel los cambios sin guardar): si la copia
+    de trabajo ya no es la versión de la que partía, es que se ha retocado a mano en Excel (posición, tamaño…); se
+    guarda como versión nueva y el paso parte de ella, así no se pierde (petición del usuario, 2026-11-26). Si no ha
+    cambiado nada, no hace nada. Se comparan las partes del libro salvo `xl/workbook.xml` (la app escribe ahí el sitio
+    de la ventana) y `docProps`."""
+    trabajo, pasos = nombres(trabajo)
+    estado = leer_estado(trabajo)
+    version = pasos / estado["pasos"][estado["actual"]]["archivo"]
+    copia = copia_actual(trabajo)
+
+    def partes(f):
+        with zipfile.ZipFile(f) as z:
+            return {n: z.read(n) for n in z.namelist() if n != "xl/workbook.xml" and not n.startswith("docProps/")}
+    antes, ahora = partes(version), partes(copia)
+    if antes == ahora:
+        return {"trabajo": str(trabajo), **estado, "a_mano": False}
+    # Qué formas de la hoja del gráfico se han movido o cambiado de tamaño (más de medio milímetro)
+    detalle = []
+    try:
+        with zipfile.ZipFile(version) as zv, zipfile.ZipFile(copia) as zc:
+            def cajas(z):
+                d = z.read(dibujo_de_hoja(z, HOJA_GRAFICO)).decode("utf-8")
+                caja = medidas_hoja(z, d)
+                return {(k, nombre_forma(a.group(0))): caja(a.group(0)) for k, a in enumerate(ANCLA.finditer(d), 1)}
+            cv, cc = cajas(zv), cajas(zc)
+        movidas = [n for (k, n), c in cc.items() if (k, n) in cv and max(abs(a - b) for a, b in zip(c, cv[(k, n)])) > 0.5 * 36000]
+        nuevas = [n for (k, n) in cc if (k, n) not in cv]
+        if movidas:
+            detalle.append("Movido o cambiado de tamaño a mano: " + ", ".join(f"«{n}»" for n in movidas[:8]))
+        if nuevas:
+            detalle.append("Formas nuevas o cambiadas de orden: " + ", ".join(f"«{n}»" for n in nuevas[:8]))
+    except (Fallo, KeyError, zipfile.BadZipFile):
+        pass
+    detalle.insert(0, "Cambios hechos a mano en Excel, guardados como versión para que los pasos siguientes partan "
+                      "de ellos (⌘← para quitarlos)")
+    if len(detalle) == 1:
+        detalle.append("Cambios dentro de los gráficos o de las celdas (sin formas movidas)")
+    # Como `nuevo_paso`, pero con el libro entero de la copia
+    actual = estado["actual"]
+    for p in estado["pasos"][actual + 1:]:
+        (pasos / p["archivo"]).unlink(missing_ok=True)
+    del estado["pasos"][actual + 1:]
+    n = actual + 1
+    archivo = f"{n:02d} {CAMBIOS_A_MANO}.xlsx"
+    shutil.copyfile(copia, pasos / archivo)
+    solo_lectura(pasos / archivo)
+    if copia != trabajo:
+        shutil.copyfile(copia, trabajo)
+        os.chmod(trabajo, 0o644)
+    estado["pasos"].append({"n": n, "titulo": CAMBIOS_A_MANO, "archivo": archivo,
+                            "detalle": marcar_detalle(pasos / archivo, detalle)})
+    estado["actual"] = n
+    guardar_estado(trabajo, estado)
+    return {"trabajo": str(trabajo), **estado, "a_mano": True}
+
+
 def comparar(trabajo):
     estado = leer_estado(trabajo)
     _, pasos = nombres(trabajo)
@@ -5322,6 +7630,8 @@ def comparar(trabajo):
     with zipfile.ZipFile(origen) as zo, zipfile.ZipFile(actual) as zf:
         lineas = comparar_libros(zo, zf, estado.get("idioma", "es"))
         lineas = marcar_comparacion(zf, lineas)
+    # Solo lo que sale de comparar: los avisos de los pasos 1 a 5 ya están en «N avisos en esta maquetación» y en
+    # cada versión (petición del usuario, 2026-11-27: repetirlos aquí despistaba)
     return {"trabajo": str(trabajo), **estado, "comparacion": lineas, "comparado": str(actual), "original": str(origen)}
 
 
@@ -5396,7 +7706,7 @@ def marcar_comparacion(z, lineas):
                 if f:
                     marca_l = f" ⟦forma:{f[0]}|{f[1]}|{f[2]}⟧"
                     break
-        salida.append(linea + marca_l)
+        salida.append(con_resaltes(linea + marca_l))
     return salida
 
 
@@ -5441,6 +7751,7 @@ def terminar(trabajo):
 
 CARPETAS_FUENTES = [Path.home() / "Library/Fonts", Path("/Library/Fonts"), Path("/System/Library/Fonts/Supplemental")]
 HOLGURA_PT = 5.0   # lo que Excel deja libre en cada hueco: si la palabra no cabe, agranda el trazado
+HOLGURA_HORIZONTAL = 3.0   # lo justo para que Excel deje las categorías en horizontal sin saltarse ninguna (3.5)
 _medidores = {}
 
 
@@ -5689,7 +8000,7 @@ def info(archivo):
 
 
 def main(args):
-    ordenes = {"empezar": empezar, "estado": lambda t: {"trabajo": t, **leer_estado(t)}, "ir": ir, "reiniciar": reiniciar, "paso1": paso1, "paso2": paso2, "paso3": paso3, "paso4": paso4, "paso5": paso5, "comparar": comparar, "sin_eje_vertical": sin_eje_vertical, "terminar": terminar, "info": info,
+    ordenes = {"empezar": empezar, "estado": lambda t: {"trabajo": t, **leer_estado(t)}, "ir": ir, "paneles": paneles, "reiniciar": reiniciar, "paso1": paso1, "paso2": paso2, "paso3": paso3, "paso4": paso4, "paso5": paso5, "comparar": comparar, "sin_eje_vertical": sin_eje_vertical, "solo_columna_1": solo_columna_1, "a_mano": a_mano, "comprobar": comprobar, "terminar": terminar, "info": info,
                "publicaciones": lambda: {}, "guardar_publicacion": guardar_publicacion, "borrar_publicacion": borrar_publicacion, "paletas": paletas}
     if not args or args[0] not in ordenes:
         print(__doc__, file=sys.stderr)
@@ -5697,7 +8008,7 @@ def main(args):
     try:
         res = ordenes[args[0]](*args[1:])
         res["publicaciones"] = CONFIG["publicaciones"]
-        if args[0] in ("empezar", "estado", "ir", "reiniciar") or args[0].startswith("paso"):
+        if args[0] in ("empezar", "estado", "ir", "reiniciar", "paneles") or args[0].startswith("paso"):
             res["reticula_pt"] = medidas_reticula()
         res["muestrario"] = CONFIG.get("muestrario", [])
         print(json.dumps({"ok": True, **res}, ensure_ascii=False))
